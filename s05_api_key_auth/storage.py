@@ -6,6 +6,12 @@ from dataclasses import dataclass
 
 @dataclass
 class Principal:
+    """The authenticated caller. `user_id` is typed as `str` here because
+    s05 predates the user table; s_full migrates this to `int` once a real
+    `users.id` PK exists (see s09 `users.py` / `jwt_util.py`). Read call
+    sites with `f"{principal.user_id}"` defensively so they survive the
+    swap.
+    """
     user_id: str
     scopes: tuple[str, ...] = ()
 
