@@ -1,6 +1,6 @@
 # s06: Token Counting
 
-> Previous: [s05](../s05_api_key_auth/) · Next: [s07](../s07_*)
+> Previous: [s05](../s05_api_key_auth/) · Next: [s07](../s07_pre_consume_settle/)
 > **Adds**: count prompt tokens pre-flight (tiktoken for OpenAI, char/4 for everything else) and attach the count to the response `usage`. Now we know how much each request will cost before billing the user.
 
 ## The Problem

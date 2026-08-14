@@ -1,6 +1,6 @@
 # s04: Multi-Provider Adapter Dispatch
 
-> Previous: [s03](../s03_streaming_sse/) · Next: [s05](../s05_*)
+> Previous: [s03](../s03_streaming_sse/) · Next: [s05](../s05_api_key_auth/)
 > **Adds**: the same OpenAI-shaped client can now reach Claude or Gemini, because the relay picks a `Provider` implementation from the model's name and translates both directions (request in, response out).
 
 ## The Problem

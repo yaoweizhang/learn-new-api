@@ -1,6 +1,6 @@
 # s05: API Key Authentication
 
-> Previous: [s04](../s04_multi_provider/) · Next: [s06](../s06_*)
+> Previous: [s04](../s04_multi_provider/) · Next: [s06](../s06_token_counting/)
 > **Adds**: every request to `/v1/chat/completions` must carry a valid API key in `Authorization: Bearer <key>`. Unknown, missing, or blocked keys are rejected with `401`.
 
 ## The Problem
