@@ -2,3 +2,4 @@ Task 0.1: complete (commits 227b92f..312c7a4, review found dead code in common/j
 Task 0.2: complete (commits afc7260..fc2950f, review approved with minor unused-import findings; fix subagent cleaned up; final commit fc2950f)
 Task 0.3: complete (commits 8e88fef..5ec3235, review approved; make unavailable on Windows host, smoke.sh syntax-checked; final commit 5ec3235)
 Task 1.1: complete (commits e2f02ac..646bd2e, review found dead forward_request helper; fix inlined + removed; 2/2 tests passing; final commit 646bd2e)
+Task 1.2: complete (commits 37090ac..c36b54d, review approved; implementer fixed brief bug in unmarshal_str signature; 2/2 tests passing; final commit c36b54d)
