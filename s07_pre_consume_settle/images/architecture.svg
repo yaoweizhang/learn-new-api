@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" font-family="monospace">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
+    </marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a6a"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
+    </marker>
+  </defs>
+
+  <!-- Client -->
+  <rect x="10" y="150" width="80" height="50" fill="#eee" stroke="#333"/>
+  <text x="50" y="175" text-anchor="middle">Client</text>
+  <text x="50" y="190" text-anchor="middle" font-size="9">+ Bearer</text>
+
+  <!-- Auth (s05) -->
+  <rect x="120" y="110" width="120" height="130" fill="#cfc" stroke="#333"/>
+  <text x="180" y="130" text-anchor="middle" font-size="12">s05 auth</text>
+  <text x="180" y="150" text-anchor="middle" font-size="9">require_api_key</text>
+  <text x="180" y="170" text-anchor="middle" font-size="9">-&gt; Principal</text>
+  <text x="180" y="225" text-anchor="middle" font-size="9" fill="#2a7">200 / 401</text>
+
+  <!-- Quota store (NEW) -->
+  <rect x="270" y="20" width="180" height="150" fill="#fdf" stroke="#a6a" stroke-width="2"/>
+  <text x="360" y="40" text-anchor="middle" font-size="13" fill="#a6a">s07 quota.py</text>
+  <text x="360" y="60" text-anchor="middle" font-size="10">_balances: dict + Lock</text>
+  <text x="360" y="80" text-anchor="middle" font-size="10">set_balance / get_balance</text>
+  <text x="360" y="98" text-anchor="middle" font-size="10">deduct (atomic, returns bool)</text>
+  <text x="360" y="116" text-anchor="middle" font-size="10">refund (additive)</text>
+  <text x="360" y="134" text-anchor="middle" font-size="10">settle(pre, actual) -&gt; refund diff</text>
+  <text x="360" y="155" text-anchor="middle" font-size="10" fill="#a6a">thread-safe in-memory</text>
+
+  <!-- Provider dispatch + estimate (s04/s06) -->
+  <rect x="270" y="200" width="180" height="110" fill="#fed" stroke="#333"/>
+  <text x="360" y="220" text-anchor="middle" font-size="12">handler</text>
+  <text x="360" y="240" text-anchor="middle" font-size="10">estimate = (pt + 256) * RATE</text>
+  <text x="360" y="258" text-anchor="middle" font-size="10">if not deduct(estimate): 402</text>
+  <text x="360" y="276" text-anchor="middle" font-size="10">httpx upstream call</text>
+  <text x="360" y="294" text-anchor="middle" font-size="10">on fail: refund(estimate)</text>
+
+  <!-- Upstream -->
+  <rect x="490" y="150" width="80" height="50" fill="#eee" stroke="#333"/>
+  <text x="530" y="175" text-anchor="middle">Upstream</text>
+  <text x="530" y="190" text-anchor="middle" font-size="9">(OpenAI/Claude/Gemini)</text>
+
+  <!-- Response w/ usage -->
+  <rect x="610" y="150" width="140" height="50" fill="#efe" stroke="#2a7" stroke-width="2"/>
+  <text x="680" y="172" text-anchor="middle">Response</text>
+  <text x="680" y="188" text-anchor="middle" font-size="9" fill="#2a7">usage.prompt+completion</text>
+
+  <!-- Client -> Auth -->
+  <line x1="90" y1="175" x2="120" y2="175" stroke="#333" marker-end="url(#a)"/>
+  <text x="105" y="168" text-anchor="middle" font-size="9">POST</text>
+
+  <!-- Auth -> handler (allowed) -->
+  <line x1="240" y1="155" x2="270" y2="235" stroke="#a6a" marker-end="url(#p)" stroke-width="1.5"/>
+  <text x="248" y="195" text-anchor="middle" font-size="9" fill="#a6a">Principal</text>
+
+  <!-- Auth -> handler (reject) -->
+  <line x1="240" y1="195" x2="270" y2="245" stroke="#a33" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="248" y="230" text-anchor="middle" font-size="9" fill="#a33">401</text>
+
+  <!-- handler -> quota (pre-deduct) -->
+  <line x1="360" y1="200" x2="360" y2="170" stroke="#a6a" marker-end="url(#p)" stroke-width="1.5"/>
+  <text x="370" y="188" font-size="9" fill="#a6a">deduct(estimate)</text>
+
+  <!-- quota -> handler (insufficient) -->
+  <line x1="320" y1="170" x2="280" y2="220" stroke="#a33" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#r)"/>
+  <text x="265" y="200" font-size="9" fill="#a33" text-anchor="end">insufficient -&gt; 402</text>
+
+  <!-- handler -> upstream -->
+  <line x1="450" y1="240" x2="490" y2="175" stroke="#333" marker-end="url(#a)"/>
+  <text x="465" y="210" text-anchor="middle" font-size="9">HTTP</text>
+
+  <!-- upstream -> response -->
+  <line x1="570" y1="175" x2="610" y2="175" stroke="#2a7" marker-end="url(#g)" stroke-width="1.5"/>
+  <text x="590" y="168" text-anchor="middle" font-size="9" fill="#2a7">usage</text>
+
+  <!-- handler -> quota (settle) -->
+  <line x1="430" y1="295" x2="430" y2="170" stroke="#a6a" stroke-dasharray="4 3" stroke-width="1.5" marker-end="url(#p)"/>
+  <text x="445" y="250" font-size="9" fill="#a6a">settle / refund</text>
+
+  <!-- response -> client -->
+  <line x1="610" y1="190" x2="90" y2="190" stroke="#333" stroke-dasharray="3 3"/>
+  <text x="350" y="340" text-anchor="middle" font-size="9" fill="#666">JSON 200 with quota_charged + usage settled (estimate - actual refunded)</text>
+</svg>
