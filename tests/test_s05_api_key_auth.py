@@ -37,7 +37,10 @@ def test_valid_key_passes_through(upstream_openai):
     assert r.status_code == 200
 
 
-def test_unknown_key_rejected(upstream_openai):
+def test_unknown_key_rejected():
+    # No upstream mock: the request 401s at the auth check before it ever
+    # reaches the upstream. Registering an `upstream_openai` respx route
+    # would cause assert_all_called to fire on context exit.
     with TestClient(app) as c:
         r = c.post(
             "/v1/chat/completions",
