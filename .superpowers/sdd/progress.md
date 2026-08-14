@@ -8,3 +8,4 @@ Task 2.1: complete (commits d2e5a6e..698cdec, review approved; brief bug in gemi
 Task 2.2: complete (commits 5205c7f..4a76636, review approved; brief bug in register_key param order fixed by implementer; 3/3 tests; final commit 4a76636)
 Task 3.1: complete (commits a6624fa..7e3f791, review approved; 2/2 tests; final commit 7e3f791)
 Task 3.2: complete (commits a6624fa..4e312e1, 3/3 tests; final commit 4e312e1)
+Task 3.3: complete (commits ..., 1/1 tests passing; final commit 62dfdbb)
