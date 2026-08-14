@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 260" font-family="monospace">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
+    </marker>
+    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a6a"/>
+    </marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c73"/>
+    </marker>
+  </defs>
+
+  <!-- Client -->
+  <rect x="10" y="100" width="80" height="50" fill="#eee" stroke="#333"/>
+  <text x="50" y="130" text-anchor="middle">Client</text>
+
+  <!-- Relay (pick_provider) -->
+  <rect x="170" y="70" width="180" height="110" fill="#cfc" stroke="#333"/>
+  <text x="260" y="95" text-anchor="middle" font-size="13">Relay</text>
+  <text x="260" y="115" text-anchor="middle" font-size="10">/v1/chat/completions</text>
+  <text x="260" y="140" text-anchor="middle" font-size="10">pick_provider(model)</text>
+  <text x="260" y="158" text-anchor="middle" font-size="10">prefix -&gt; adapter</text>
+
+  <!-- Three provider boxes -->
+  <rect x="430" y="30" width="170" height="40" fill="#fde" stroke="#a6a" stroke-width="2"/>
+  <text x="515" y="55" text-anchor="middle">OpenAIProvider</text>
+
+  <rect x="430" y="110" width="170" height="40" fill="#edf" stroke="#a6a" stroke-width="2"/>
+  <text x="515" y="135" text-anchor="middle">ClaudeProvider</text>
+
+  <rect x="430" y="190" width="170" height="40" fill="#fed" stroke="#a6a" stroke-width="2"/>
+  <text x="515" y="215" text-anchor="middle">GeminiProvider</text>
+
+  <!-- Client -> Relay -->
+  <line x1="90" y1="125" x2="170" y2="125" stroke="#333" marker-end="url(#a)"/>
+  <text x="130" y="118" text-anchor="middle" font-size="10">OpenAI JSON</text>
+
+  <!-- Relay -> OpenAI (gpt-/o prefix, orange) -->
+  <line x1="350" y1="105" x2="430" y2="55" stroke="#c73" marker-end="url(#o)" stroke-width="1.5"/>
+  <text x="395" y="70" text-anchor="middle" font-size="10" fill="#c73">gpt-* / o*</text>
+
+  <!-- Relay -> Claude (claude- prefix, purple) -->
+  <line x1="350" y1="125" x2="430" y2="130" stroke="#a6a" marker-end="url(#p)" stroke-width="1.5"/>
+  <text x="395" y="120" text-anchor="middle" font-size="10" fill="#a6a">claude-*</text>
+
+  <!-- Relay -> Gemini (gemini- prefix, green) -->
+  <line x1="350" y1="145" x2="430" y2="205" stroke="#2a7" marker-end="url(#g)" stroke-width="1.5"/>
+  <text x="395" y="180" text-anchor="middle" font-size="10" fill="#2a7">gemini-*</text>
+
+  <!-- Unknown rejection annotation -->
+  <text x="260" y="240" text-anchor="middle" font-size="10" fill="#a33">unknown prefix -&gt; 400</text>
+</svg>
