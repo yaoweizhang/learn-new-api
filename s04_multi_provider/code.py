@@ -14,7 +14,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from common.json import marshal, unmarshal_str
+from common.json import marshal
 from s04_multi_provider.adapters import pick_provider
 
 PORT = int(os.getenv("PORT", "8004"))

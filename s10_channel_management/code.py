@@ -6,7 +6,6 @@ by (priority asc, weight desc, healthy=True).
 from __future__ import annotations
 
 import os
-from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
