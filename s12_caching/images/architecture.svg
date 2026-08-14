@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" font-family="sans-serif">
+  <title>s12: exact-match response cache</title>
+
+  <defs>
+    <style>
+      .box { fill: #ffffff; stroke: #333; stroke-width: 1.5; }
+      .label { font-size: 14px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .arrow { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#a); }
+      .hit { stroke: #2a9d4a; stroke-width: 2; fill: none; marker-end: url(#ah); }
+      .miss { stroke: #c0392b; stroke-width: 2; fill: none; marker-end: url(#am); }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a9d4a"/>
+    </marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
+    </marker>
+  </defs>
+
+  <text x="360" y="28" text-anchor="middle" font-size="18" font-weight="bold">s12: exact-match response cache</text>
+
+  <!-- Client -->
+  <rect class="box" x="40" y="70" width="100" height="40" rx="4"/>
+  <text class="label" x="90" y="95" text-anchor="middle">Client</text>
+
+  <!-- s12 app boundary -->
+  <rect class="box" x="180" y="60" width="500" height="240" rx="6" stroke-dasharray="4 3"/>
+  <text class="label" x="200" y="80">s12_caching (app)</text>
+
+  <!-- CacheMiddleware -->
+  <rect class="box" x="200" y="100" width="160" height="60" rx="4"/>
+  <text class="label" x="280" y="125" text-anchor="middle">CacheMiddleware</text>
+  <text class="sub" x="280" y="145" text-anchor="middle">sha256(canonical JSON)</text>
+
+  <!-- s11 mount -->
+  <rect class="box" x="400" y="100" width="260" height="60" rx="4"/>
+  <text class="label" x="530" y="125" text-anchor="middle">s11 (mounted at /)</text>
+  <text class="sub" x="530" y="145" text-anchor="middle">LogMiddleware + s10 → s09 → s08</text>
+
+  <!-- cache store -->
+  <rect class="box" x="200" y="220" width="160" height="60" rx="4"/>
+  <text class="label" x="280" y="245" text-anchor="middle">cache.py</text>
+  <text class="sub" x="280" y="265" text-anchor="middle">dict[key, (exp, val)] + Lock</text>
+
+  <!-- /admin/cache/stats -->
+  <rect class="box" x="400" y="220" width="260" height="60" rx="4"/>
+  <text class="label" x="530" y="245" text-anchor="middle">GET /admin/cache/stats</text>
+  <text class="sub" x="530" y="265" text-anchor="middle">{size, live}</text>
+
+  <!-- arrows -->
+  <line class="arrow" x1="140" y1="90" x2="200" y2="125"/>
+  <line class="arrow" x1="360" y1="125" x2="400" y2="125"/>
+  <line class="arrow" x1="280" y1="160" x2="280" y2="220"/>
+
+  <!-- HIT path: cache → client -->
+  <path class="hit" d="M280,220 Q100,330 90,110" />
+  <text class="label" x="120" y="340" fill="#2a9d4a">cache hit (short-circuit)</text>
+
+  <!-- MISS path: s11 → upstream -->
+  <rect class="box" x="430" y="350" width="220" height="40" rx="4"/>
+  <text class="label" x="540" y="375" text-anchor="middle">Upstream (mock OpenAI)</text>
+  <line class="arrow" x1="530" y1="160" x2="530" y2="350"/>
+  <path class="miss" d="M430,370 Q150,420 90,110" />
+  <text class="label" x="200" y="420" fill="#c0392b">cache miss → store on 200</text>
+
+  <text class="sub" x="360" y="465" text-anchor="middle">stream=true bypasses cache; key = sha256(model, messages, temperature)</text>
+</svg>
