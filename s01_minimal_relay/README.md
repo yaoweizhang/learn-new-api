@@ -56,17 +56,18 @@ class RelayRequest(BaseModel):
     messages: list[dict]
 ```
 
-**3. The forwarder.** `httpx.AsyncClient` is the async counterpart to
+**3. The forwarding route.** `httpx.AsyncClient` is the async counterpart to
 `requests`. Async matters here: the relay spends nearly all of its wall clock
 waiting on the upstream, so a blocking client would pin one OS thread per
 in-flight call and cap throughput almost immediately.
 
 ```python
-async def forward_request(target_url: str, payload: dict) -> dict:
+@app.post("/relay")
+async def relay(req: RelayRequest) -> dict:
     headers = {"Authorization": f"Bearer {UPSTREAM_KEY}"} if UPSTREAM_KEY else {}
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            r = await client.post(target_url, json=payload, headers=headers)
+            r = await client.post(FORWARD_TARGET, json=req.model_dump(), headers=headers)
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502, detail=f"upstream error: {exc}") from exc
     if r.status_code >= 400:
@@ -87,14 +88,6 @@ Line by line:
   OpenAI says 429, the caller should see 429, not a laundered 500.
 - The `async with` block closes the client (and its connection pool) on every
   request. Simple, and deliberately wasteful — s10 fixes it with a shared pool.
-
-The route itself is then one line:
-
-```python
-@app.post("/relay")
-async def relay(req: RelayRequest) -> dict:
-    return await forward_request(FORWARD_TARGET, req.model_dump())
-```
 
 Configuration is environment-driven so no chapter ever needs a code edit to
 point elsewhere:
@@ -145,10 +138,11 @@ must call the upstream exactly once.
 | Here | new-api |
 |---|---|
 | `relay()` route | `relay/relay.go` — the entry point that dispatches an inbound request to an upstream |
-| `forward_request()` | `relay/channel/openai/adaptor.go` — the per-channel adapter that builds the outbound request and parses the reply |
 
-new-api generalises the single function above into an `Adaptor` interface with
-one implementation per provider. We arrive at the same design in s04.
+new-api generalises the single route above into an `Adaptor` interface
+(`relay/channel/openai/adaptor.go` — the per-channel adapter that builds the
+outbound request and parses the reply) with one implementation per provider. We
+arrive at the same design in s04.
 
 ## Trade-offs
 

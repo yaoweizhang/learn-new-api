@@ -29,26 +29,17 @@ class RelayRequest(BaseModel):
     messages: list[dict]
 
 
-async def forward_request(target_url: str, payload: dict) -> dict:
-    """POST `payload` to `target_url` and return the decoded JSON response.
-
-    Upstream transport failures become 502; upstream error statuses are
-    passed through unchanged so the caller sees the real reason.
-    """
+@app.post("/relay")
+async def relay(req: RelayRequest) -> dict:
     headers = {"Authorization": f"Bearer {UPSTREAM_KEY}"} if UPSTREAM_KEY else {}
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            r = await client.post(target_url, json=payload, headers=headers)
+            r = await client.post(FORWARD_TARGET, json=req.model_dump(), headers=headers)
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=502, detail=f"upstream error: {exc}") from exc
     if r.status_code >= 400:
         raise HTTPException(status_code=r.status_code, detail=r.text)
     return r.json()
-
-
-@app.post("/relay")
-async def relay(req: RelayRequest) -> dict:
-    return await forward_request(FORWARD_TARGET, req.model_dump())
 
 
 if __name__ == "__main__":

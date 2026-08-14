@@ -494,7 +494,6 @@ git commit -m "chore: makefile and smoke script"
 **Interfaces (consumed by later tasks):**
 - `app: FastAPI` exported from `s01_minimal_relay.code`
 - `FORWARD_TARGET: str` (URL the relay sends to)
-- `forward_request(target_url, payload) -> dict`
 
 **Step 1: Write failing test** `tests/test_s01_minimal_relay.py`:
 
