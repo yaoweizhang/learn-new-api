@@ -4,3 +4,4 @@ Task 0.3: complete (commits 8e88fef..5ec3235, review approved; make unavailable 
 Task 1.1: complete (commits e2f02ac..646bd2e, review found dead forward_request helper; fix inlined + removed; 2/2 tests passing; final commit 646bd2e)
 Task 1.2: complete (commits 37090ac..c36b54d, review approved; implementer fixed brief bug in unmarshal_str signature; 2/2 tests passing; final commit c36b54d)
 Task 1.3: complete (commits 82cf9c0..fdd8c38, review approved with minor unused-imports findings; 2/2 tests passing; full suite 6/6; final commit fdd8c38)
+Task 2.1: complete (commits d2e5a6e..698cdec, review approved; brief bug in gemini adapter fixed by implementer; 4/4 tests passing; full suite 10/10; final commit 698cdec)
