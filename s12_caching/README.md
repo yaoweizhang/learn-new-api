@@ -113,15 +113,12 @@ class CacheMiddleware(BaseHTTPMiddleware):
 
 三个关键点：
 
-1. **请求体读一次，再喂回去**。`await request.body()` 把 body 取出
-   来做键；同时需要让下游 FastAPI 还能看到同样 bytes——这里的做法
-   是**不再喂回**。和 s11 不同：s11 必须把 body 喂回去因为下游要把
-   它解析成 `prompt`；这里下游是 s11 → s10 → s09 → s08，每一层都
-   各自再 `await request.body()`。Starlette 的设计是**body 只能读
-   一次**——读完就置空。这一章的做法是有副作用的：s11 的
-   `LogMiddleware` 再读 `request.body()` 时会拿到空 bytes，于是
-   `request.state.model` 永远是 `"?"`。我们接受这个缺陷（v2 用
-   `request.state` 透传），换来缓存中间件逻辑更干净。
+1. **请求体缓存由 Starlette 处理，下游可复用**。`await request.body()`
+   把 body 取出来做键；Starlette 的 `BaseHTTPMiddleware` 在首次读取
+   后会把字节缓存到 `request._body`，下游中间件（包括 s11 的
+   `LogMiddleware`）再读时拿到的依然是同一份完整 body。所以本章
+   不需要手动 replay——s11 的 `request.state.model` 字段会正常记
+   录实际 model。
 2. **响应体读一次，重组成 `Response`**。`response.body_iterator`
    读完必须重组：否则下游拿到的会是空响应。`Response(content=body,
    status_code=..., headers=..., media_type=...)` 把同样的 bytes 包
