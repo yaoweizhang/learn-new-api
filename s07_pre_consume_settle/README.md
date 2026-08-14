@@ -1,55 +1,52 @@
-# s07: Pre-consume and Settle
+# s07: 预扣与结算
 
 > Previous: [s06](../s06_token_counting/) · Next: [s08](../s08_rate_limiting/)
 
-## Problem
+## 问题
 
-A user with 100 tokens of quota could submit 100 parallel requests of 100
-tokens each. If every request estimates 100 tokens before calling upstream,
-all 100 requests get past the gate and the user blows through their balance
-on the actual cost, which we only learn about after the upstream reply
-arrives. The user could go **negative** mid-call — and the next request
-that legitimately has quota gets rejected because the balance already
-underflowed.
+一个拥有 100 token 配额的用户,可以同时提交 100 个并行请求,每个
+100 token。如果每条请求在调上游之前都按 100 token 做估算,这 100
+条全部会通过配额闸门,然后真正打完上游才知道真实花费——用户可能在
+请求过程中**变负**,而下一条本来余额充足的合法请求,却因为配额已
+经下溢而被拒绝。
 
-## Solution
+## 方案
 
-Pre-deduct an *estimate* before forwarding to the upstream. When the real
-reply comes back, settle the difference:
+在转发到上游之前预扣一份**估算值**;真实回复到达时再做结算
+(settle):
 
-1. **Pre-deduct estimate** (prompt tokens + expected completion × rate).
-   Fail with `402 Payment Required` if the balance is insufficient.
-2. **Call upstream.**
-3. **On success, settle:** refund `(estimate - actual)` if the actual
-   usage is lower than the estimate.
-4. **On upstream failure (network error, 4xx, 5xx):** refund the **full**
-   pre-deduct so the user is not charged for a request that never
-   succeeded.
+1. **预扣估算**(prompt token + 预期 completion × 单价)。余额不
+   够,直接 `402 Payment Required`。
+2. **调上游。**
+3. **成功的情况下,做结算**:当真实用量低于估算时,退还差额
+   `(estimate - actual)`。
+4. **上游失败的情况下(网络错、4xx、5xx)**:把整份预扣原样退回,
+   用户不需要为一笔没成功的请求付费。
 
-The deduction is atomic under a `threading.Lock`, so concurrent requests
-from the same user can never double-spend.
+扣减在 `threading.Lock` 下原子进行,所以同一用户的并发请求不可能
+"双花"。
 
-## How It Works
+## 工作原理
 
-Quota math:
+配额算式:
 
 ```
-RATE = 1 quota per token (configurable; flat rate per chapter)
+RATE = 1 quota per token (可配;本章按平价)
 estimate = (prompt_tokens + expected_completion) * RATE_PER_TOKEN
 ```
 
-`s07_pre_consume_settle/quota.py` exposes the store:
+`s07_pre_consume_settle/quota.py` 暴露存储:
 
-- `reset()` — clear all balances (tests)
-- `set_balance(user_id, amount)` — set the balance for a user
-- `get_balance(user_id) -> int` — read balance
-- `deduct(user_id, amount) -> bool` — atomic conditional deduction;
-  returns `False` if the balance is insufficient (no partial deduct)
-- `refund(user_id, amount)` — add quota back (for failure recovery)
-- `settle(user_id, pre_deducted, actual) -> int` — refund the diff and
-  return the actual amount charged
+- `reset()` —— 清空所有余额(测试用)
+- `set_balance(user_id, amount)` —— 设置一个用户的余额
+- `get_balance(user_id) -> int` —— 读余额
+- `deduct(user_id, amount) -> bool` —— 原子条件扣减;余额不足
+  返 `False`(不部分扣减)
+- `refund(user_id, amount)` —— 把配额加回去(失败补偿用)
+- `settle(user_id, pre_deducted, actual) -> int` —— 退还差额,返
+  回实际被扣金额
 
-`s07_pre_consume_settle/code.py` wires the math into the FastAPI handler:
+`s07_pre_consume_settle/code.py` 把这套算式接进 FastAPI handler:
 
 ```
 estimate = (prompt_tokens + expected_completion) * RATE_PER_TOKEN
@@ -59,21 +56,21 @@ if not deduct(principal.user_id, estimate):
 try:
     r = await client.post(upstream_url, ...)
 except httpx.HTTPError:
-    refund(principal.user_id, estimate)        # network failure
+    refund(principal.user_id, estimate)        # 网络失败
     raise HTTPException(502, "upstream error")
 
 if r.status_code >= 400:
-    refund(principal.user_id, estimate)        # upstream returned an error
+    refund(principal.user_id, estimate)        # 上游返回错误
     raise HTTPException(r.status_code, r.text)
 
-# success path — refund the diff
+# 成功路径 —— 退还差额
 pt = max(usage.prompt_tokens, prompt_tokens)
 ct = usage.completion_tokens
 actual = (pt + ct) * RATE_PER_TOKEN
 settle(principal.user_id, estimate, actual)
 ```
 
-## Run It
+## 运行
 
 ```python
 from s05_api_key_auth.storage import register_key
@@ -93,39 +90,39 @@ curl -X POST http://localhost:8007/v1/chat/completions \
   -H 'authorization: Bearer sk-u' \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
-curl http://localhost:8007/quota/u1                                  # {"balance": 9970-ish}
+curl http://localhost:8007/quota/u1                                  # {"balance": 9970 左右}
 ```
 
-`RATE_PER_TOKEN` (default 1) and `PORT` (default 8007) are overridable via env.
+`RATE_PER_TOKEN` (默认 1) 和 `PORT` (默认 8007) 都可以通过环境
+变量覆盖。
 
-## Tests
+## 测试
 
 ```bash
 pytest tests/test_s07_pre_consume_settle.py -v
 ```
 
-Three tests cover the contract:
+三个测试覆盖契约:
 
-| Test | What it asserts |
+| 测试 | 断言 |
 | --- | --- |
-| `test_pre_consume_deducts_before_call` | A successful call deducts something from the balance. |
-| `test_insufficient_quota_returns_402` | A user with 0 quota gets `402 Payment Required`. |
-| `test_upstream_failure_refunds_pre_consume` | When upstream returns 500, the full pre-deduct is refunded. |
+| `test_pre_consume_deducts_before_call` | 一笔成功的调用会从余额里扣一部分。 |
+| `test_insufficient_quota_returns_402` | 一笔余额为 0 的用户会拿到 `402 Payment Required`。 |
+| `test_upstream_failure_refunds_pre_consume` | 当上游返回 500 时,整份预扣要退回去。 |
 
-## new-api Source
+## → new-api 源码
 
-- `service/PreConsumeQuota.go` — pre-deduct / settle logic.
-- `model/Quota.go` — the Quota struct and per-user counters.
+- `service/PreConsumeQuota.go` —— 预扣 / 结算逻辑。
+- `model/Quota.go` —— Quota 结构 + 每个用户的计数器。
 
-## Trade-offs
+## 取舍
 
-- **In-memory storage.** State dies with the process; s09 introduces SQLite
-  with transactional deduction.
-- **No quota refresh / top-up.** Quota lives in the dict forever until the
-  service restarts; production uses Redis + a periodic refill cron.
-- **Estimate is generous.** We pre-deduct for `expected_completion = 256`
-  tokens when `max_tokens` is unset. Most replies are shorter, so users
-  routinely get small refunds. If they consistently hit the ceiling,
-  switch to per-channel rate cards in a later chapter.
-- **No idempotency key.** A client that retries on timeout can be double-
-  charged (deducted twice, settled once). s10 adds `Idempotency-Key`.
+- **进程内存储**。状态随进程消亡;s09 引入 SQLite,用事务化扣
+  减。
+- **没有配额刷新 / 充值**。配额在 dict 里一直活到服务重启;生产
+  走 Redis + 周期补量的 cron。
+- **估算偏宽**。当 `max_tokens` 没传时,我们按 `expected_completion
+  = 256` token 预扣。大多回复更短,所以用户会经常收到小笔退款。一
+  旦频繁触顶,后续章节切到按 channel 的 rate card。
+- **没有幂等键**。一次超时重试的客户端可能被双扣(扣两次、结算一
+  次)。s10 加 `Idempotency-Key`。

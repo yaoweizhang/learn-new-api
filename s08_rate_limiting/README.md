@@ -1,54 +1,52 @@
-# s08: Per-User Token Bucket Rate Limiting
+# s08: 按用户的令牌桶限速
 
 > Previous: [s07](../s07_pre_consume_settle/) · Next: [s09](../s09_user_system/)
 
-## Problem
+## 问题
 
-Quota controls *cost* — a user with plenty of balance can still flood the
-upstream and starve everyone else. A single noisy caller pounding
-`/v1/chat/completions` 100× per second degrades latency for every other
-tenant on the same proxy. Quota says "this user can spend"; we also need
-"this user can spend at *this* rate".
+配额控制的是**花费**——一个余额很足的用户仍可能把上游打爆,把同一
+代理上其它所有租户的延迟都拖下水。一个吵闹的调用方 1 秒打 100 次
+`/v1/chat/completions`,所有其它租户的体验都会跟着劣化。配额说
+"这个用户能花";我们还得说"这个用户能以**这个速率**花"。
 
-## Solution
+## 方案
 
-A **token bucket per user** sits in front of the handler. Each user has
-`capacity` tokens that refill at `refill_per_sec`. Each request consumes
-one token; if none are left the request is rejected with `429 Too Many
-Requests` *before* any quota deduction or upstream call.
+在 handler 之前放一份**按用户的令牌桶**。每个用户有 `capacity` 个
+令牌,按 `refill_per_sec` 速率补充。每条请求消耗一枚令牌;令牌耗
+尽的话,这次请求会在任何配额扣减和上游调用之前,以 `429 Too Many
+Requests` 拒掉。
 
-Defaults: 60-token burst, 1 token / second refill — so a fresh user can
-send a burst of 60, then sustains roughly one request per second.
+默认值:60 令牌突发、每秒 1 令牌的补充——一个新用户能突发打满 60
+条,之后稳定在约 1 req/s。
 
-## How It Works
+## 工作原理
 
-`s08_rate_limiting/bucket.py` exposes the bucket:
+`s08_rate_limiting/bucket.py` 暴露令牌桶:
 
-- `reset_buckets()` — clear all buckets (tests)
-- `configure(user_id, capacity, refill_per_sec)` — set per-user limits
-  and prime the bucket to full
-- `take(user_id, cost=1.0) -> bool` — atomic: refill based on elapsed
-  time, check against `cost`, decrement on success, return `False` if
-  exhausted
+- `reset_buckets()` —— 清空所有桶(测试用)
+- `configure(user_id, capacity, refill_per_sec)` —— 设置用户级限制
+  并把桶填满
+- `take(user_id, cost=1.0) -> bool` —— 原子:按流逝时间补充、对
+  `cost` 做检查、成功就扣减,耗尽返 `False`
 
-The whole check-and-decrement happens under one `threading.Lock`, so
-concurrent requests from the same user cannot over-spend tokens.
+整个检查-扣减在同一个 `threading.Lock` 下,所以同一用户的并发请求
+不可能花超。
 
-`s08_rate_limiting/code.py` wires the bucket into the handler:
+`s08_rate_limiting/code.py` 把桶接进 handler:
 
 ```python
 @app.post("/v1/chat/completions")
 async def chat_completions(req: ChatCompletionRequest, p: Principal = Depends(require_api_key)):
     if not take(p.user_id):
         raise HTTPException(status_code=429, detail="rate limited")
-    # ... pre-deduct estimate, call upstream, settle as in s07 ...
+    # ... 预扣估算、调上游、结算,和 s07 一致 ...
 ```
 
-Order of checks matters: auth → rate limit → quota deduct → upstream.
-A user without a valid key never reaches the bucket, and a user with
-plenty of tokens but no quota gets `402` instead of `429`.
+检查顺序很重要:鉴权 → 限速 → 配额扣减 → 调上游。没有合法 key 的用
+户根本到不了桶这步;令牌充足但没有配额的用户拿到 `402`,而不是
+`429`。
 
-## Run It
+## 运行
 
 ```python
 from s05_api_key_auth.storage import register_key
@@ -57,7 +55,7 @@ from s08_rate_limiting.bucket import configure
 
 register_key("sk-u", "u1")
 set_balance("u1", 10_000_000)
-configure("u1", capacity=60, refill_per_sec=1.0)  # default
+configure("u1", capacity=60, refill_per_sec=1.0)  # 默认值
 ```
 
 ```bash
@@ -65,7 +63,7 @@ python s08_rate_limiting/code.py
 ```
 
 ```bash
-# burst of three — third gets 429 if the bucket only had 2 tokens
+# 突发 3 条 —— 当桶只有 2 枚时,第 3 条会拿到 429
 for i in 1 2 3; do
   curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8008/v1/chat/completions \
     -H 'authorization: Bearer sk-u' \
@@ -74,38 +72,33 @@ for i in 1 2 3; do
 done
 ```
 
-`PORT` (default 8008) and `RATE_PER_TOKEN` (default 1) are overridable
-via env.
+`PORT`(默认 8008)和 `RATE_PER_TOKEN`(默认 1)都可由环境变量覆盖。
 
-## Tests
+## 测试
 
 ```bash
 pytest tests/test_s08_rate_limiting.py -v
 ```
 
-One test covers the contract:
+一个测试覆盖契约:
 
-| Test | What it asserts |
+| 测试 | 断言 |
 | --- | --- |
-| `test_first_two_pass_third_blocked` | With `capacity=2, refill_per_sec=0`, the first two requests pass (200) and the third is rejected (429). |
+| `test_first_two_pass_third_blocked` | 配置 `capacity=2, refill_per_sec=0` 时,前两条返回 200、第三条返回 429。 |
 
-## new-api Source
+## → new-api 源码
 
-- `middleware/RateLimit.go` — middleware that applies per-user limits
-  using Redis-backed counters; here we inline it as a function call so
-  the contract is obvious.
+- `middleware/RateLimit.go` —— 用 Redis 计数器做按用户限速的中间
+  件。这里我们把它内联成一个函数调用,契约更直观。
 
-## Trade-offs
+## 取舍
 
-- **In-memory bucket is per-process.** Each worker has its own
-  counters, so under multi-worker deployments a user can effectively
-  get `N_workers × capacity` burst. s12 moves the bucket into Redis
-  with `INCR` + `EXPIRE` so all workers share state.
-- **Default limits are global.** Production reads per-user limits from
-  a database (tier, channel, plan). This chapter hard-codes 60/1 — the
-  point is the algorithm, not the policy.
-- **No `Retry-After` header.** Real impls add it so polite clients
-  back off; we keep the response body minimal.
-- **Per-user, not per-token.** Rate limits apply to the API key holder,
-  not per upstream model. Multi-tenant model-level quotas would split
-  the bucket by `(user_id, model)`.
+- **进程内桶是单进程的**。每个 worker 有自己的计数器,所以多
+  worker 部署下用户实际能拿到 `N_workers × capacity` 的突发。s12
+  把桶挪到 Redis,用 `INCR` + `EXPIRE` 让所有 worker 共享状态。
+- **默认限制是全局的**。生产从数据库读每用户限制(tier、channel、
+  plan)。本章把 60/1 写死——重点是算法,不是策略。
+- **没有 `Retry-After` 头**。真实实现会加这个让礼貌的客户端知道
+  何时退避;我们保持响应 body 极简。
+- **按用户,不是按 token**。限速作用于 API key 持有者,而不是按
+  上游模型分。多租户的模型级配额会把桶再按 `(user_id, model)` 拆。

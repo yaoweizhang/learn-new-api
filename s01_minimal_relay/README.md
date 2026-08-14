@@ -1,27 +1,25 @@
-# s01: Minimal Relay Kernel
+# s01: 最小的转发中继内核
 
 > Previous: — · Next: [s02](../s02_openai_protocol/)
-> **Adds**: an HTTP forwarder — one route that passes a JSON body to a single upstream and returns the reply.
 
-New dependencies: `fastapi`, `uvicorn`, `httpx`, `pydantic`.
+**本章新增**:一个 HTTP 转发器——一条路由,把 JSON 请求体传给单一上游,再把回复原样返回。
 
-## The Problem
+新增依赖:`fastapi`、`uvicorn`、`httpx`、`pydantic`。
 
-You have an app that needs to talk to an LLM provider. Without a gateway, every
-caller holds the provider key, hard-codes the provider URL, and duplicates the
-same request plumbing. Changing providers, rotating a key, or watching traffic
-means editing every caller. That is a manual copy-paste relay done by humans —
-it does not scale past the first afternoon.
+## 问题
 
-The fix is a program that sits in the middle. Everything else in this tutorial —
-protocols, streaming, auth, quota, logging — is built on top of that one idea,
-so we start with the smallest version that actually runs.
+假设你的应用要调用一家 LLM 厂商。没有任何网关时,每个调用方都得各自
+持有厂商 key、把厂商 URL 写死在代码里、再各自复制一份完全相同的请求
+调度逻辑。换厂商、轮换 key、看一眼流量,都得修改所有调用方。这就是
+靠人肉复制粘贴的中继,撑不过第一个下午。
 
-## The Solution
+解法就是在中间站一个程序。教程里其余所有内容——协议、流式、鉴权、配
+额、日志——都建立在这一个想法之上,所以我们从最小可运行的版本讲起。
 
-A single process that accepts a request, sends it onward, and gives back the
-answer. Conceptually a `while True` loop over inbound HTTP requests, where the
-body of the loop is "forward it".
+## 方案
+
+一个进程,接住请求、转发出去、再把答复送回来。概念上就是一个针对
+入站 HTTP 请求的 `while True` 循环,循环体里只做一件事:转发。
 
 ![architecture](images/architecture.svg)
 
@@ -30,15 +28,15 @@ Client  ──POST /relay──▶  Relay  ──POST FORWARD_TARGET──▶  U
         ◀──── JSON ────          ◀──────── JSON ─────────
 ```
 
-The relay adds exactly two things at this stage: it owns the upstream URL, and
-it owns the upstream key. Callers need to know neither.
+中继在这一阶段只多做了两件事:它持有上游 URL,也持有上游 key。调用
+方既不需要知道 URL,也不需要知道 key。
 
-## How It Works
+## 工作原理
 
-The whole kernel is three pieces.
+整个内核由三块组成。
 
-**1. A liveness route.** Cheap, dependency-free, and used by every later chapter
-(and by Docker's healthcheck in s15):
+**1. 一个存活探针路由。** 零依赖,后续每章都会用到(以及 s15 中 Docker
+的健康检查):
 
 ```python
 @app.get("/health")
@@ -46,9 +44,9 @@ def health() -> dict:
     return {"status": "ok"}
 ```
 
-**2. A request shape.** Pydantic validates the body before we spend a network
-round trip on it. At this stage we only insist on `model` and `messages`;
-s02 makes it a real OpenAI schema:
+**2. 一个请求形态。** Pydantic 在我们花一次网络往返之前先校验请求
+体。本章只强制要求 `model` 和 `messages`;s02 才会把它变成真正的
+OpenAI schema:
 
 ```python
 class RelayRequest(BaseModel):
@@ -56,10 +54,9 @@ class RelayRequest(BaseModel):
     messages: list[dict]
 ```
 
-**3. The forwarding route.** `httpx.AsyncClient` is the async counterpart to
-`requests`. Async matters here: the relay spends nearly all of its wall clock
-waiting on the upstream, so a blocking client would pin one OS thread per
-in-flight call and cap throughput almost immediately.
+**3. 转发起。** `httpx.AsyncClient` 是 `requests` 的异步版本。异步在这
+里很关键——中继几乎所有时长都花在等待上游上,阻塞式客户端每条在飞
+的请求都会占用一个 OS 线程,吞吐几乎立刻见顶。
 
 ```python
 @app.post("/relay")
@@ -75,22 +72,20 @@ async def relay(req: RelayRequest) -> dict:
     return r.json()
 ```
 
-Line by line:
+逐行看:
 
-- `headers = ... if UPSTREAM_KEY else {}` — the relay injects the provider key.
-  The caller never sees it. This is the single most important reason a gateway
-  exists.
-- `timeout=30.0` — never inherit an unbounded default. A hung upstream must not
-  become a hung relay.
-- `except httpx.HTTPError` → **502**. A transport failure is *our* upstream's
-  fault, not the caller's, and 502 Bad Gateway says exactly that.
-- `if r.status_code >= 400` → pass the upstream status through unchanged. If
-  OpenAI says 429, the caller should see 429, not a laundered 500.
-- The `async with` block closes the client (and its connection pool) on every
-  request. Simple, and deliberately wasteful — s10 fixes it with a shared pool.
+- `headers = ... if UPSTREAM_KEY else {}` —— 中继负责注入厂商 key。调用
+  方永远看不到。这正是网关存在最重要的单一原因。
+- `timeout=30.0` —— 绝不继承一个无限大的默认值。挂住的上游不能反过来
+  挂住中继。
+- `except httpx.HTTPError` → **502**。传输层失败是我们上游的锅,不是
+  调用方的,`502 Bad Gateway` 把这件事说得很清楚。
+- `if r.status_code >= 400` —— 把上游的状态码原样透传。OpenAI 返回 429,
+  调用方就应该看到 429,而不是洗成 500。
+- 每次请求都用 `async with` 关闭客户端(及其连接池)。简单,但确实是浪
+  费——s10 用一个共享连接池来修掉这一点。
 
-Configuration is environment-driven so no chapter ever needs a code edit to
-point elsewhere:
+配置全部走环境变量,所以任何一章都不用改代码就能切换目标:
 
 ```python
 PORT           = int(os.getenv("PORT", "8001"))
@@ -98,23 +93,23 @@ FORWARD_TARGET = os.getenv("FORWARD_TARGET", "https://api.openai.com/v1/chat/com
 UPSTREAM_KEY   = os.getenv("UPSTREAM_OPENAI_KEY", "")
 ```
 
-## Run It
+## 运行
 
 ```sh
 cd s01_minimal_relay
 PORT=8001 python code.py
 ```
 
-Check it is alive:
+确认活着:
 
 ```sh
 curl http://localhost:8001/health
 # {"status":"ok"}
 ```
 
-Relay a request (export `UPSTREAM_OPENAI_KEY` first for a real reply; without a
-key the upstream answers 401 and you will see that status pass straight
-through, which is the behaviour we want):
+转发一次请求(先 `export UPSTREAM_OPENAI_KEY=...` 才能拿到真实回复;
+不设 key 的话上游会返回 401,而我们正好希望看到原样透传这个状态码,这正
+是我们想要的行为):
 
 ```sh
 curl -X POST http://localhost:8001/relay \
@@ -122,39 +117,36 @@ curl -X POST http://localhost:8001/relay \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-## Tests
+## 测试
 
 ```sh
 pytest tests/test_s01_minimal_relay.py -v
 ```
 
-The upstream is mocked with `respx` (the `upstream_openai` fixture in
-`tests/conftest.py`), so the suite runs offline and still asserts the real wire
-shape: the relay must return the upstream's `choices[0].message.content` and
-must call the upstream exactly once.
+上游用 `respx` 进行 mock(`tests/conftest.py` 里的 `upstream_openai` 固
+定器),所以测试可以离线跑、同时仍断言真实的线协议形态——中继必须返回
+上游 `choices[0].message.content`,并且只能调用上游一次。
 
-## → new-api source
+## → new-api 源码
 
-| Here | new-api |
+| 这里 | new-api |
 |---|---|
-| `relay()` route | `relay/relay.go` — the entry point that dispatches an inbound request to an upstream |
+| `relay()` 路由 | `relay/relay.go` —— 把入站请求派发到上游的入口 |
 
-new-api generalises the single route above into an `Adaptor` interface
-(`relay/channel/openai/adaptor.go` — the per-channel adapter that builds the
-outbound request and parses the reply) with one implementation per provider. We
-arrive at the same design in s04.
+新版本把这个单一路由泛化成一个 `Adaptor` 接口(`relay/channel/openai/
+adaptor.go`——按 channel 的适配器,负责构造出站请求并解析回包),每个
+厂商一套实现。我们在 s04 会走到同样的设计。
 
-## Trade-offs
+## 取舍
 
-What we deliberately did **not** do:
+明确**没有**做的事:
 
-- **No auth.** Anyone who can reach the port can spend your key. → s05.
-- **No streaming.** `r.json()` waits for the complete body, so token-by-token
-  output is impossible. → s03.
-- **Single upstream.** One `FORWARD_TARGET`, no channel table, no weights, no
-  failover. → s10, s13.
-- **No protocol translation.** The body is forwarded verbatim, so the caller
-  must already speak the upstream's dialect. → s02, s04.
-- **No quota, logging, or metrics.** → s07, s11, s16.
-- **A fresh connection pool per request.** Correct but slow; a long-lived
-  client is the production answer.
+- **没有鉴权**。能访问端口的人就能花你的 key。→ s05。
+- **没有流式**。`r.json()` 等整个响应回来,所以逐 token 输出不可
+  能。→ s03。
+- **单上游**。一个 `FORWARD_TARGET`,没有 channel 表、没有权重、
+  没有故障切换。→ s10、s13。
+- **没有协议转换**。请求体原样转发,所以调用方必须已经会说上游方
+  言。→ s02、s04。
+- **没有配额/日志/指标**。→ s07、s11、s16。
+- **每次新建一个连接池**。正确,但慢;长连接客户端才是生产答案。

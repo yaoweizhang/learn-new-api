@@ -1,43 +1,42 @@
-# s02: OpenAI Protocol
+# s02: OpenAI 协议
 
 > Previous: [s01](../s01_minimal_relay/) · Next: [s03](../s03_streaming_sse/)
-> **Adds**: the inbound surface adopts OpenAI's `/v1/chat/completions` path and JSON schema. Any OpenAI client (the official SDK, LangChain, LlamaIndex, your terminal `curl`) now works against us unchanged.
 
-## The Problem
+**本章新增**:入站面采用 OpenAI 的 `/v1/chat/completions` 路径和 JSON
+schema。任何 OpenAI 客户端(官方 SDK、LangChain、LlamaIndex、终端里
+的 `curl`)都能原样对我们发起调用。
 
-`s01` answered a custom URL (`/relay`) with a custom JSON shape. Every client
-had to learn our dialect. That is the wrong end of the deal: the LLM ecosystem
-already speaks OpenAI's `chat.completions` contract, and re-teaching the world
-our bespoke format is a non-starter.
+## 问题
 
-A gateway that targets OpenAI's surface gets every existing client for free.
+`s01` 在自定义路径(`/relay`)上回答自定义 JSON 形态。每一个客户端都得
+学习我们的方言。这就站错了队:LLM 生态已经在讲 OpenAI 的 `chat.
+completions` 契约,再去重新教世界我们这套私有格式,根本起不来。
 
-## The Solution
+一个网关只要对接 OpenAI 的面,就能免费拿到所有现有的客户端。
 
-Two adjustments and zero new infrastructure:
+## 方案
 
-1. **Rename the route** from `/relay` to `/v1/chat/completions` — the path
-   OpenAI exposes, the path every client already knows.
-2. **Tighten the request schema** to mirror OpenAI's payload: `model`,
-   `messages: [{role, content}, ...]` (with `min_length=1`), plus optional
-   `temperature`, `max_tokens`, `stream`. Anything else is left for the
-   upstream to reject — the relay does not invent fields.
+两处调整,没有新基础设施:
 
-The forwarding loop is byte-identical. The only thing that changed is *what
-we call ourselves* on the way in.
+1. **重命名路由**: `/relay` → `/v1/chat/completions`,OpenAI 暴露的就
+   是这条路径,所有客户端都已经认识它。
+2. **收紧请求 schema**,对齐 OpenAI 的负载:`model`、`messages: [{role,
+   content}, ...]`(带 `min_length=1`),外加可选的 `temperature`、
+   `max_tokens`、`stream`。其它字段留给上游去拒绝——中继不去发明字段。
+
+转发循环逐字节不变。唯一改的是我们"在外头叫什么"。
 
 ```
-Client ──POST /v1/chat/completions──▶  OpenAI-shaped API  ──POST FORWARD_TARGET──▶  Upstream
+Client ──POST /v1/chat/completions──▶  OpenAI 形态的 API  ──POST FORWARD_TARGET──▶  Upstream
         ◀────── JSON ────────────                         ◀──────── JSON ───────────
 ```
 
 ![architecture](images/architecture.svg)
 
-## How It Works
+## 工作原理
 
-The Pydantic model carries the schema; the handler marshals it through the
-shared `common/json` helpers so the JSON round-trip obeys the same rule as
-every other chapter:
+Pydantic 模型承担 schema;处理器通过 `common/json` 工具做编解码,保证
+JSON 来回的规矩和别的章节完全一致:
 
 ```python
 class ChatMessage(BaseModel):
@@ -53,7 +52,9 @@ class ChatCompletionRequest(BaseModel):
     stream: bool = False
 ```
 
-The route is just `s01`'s relay with a new URL and a typed body. `model_dump(exclude_none=True)` strips the optional fields before serialisation, so callers that omit `temperature` don't pay for an empty JSON key on the wire:
+路由就是把 `s01` 的 relay 换了个 URL、加了个类型化的 body。`model_
+dump(exclude_none=True)` 在序列化前剥掉可空字段,所以不传 `temperature`
+的调用方不会在线上传出一个空的 JSON 键:
 
 ```python
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
@@ -72,34 +73,32 @@ async def chat_completions(req: ChatCompletionRequest) -> dict:
     return unmarshal_str(r.text, ChatCompletionResponse).model_dump()
 ```
 
-`marshal` and `unmarshal_str` from `common/json.py` are the only JSON entry
-points business code is allowed to use: `marshal` produces compact UTF-8 bytes
-(no spaces, `ensure_ascii=False`), and `unmarshal_str` parses the wire body
-through a Pydantic model so response validation is enforced at the boundary.
-Keeping these in one module mirrors new-api's `common/json.go` rule.
+`common/json.py` 的 `marshal` 和 `unmarshal_str` 是业务代码唯一允许使用
+的 JSON 入口:`marshal` 输出紧凑 UTF-8 字节(无空格、`ensure_ascii=
+False`);`unmarshal_str` 通过 Pydantic 模型解析线包,这样在边界处就完成
+了响应校验。把它们集中到一个模块,正好对齐 new-api 的 `common/json.go`
+规则。
 
-Why `exclude_none=True`? OpenAI's API treats absent optional fields as
-"server default". Sending `temperature: null` is a different request — it
-forces `null` and bypasses the upstream default. Stripping the field preserves
-the caller's intent.
+为什么要 `exclude_none=True`?OpenAI 的 API 把"省略的可选字段"理解为
+"服务端用默认"。`temperature: null` 是另一种请求——它强制传 `null`,
+从而绕过上游默认。剥掉字段才能保住调用方的本意。
 
-## Run It
+## 运行
 
 ```sh
 cd s02_openai_protocol
 PORT=8002 python code.py
 ```
 
-Check it is alive:
+确认活着:
 
 ```sh
 curl http://localhost:8002/health
 # {"status":"ok"}
 ```
 
-Relay a request (export `UPSTREAM_OPENAI_KEY` first for a real reply; without
-a key the upstream returns 401 and you will see that status pass straight
-through, which is the behaviour we want):
+转发一次(先 `export UPSTREAM_OPENAI_KEY` 才有真实回复;不设的话上游会
+返回 401,我们正好希望看到原样透传该状态——这正是我们想要的行为):
 
 ```sh
 curl -X POST http://localhost:8002/v1/chat/completions \
@@ -107,44 +106,43 @@ curl -X POST http://localhost:8002/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-## Tests
+## 测试
 
 ```sh
 pytest tests/test_s02_openai_protocol.py -v
 ```
 
-The upstream is mocked with `respx` (the `upstream_openai` fixture in
-`tests/conftest.py`), so the suite runs offline and still asserts the real
-wire shape. The two tests cover:
+上游用 `respx` 进行 mock(`tests/conftest.py` 的 `upstream_openai` 固定
+器),所以套件可以离线跑、同时仍断言真正的线协议形态。两个测试覆盖
+如下:
 
-- `test_openai_route_exists` — a valid payload is relayed and returns a body
-  with a `choices` key.
-- `test_request_validation_rejects_missing_messages` — omitting `messages`
-  is rejected with `422` at the Pydantic boundary, before any network call.
+- `test_openai_route_exists` —— 合法负载被转发,并返回带 `choices` 键
+  的 body。
+- `test_request_validation_rejects_missing_messages` —— 缺 `messages`
+  时,在 Pydantic 边界就返回 `422`,根本不会发出任何网络请求。
 
-## → new-api source
+## → new-api 源码
 
-| Here | new-api |
+| 这里 | new-api |
 |---|---|
-| `ChatCompletionRequest` model | `relay/channel/openai/adaptor.go` — request/response DTO conversion between OpenAI's wire format and the internal `relay` struct |
-| `chat_completions` route | `relay/relay.go` — dispatches the inbound request to the OpenAI `Adaptor` |
-| `model_dump(exclude_none=True)` | `relay/constant.go` — the per-channel normaliser that drops empty fields before forwarding |
+| `ChatCompletionRequest` 模型 | `relay/channel/openai/adaptor.go` —— OpenAI 线协议和内部 `relay` 结构之间的入参/响应 DTO 转换 |
+| `chat_completions` 路由 | `relay/relay.go` —— 把入站请求派发到 OpenAI 的 `Adaptor` |
+| `model_dump(exclude_none=True)` | `relay/constant.go` —— 转发前由它按 channel 做归一化,丢掉空字段 |
 
-new-api generalises this pattern into an `Adaptor` interface
-(`relay/channel/openai/adaptor.go`) with one implementation per provider. We
-arrive at the same design in s04.
+new-api 把这套模式抽象成一个 `Adaptor` 接口(`relay/channel/openai/
+adaptor.go`),每个厂商一个实现。我们在 s04 会走到同样的设计。
 
-## Trade-offs
+## 取舍
 
-What we deliberately did **not** do:
+明确**没有**做的事:
 
-- **No translation for Claude / Gemini**. The body is still OpenAI-shaped, so
-  a Claude-style `system` block or Gemini's `contents` array would be
-  forwarded verbatim and rejected by the upstream. → s04.
-- **No streaming**. `r.json()` waits for the complete body, so token-by-token
-  output is impossible. → s03.
-- **No auth, quota, logging, or metrics.** → s05, s07, s11, s16.
-- **A fresh connection pool per request.** Correct but slow; a long-lived
-  client is the production answer. → s10.
-- **No retries or backoff.** A transient upstream hiccup surfaces as a 502
-  to the caller. → s13.
+- **没有 Claude / Gemini 的协议转换**。请求体仍是 OpenAI 形态,所以
+  Claude 风格的 `system` 块、或 Gemini 的 `contents` 数组都会被原
+  样转发、再被上游拒绝。→ s04。
+- **没有流式**。`r.json()` 等完整 body,所以逐 token 输出不可
+  能。→ s03。
+- **没有鉴权、配额、日志、指标**。→ s05、s07、s11、s16。
+- **每请求新建一个连接池**。正确,但慢;长连接客户端才是生产答
+  案。→ s10。
+- **没有重试和退避**。一次短暂的上游抖动会以 502 暴露给调用
+  方。→ s13。
