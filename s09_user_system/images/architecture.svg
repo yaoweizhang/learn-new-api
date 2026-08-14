@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 420" font-family="monospace">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#37c"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
+    </marker>
+  </defs>
+
+  <!-- Client -->
+  <rect x="10" y="180" width="90" height="60" fill="#eee" stroke="#333"/>
+  <text x="55" y="205" text-anchor="middle">Client</text>
+  <text x="55" y="220" text-anchor="middle" font-size="9">curl / TestClient</text>
+
+  <!-- FastAPI app (s09) -->
+  <rect x="140" y="40" width="220" height="340" fill="#eef" stroke="#37c" stroke-width="2"/>
+  <text x="250" y="60" text-anchor="middle" font-size="13" fill="#37c">s09 code.py</text>
+
+  <!-- signup/login handlers -->
+  <rect x="160" y="80" width="180" height="80" fill="#dde" stroke="#37c"/>
+  <text x="250" y="100" text-anchor="middle" font-size="11">POST /auth/signup</text>
+  <text x="250" y="118" text-anchor="middle" font-size="9">POST /auth/login</text>
+  <text x="250" y="136" text-anchor="middle" font-size="9" fill="#37c">bcrypt.hashpw / checkpw</text>
+
+  <!-- /me handler -->
+  <rect x="160" y="180" width="180" height="70" fill="#dde" stroke="#37c"/>
+  <text x="250" y="200" text-anchor="middle" font-size="11">GET /me</text>
+  <text x="250" y="218" text-anchor="middle" font-size="9">Depends(_current_user)</text>
+  <text x="250" y="236" text-anchor="middle" font-size="9" fill="#37c">decodes Bearer JWT</text>
+
+  <!-- jwt_util -->
+  <rect x="160" y="270" width="180" height="50" fill="#ffe" stroke="#c80"/>
+  <text x="250" y="290" text-anchor="middle" font-size="11">s09 jwt_util.py</text>
+  <text x="250" y="308" text-anchor="middle" font-size="9">issue(uid,email,is_admin)</text>
+
+  <!-- users store (SQLite) -->
+  <rect x="160" y="335" width="180" height="40" fill="#efe" stroke="#282"/>
+  <text x="250" y="355" text-anchor="middle" font-size="11">s09 users.py</text>
+  <text x="250" y="370" text-anchor="middle" font-size="9">SQLite /tmp/...users.db</text>
+
+  <!-- Mounted s08 -->
+  <rect x="420" y="100" width="220" height="220" fill="#fed" stroke="#333"/>
+  <text x="530" y="120" text-anchor="middle" font-size="12">/v1 mount (s08 app)</text>
+  <text x="530" y="140" text-anchor="middle" font-size="10">/v1/chat/completions</text>
+  <text x="530" y="160" text-anchor="middle" font-size="10">auth -&gt; rate -&gt; quota</text>
+  <text x="530" y="180" text-anchor="middle" font-size="10">-&gt; upstream</text>
+  <text x="530" y="305" text-anchor="middle" font-size="9" fill="#2a7">200 + body</text>
+
+  <!-- SQLite DB cylinder -->
+  <ellipse cx="700" cy="335" rx="60" ry="14" fill="#efe" stroke="#282"/>
+  <path d="M640,335 L640,385 a60,14 0 0 0 120,0 L760,335" fill="#efe" stroke="#282"/>
+  <text x="700" y="365" text-anchor="middle" font-size="10">SQLite users</text>
+  <text x="700" y="380" text-anchor="middle" font-size="9">id / email / hash / is_admin</text>
+
+  <!-- Arrows -->
+  <!-- Client -> signup/login -->
+  <line x1="100" y1="190" x2="160" y2="120" stroke="#333" marker-end="url(#a)"/>
+  <text x="125" y="140" font-size="9">{email,password}</text>
+
+  <!-- signup/login -> users (write/check) -->
+  <line x1="250" y1="160" x2="250" y2="335" stroke="#282" marker-end="url(#a)" stroke-width="1.2"/>
+  <text x="265" y="245" font-size="9" fill="#282">create_user / find_by_email</text>
+
+  <!-- signup/login -> jwt_util -->
+  <line x1="340" y1="120" x2="340" y2="270" stroke="#c80" marker-end="url(#a)" stroke-width="1.2"/>
+  <text x="350" y="200" font-size="9" fill="#c80">issue()</text>
+
+  <!-- signup -> Client (token) -->
+  <path d="M250,80 Q90,40 55,180" fill="none" stroke="#37c" stroke-width="1.2" marker-end="url(#b)"/>
+  <text x="100" y="60" font-size="9" fill="#37c">201 + access_token</text>
+
+  <!-- Client -> /me -->
+  <line x1="100" y1="220" x2="160" y2="215" stroke="#333" marker-end="url(#a)"/>
+  <text x="125" y="215" font-size="9">Bearer &lt;jwt&gt;</text>
+
+  <!-- /me -> jwt_util (decode) -->
+  <line x1="250" y1="250" x2="250" y2="270" stroke="#c80" stroke-width="1.2"/>
+  <text x="262" y="263" font-size="9" fill="#c80">decode()</text>
+
+  <!-- /me -> users (claim) -->
+  <path d="M340,250 Q420,330 420,355" fill="none" stroke="#282" stroke-dasharray="3 3" marker-end="url(#a)" stroke-width="1"/>
+  <text x="395" y="295" font-size="9" fill="#282">claims.sub -&gt; id</text>
+
+  <!-- /me -> Client -->
+  <line x1="160" y1="225" x2="100" y2="240" stroke="#37c" marker-end="url(#b)" stroke-width="1.2"/>
+  <text x="100" y="260" font-size="9" fill="#37c">200 + user</text>
+
+  <!-- users -> SQLite cylinder -->
+  <line x1="340" y1="355" x2="640" y2="350" stroke="#282" marker-end="url(#a)" stroke-width="1.2"/>
+  <text x="490" y="345" font-size="9" fill="#282">sqlite3 connect</text>
+
+  <!-- s08 mount response -->
+  <line x1="530" y1="320" x2="530" y2="340" stroke="#2a7" marker-end="url(#g)"/>
+  <text x="540" y="332" font-size="9" fill="#2a7">JSON</text>
+
+  <!-- Footer -->
+  <text x="410" y="410" text-anchor="middle" font-size="9" fill="#666">signup/login: bcrypt + JWT  |  /me: Bearer JWT -&gt; claims  |  s08 chat endpoint mounted under /v1</text>
+</svg>

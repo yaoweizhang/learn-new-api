@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" font-family="sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="360" y="24" text-anchor="middle" font-size="16" font-weight="bold">s15: Docker 部署架构</text>
+
+  <!-- Host -->
+  <rect x="20" y="60" width="680" height="380" rx="6" fill="#fafafa" stroke="#888"/>
+  <text x="40" y="84" font-weight="bold" fill="#555">Docker host</text>
+
+  <!-- Container gateway -->
+  <rect x="50" y="110" width="430" height="290" rx="6" fill="#e3f2fd" stroke="#1565c0" stroke-width="2"/>
+  <text x="70" y="134" font-weight="bold" fill="#1565c0">Container: gateway</text>
+  <text x="70" y="152" font-size="11" fill="#555">FROM python:3.11-slim | HEALTHCHECK /healthz</text>
+
+  <!-- Inside gateway: s15 app -->
+  <rect x="70" y="170" width="200" height="60" rx="4" fill="#fff3e0" stroke="#ef6c00"/>
+  <text x="170" y="192" text-anchor="middle" font-weight="bold" fill="#ef6c00">s15 app</text>
+  <text x="170" y="210" text-anchor="middle" font-size="11" fill="#555">/healthz (deep)</text>
+  <text x="170" y="225" text-anchor="middle" font-size="11" fill="#555">mount "/" → s14</text>
+
+  <!-- s14 -->
+  <rect x="290" y="170" width="170" height="60" rx="4" fill="#fff" stroke="#6a1b9a"/>
+  <text x="375" y="192" text-anchor="middle" font-weight="bold" fill="#6a1b9a">s14 admin</text>
+  <text x="375" y="210" text-anchor="middle" font-size="11" fill="#555">/dashboard/*</text>
+  <text x="375" y="225" text-anchor="middle" font-size="11" fill="#555">mount "/" → s13 ...</text>
+
+  <!-- Mount arrow s15 -> s14 -->
+  <line x1="270" y1="200" x2="290" y2="200" stroke="#333" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- Uvicorn / port -->
+  <rect x="70" y="250" width="390" height="50" rx="4" fill="#e8f5e9" stroke="#2e7d32"/>
+  <text x="265" y="272" text-anchor="middle" font-weight="bold" fill="#2e7d32">Uvicorn : 0.0.0.0:8015</text>
+  <text x="265" y="290" text-anchor="middle" font-size="11" fill="#555">CMD ["python","s15_docker_deployment/code.py"]</text>
+
+  <!-- HEALTHCHECK label -->
+  <rect x="70" y="315" width="390" height="65" rx="4" fill="#fffde7" stroke="#f9a825"/>
+  <text x="265" y="337" text-anchor="middle" font-weight="bold" fill="#f9a825">HEALTHCHECK</text>
+  <text x="265" y="355" text-anchor="middle" font-size="11" fill="#555">--interval=30s --timeout=5s</text>
+  <text x="265" y="370" text-anchor="middle" font-size="11" fill="#555">--start-period=10s --retries=3</text>
+
+  <!-- Container redis -->
+  <rect x="510" y="110" width="170" height="290" rx="6" fill="#fce4ec" stroke="#ad1457" stroke-width="1.5"/>
+  <text x="595" y="134" text-anchor="middle" font-weight="bold" fill="#ad1457">Container: redis</text>
+  <text x="595" y="152" text-anchor="middle" font-size="11" fill="#555">redis:7-alpine :6379</text>
+
+  <!-- Reserved-for-future box -->
+  <rect x="530" y="170" width="130" height="210" rx="4" fill="#fff" stroke="#ad1457" stroke-dasharray="4,3"/>
+  <text x="595" y="195" text-anchor="middle" font-size="11" fill="#ad1457">reserved for</text>
+  <text x="595" y="212" text-anchor="middle" font-size="11" fill="#ad1457">future chapters:</text>
+  <text x="595" y="240" text-anchor="middle" font-size="11" fill="#555">- rate limit</text>
+  <text x="595" y="258" text-anchor="middle" font-size="11" fill="#555">  (s08 token bucket)</text>
+  <text x="595" y="280" text-anchor="middle" font-size="11" fill="#555">- cache</text>
+  <text x="595" y="298" text-anchor="middle" font-size="11" fill="#555">  (s12)</text>
+  <text x="595" y="320" text-anchor="middle" font-size="11" fill="#555">not wired in s15,</text>
+  <text x="595" y="338" text-anchor="middle" font-size="11" fill="#555">compose already</text>
+  <text x="595" y="356" text-anchor="middle" font-size="11" fill="#555">declares it so</text>
+  <text x="595" y="374" text-anchor="middle" font-size="11" fill="#555">later chapters</text>
+  <text x="595" y="392" text-anchor="middle" font-size="11" fill="#555">just depends_on</text>
+
+  <!-- depends_on arrow -->
+  <line x1="480" y1="280" x2="510" y2="280" stroke="#333" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+  <text x="495" y="270" text-anchor="middle" font-size="10" fill="#555">depends_on</text>
+
+  <!-- Port mapping host-side -->
+  <line x1="150" y1="290" x2="20" y2="290" stroke="#333" stroke-width="1.5"/>
+  <line x1="20" y1="290" x2="20" y2="460" stroke="#333" stroke-width="1.5"/>
+  <line x1="20" y1="460" x2="360" y2="460" stroke="#333" stroke-width="1.5"/>
+  <text x="30" y="455" font-size="11" fill="#555">8015:8015 → host:8015</text>
+
+  <!-- External probe -->
+  <text x="640" y="460" text-anchor="end" font-size="11" fill="#555">curl /healthz · 200 → healthy</text>
+</svg>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="monospace">
+  <style>
+    .box { fill: #fafafa; stroke: #333; stroke-width: 1.5; }
+    .mid { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
+    .log { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
+    .met { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 1.5; }
+    .label { font-size: 13px; fill: #222; }
+    .small { font-size: 11px; fill: #555; }
+    .arrow { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .arrow2 { stroke: #555; stroke-width: 1; fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+  </defs>
+
+  <text x="360" y="22" text-anchor="middle" font-size="15" font-weight="bold">s16 observability: Prometheus + structlog + trace_id</text>
+
+  <!-- Client -->
+  <rect class="box" x="20" y="60" width="120" height="50"/>
+  <text x="80" y="85" text-anchor="middle" class="label">Client</text>
+  <text x="80" y="103" text-anchor="middle" class="small">x-trace-id: abc-123</text>
+
+  <!-- Middleware -->
+  <rect class="mid" x="190" y="50" width="180" height="80"/>
+  <text x="280" y="75" text-anchor="middle" class="label">TraceAndMetricsMiddleware</text>
+  <text x="280" y="95" text-anchor="middle" class="small">trace_id = hdr or uuid4</text>
+  <text x="280" y="111" text-anchor="middle" class="small">t0 = perf_counter()</text>
+
+  <!-- App (s15 mounted) -->
+  <rect class="box" x="420" y="50" width="160" height="80"/>
+  <text x="500" y="75" text-anchor="middle" class="label">FastAPI app</text>
+  <text x="500" y="93" text-anchor="middle" class="small">/healthz (s15)</text>
+  <text x="500" y="108" text-anchor="middle" class="small">/v1/v1/chat/completions</text>
+
+  <!-- Arrows top row -->
+  <line class="arrow" x1="140" y1="85" x2="188" y2="85"/>
+  <line class="arrow" x1="370" y1="85" x2="418" y2="85"/>
+
+  <!-- Counter + Histogram (downstream of middleware) -->
+  <rect class="met" x="190" y="170" width="180" height="70"/>
+  <text x="280" y="192" text-anchor="middle" class="label">REQUESTS / LATENCY</text>
+  <text x="280" y="208" text-anchor="middle" class="small">if path == chat</text>
+  <text x="280" y="223" text-anchor="middle" class="small">.labels(model, status).inc()</text>
+  <line class="arrow2" x1="280" y1="132" x2="280" y2="168"/>
+
+  <!-- structlog (downstream of middleware) -->
+  <rect class="log" x="420" y="170" width="160" height="70"/>
+  <text x="500" y="192" text-anchor="middle" class="label">structlog</text>
+  <text x="500" y="208" text-anchor="middle" class="small">JSON one-line</text>
+  <text x="500" y="223" text-anchor="middle" class="small">stdout → docker logs</text>
+  <line class="arrow2" x1="370" y1="100" x2="418" y2="200"/>
+
+  <!-- /metrics endpoint -->
+  <rect class="met" x="420" y="260" width="160" height="60"/>
+  <text x="500" y="283" text-anchor="middle" class="label">GET /metrics</text>
+  <text x="500" y="299" text-anchor="middle" class="small">text/plain; v=1.0.0; charset=utf-8</text>
+  <line class="arrow2" x1="280" y1="205" x2="418" y2="285"/>
+
+  <!-- Prometheus scraper -->
+  <rect class="box" x="190" y="260" width="180" height="60"/>
+  <text x="280" y="283" text-anchor="middle" class="label">Prometheus</text>
+  <text x="280" y="299" text-anchor="middle" class="small">/metrics every 15s</text>
+  <line class="arrow2" x1="500" y1="290" x2="372" y2="290"/>
+
+  <!-- Response back -->
+  <line class="arrow" x1="418" y1="115" x2="190" y2="115"/>
+  <line class="arrow" x1="188" y1="115" x2="142" y2="115"/>
+  <text x="300" y="105" text-anchor="middle" class="small">200 + x-trace-id: abc-123</text>
+</svg>

@@ -494,7 +494,6 @@ git commit -m "chore: makefile and smoke script"
 **Interfaces (consumed by later tasks):**
 - `app: FastAPI` exported from `s01_minimal_relay.code`
 - `FORWARD_TARGET: str` (URL the relay sends to)
-- `forward_request(target_url, payload) -> dict`
 
 **Step 1: Write failing test** `tests/test_s01_minimal_relay.py`:
 
@@ -2944,19 +2943,10 @@ async def _stop_flusher():
         _stop_event.set()
 
 
-# Wrap the mounted chat endpoint to log
-@app.post("/v1/chat/completions")
-async def chat_with_logging():
-    from fastapi import Request
-    from s10_channel_management.code import app as upstream_app
-    # We rely on s10's actual handler; here we just attach logging by
-    # monkey-patching the route's dependency. Simpler: duplicate the logic.
-    # For tutorial brevity, we call into upstream and then enqueue.
-    raise NotImplementedError("see mounted app")
-
-
-# Pragmatic shortcut: re-route through s10's handler and post-process via a
-# FastAPI middleware.
+# The chat endpoint is handled by the mounted s10 app at `/v1/chat/completions`.
+# We do NOT redefine the route here — FastAPI would resolve the more specific
+# (this-app) route over the mounted one and break the chain. Instead we log
+# via a middleware below that wraps the entire app (mounted apps included).
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
@@ -3122,6 +3112,13 @@ def set(payload: dict, value: bytes, ttl_seconds: int = 300) -> None:
     expires_at = time.monotonic() + ttl_seconds
     with _lock:
         _store[key] = (expires_at, value)
+
+
+def stats() -> dict:
+    with _lock:
+        now = time.monotonic()
+        live = sum(1 for exp, _ in _store.values() if exp > now)
+        return {"size": len(_store), "live": live}
 ```
 
 **Step 4: Write `s12_caching/code.py`:**
@@ -3131,13 +3128,19 @@ def set(payload: dict, value: bytes, ttl_seconds: int = 300) -> None:
 
 Cache key: sha256 of {model, messages, temperature}. TTL configurable.
 Skip cache if `stream=True` (streaming responses can't be cached whole).
+
+Implementation note: cache lookup happens in a middleware that wraps the
+mounted s11 app. We do NOT define our own `/v1/chat/completions` route —
+FastAPI would shadow the mounted one and break everything (see s11 README).
 """
 from __future__ import annotations
 
 import json
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from s11_call_logs.code import app as s11_app
 from s12_caching import cache
@@ -3145,28 +3148,38 @@ from s12_caching import cache
 app = FastAPI(title="learn-new-api s12")
 app.mount("/", s11_app)
 
-# Wrap the upstream s11 handler with cache logic by intercepting at the ASGI level.
-# Pragmatic shortcut for tutorial: rely on s11's behavior; add a thin decorator-like
-# FastAPI dependency for cache lookup on the chat endpoint.
-from fastapi import Request
-from fastapi.responses import JSONResponse
-import httpx
+
+class CacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "POST" and request.url.path == "/v1/chat/completions":
+            body_bytes = await request.body()
+            try:
+                payload = json.loads(body_bytes)
+            except Exception:
+                payload = {}
+            if not payload.get("stream"):
+                hit = cache.get(payload)
+                if hit is not None:
+                    return Response(content=hit, media_type="application/json")
+            response = await call_next(request)
+            if response.status_code == 200 and not payload.get("stream"):
+                chunks = []
+                async for chunk in response.body_iterator:
+                    chunks.append(chunk)
+                body = b"".join(chunks)
+                cache.set(payload, body)
+                return Response(content=body, status_code=response.status_code,
+                                headers=dict(response.headers), media_type=response.media_type)
+            return response
+        return await call_next(request)
 
 
-@app.post("/v1/chat/completions")
-async def chat_with_cache(request: Request):
-    body_bytes = await request.body()
-    payload = json.loads(body_bytes)
-    if not payload.get("stream"):
-        hit = cache.get(payload)
-        if hit is not None:
-            return JSONResponse(json.loads(hit))
-    # Forward to upstream s11 handler internally
-    async with httpx.AsyncClient(base_url="http://localhost:8011") as client:
-        r = await client.post("/v1/chat/completions", content=body_bytes, headers=request.headers)
-    if r.status_code < 400 and not payload.get("stream"):
-        cache.set(payload, r.content)
-    return JSONResponse(content=r.json(), status_code=r.status_code, headers=dict(r.headers))
+app.add_middleware(CacheMiddleware)
+
+
+@app.get("/admin/cache/stats")
+def cache_stats() -> dict:
+    return cache.stats()
 
 
 if __name__ == "__main__":
