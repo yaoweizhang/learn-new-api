@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 460" font-family="monospace">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#37c"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
+    </marker>
+  </defs>
+
+  <!-- Admin client -->
+  <rect x="10" y="200" width="90" height="60" fill="#eee" stroke="#333"/>
+  <text x="55" y="225" text-anchor="middle">Admin</text>
+  <text x="55" y="240" text-anchor="middle" font-size="9">curl / TestClient</text>
+
+  <!-- FastAPI app (s10) -->
+  <rect x="140" y="40" width="240" height="380" fill="#eef" stroke="#37c" stroke-width="2"/>
+  <text x="260" y="60" text-anchor="middle" font-size="13" fill="#37c">s10 code.py</text>
+
+  <!-- /admin/channels handlers -->
+  <rect x="160" y="80" width="200" height="100" fill="#dde" stroke="#37c"/>
+  <text x="260" y="100" text-anchor="middle" font-size="11">POST /admin/channels</text>
+  <text x="260" y="118" text-anchor="middle" font-size="9">GET /admin/channels</text>
+  <text x="260" y="138" text-anchor="middle" font-size="9" fill="#37c">Depends(_require_admin)</text>
+  <text x="260" y="155" text-anchor="middle" font-size="9" fill="#a33">403 admin only</text>
+
+  <!-- _require_admin -->
+  <rect x="160" y="200" width="200" height="60" fill="#fee" stroke="#a33"/>
+  <text x="260" y="220" text-anchor="middle" font-size="11">_require_admin</text>
+  <text x="260" y="238" text-anchor="middle" font-size="9">decode Bearer JWT</text>
+  <text x="260" y="253" text-anchor="middle" font-size="9" fill="#a33">check claims.is_admin</text>
+
+  <!-- jwt_util -->
+  <rect x="160" y="280" width="200" height="50" fill="#ffe" stroke="#c80"/>
+  <text x="260" y="300" text-anchor="middle" font-size="11">s09 jwt_util.py</text>
+  <text x="260" y="318" text-anchor="middle" font-size="9">issue / decode</text>
+
+  <!-- channels store -->
+  <rect x="160" y="350" width="200" height="60" fill="#efe" stroke="#282"/>
+  <text x="260" y="370" text-anchor="middle" font-size="11">s10 channels.py</text>
+  <text x="260" y="388" text-anchor="middle" font-size="9">create/list/get/mark_unhealthy</text>
+  <text x="260" y="403" text-anchor="middle" font-size="9" fill="#282">pick_channel_for()</text>
+
+  <!-- Mounted s09 -->
+  <rect x="440" y="120" width="200" height="180" fill="#fed" stroke="#333"/>
+  <text x="540" y="140" text-anchor="middle" font-size="12">/ mount (s09 app)</text>
+  <text x="540" y="160" text-anchor="middle" font-size="10">/auth/signup, /auth/login</text>
+  <text x="540" y="180" text-anchor="middle" font-size="10">/me (Depends _current_user)</text>
+  <text x="540" y="200" text-anchor="middle" font-size="10">/v1/chat/completions</text>
+  <text x="540" y="220" text-anchor="middle" font-size="10">(s08 auth/rate/quota)</text>
+  <text x="540" y="285" text-anchor="middle" font-size="9" fill="#666">mounted LAST so admin routes</text>
+  <text x="540" y="298" text-anchor="middle" font-size="9" fill="#666">match first in Starlette</text>
+
+  <!-- channels data box -->
+  <rect x="700" y="120" width="160" height="180" fill="#efe" stroke="#282"/>
+  <text x="780" y="140" text-anchor="middle" font-size="11" fill="#282">channels table</text>
+  <text x="780" y="165" text-anchor="middle" font-size="9">id:1  openai-primary</text>
+  <text x="780" y="180" text-anchor="middle" font-size="9">  weight=100 priority=0</text>
+  <text x="780" y="200" text-anchor="middle" font-size="9">id:2  openai-backup</text>
+  <text x="780" y="215" text-anchor="middle" font-size="9">  weight=50  priority=1</text>
+  <text x="780" y="240" text-anchor="middle" font-size="9" fill="#282">healthy = True/False</text>
+  <text x="780" y="260" text-anchor="middle" font-size="9" fill="#282">enabled = True/False</text>
+  <text x="780" y="285" text-anchor="middle" font-size="9" fill="#2a7">pick_channel_for(provider)</text>
+
+  <!-- Arrows -->
+  <!-- Admin -> POST /admin/channels -->
+  <line x1="100" y1="210" x2="160" y2="120" stroke="#333" marker-end="url(#a)"/>
+  <text x="115" y="155" font-size="9">Bearer jwt</text>
+
+  <!-- Admin -> GET /admin/channels -->
+  <line x1="100" y1="240" x2="160" y2="155" stroke="#333" marker-end="url(#a)"/>
+
+  <!-- handlers -> _require_admin -->
+  <line x1="260" y1="180" x2="260" y2="200" stroke="#a33" stroke-width="1.2"/>
+
+  <!-- _require_admin -> jwt_util -->
+  <line x1="260" y1="260" x2="260" y2="280" stroke="#c80" stroke-width="1.2"/>
+  <text x="270" y="273" font-size="9" fill="#c80">decode()</text>
+
+  <!-- handlers -> channels store -->
+  <line x1="260" y1="160" x2="260" y2="350" stroke="#282" marker-end="url(#a)" stroke-width="1.2"/>
+  <text x="270" y="240" font-size="9" fill="#282">create_channel()</text>
+
+  <!-- handlers -> Client (201) -->
+  <path d="M160,110 Q90,40 55,200" fill="none" stroke="#37c" stroke-width="1.2" marker-end="url(#b)"/>
+  <text x="80" y="80" font-size="9" fill="#37c">201 + {id,name}</text>
+
+  <!-- channels -> channels data box -->
+  <line x1="360" y1="380" x2="700" y2="240" stroke="#282" marker-end="url(#a)" stroke-width="1.2"/>
+  <text x="430" y="320" font-size="9" fill="#282">dict[id] -&gt; Channel</text>
+
+  <!-- channels -> Client (list) -->
+  <path d="M360,395 Q500,440 55,250" fill="none" stroke="#2a7" stroke-width="1.2" marker-end="url(#g)"/>
+  <text x="180" y="445" font-size="9" fill="#2a7">200 + [Channel...]</text>
+
+  <!-- Admin -> s09 mount (signup/login) -->
+  <path d="M55,260 Q400,400 440,180" fill="none" stroke="#333" stroke-dasharray="3 3" marker-end="url(#a)"/>
+  <text x="100" y="425" font-size="9" fill="#666">signup/login (still works)</text>
+
+  <!-- Footer -->
+  <text x="440" y="450" text-anchor="middle" font-size="9" fill="#666">s10: admin-only channel registry  |  pick = (priority asc, weight desc, healthy=True)  |  s13 adds health loop + retry</text>
+</svg>
