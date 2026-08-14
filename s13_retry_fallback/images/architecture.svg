@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" font-family="sans-serif">
+  <title>s13: retry transient upstream errors + channel fallback</title>
+
+  <defs>
+    <style>
+      .box { fill: #ffffff; stroke: #333; stroke-width: 1.5; }
+      .accent { fill: #fdf6e3; stroke: #cb4b16; stroke-width: 1.5; }
+      .label { font-size: 14px; fill: #222; }
+      .sub { font-size: 11px; fill: #666; }
+      .arrow { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#a); }
+      .retry { stroke: #d33682; stroke-width: 2; fill: none; marker-end: url(#ar); }
+      .fallback { stroke: #cb4b16; stroke-width: 2; fill: none; marker-end: url(#af); }
+      .ok { stroke: #2a9d4a; stroke-width: 2; fill: none; marker-end: url(#ao); }
+    </style>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#d33682"/>
+    </marker>
+    <marker id="af" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#cb4b16"/>
+    </marker>
+    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a9d4a"/>
+    </marker>
+  </defs>
+
+  <text x="400" y="28" text-anchor="middle" font-size="18" font-weight="bold">s13: retry + channel fallback</text>
+
+  <!-- Client -->
+  <rect class="box" x="40" y="70" width="100" height="40" rx="4"/>
+  <text class="label" x="90" y="95" text-anchor="middle">Client</text>
+
+  <!-- s13 app boundary -->
+  <rect class="box" x="180" y="60" width="580" height="380" rx="6" stroke-dasharray="4 3"/>
+  <text class="label" x="200" y="80">s13_retry_fallback (app)</text>
+
+  <!-- Local route (registered first) -->
+  <rect class="accent" x="200" y="100" width="240" height="80" rx="4"/>
+  <text class="label" x="320" y="125" text-anchor="middle">@app.post("/v1/chat/completions")</text>
+  <text class="sub" x="320" y="145" text-anchor="middle">chat_with_retry(req)</text>
+  <text class="sub" x="320" y="160" text-anchor="middle">local route shadows mount</text>
+
+  <!-- _call_with_retry -->
+  <rect class="accent" x="200" y="210" width="240" height="70" rx="4"/>
+  <text class="label" x="320" y="235" text-anchor="middle">_call_with_retry</text>
+  <text class="sub" x="320" y="252" text-anchor="middle">tenacity: 3 attempts, exp backoff</text>
+  <text class="sub" x="320" y="268" text-anchor="middle">retry on httpx.HTTPError</text>
+
+  <!-- channel loop -->
+  <rect class="accent" x="200" y="310" width="240" height="60" rx="4"/>
+  <text class="label" x="320" y="335" text-anchor="middle">for ch in candidates:</text>
+  <text class="sub" x="320" y="352" text-anchor="middle">if not healthy: continue</text>
+
+  <!-- channels list -->
+  <rect class="box" x="500" y="100" width="240" height="270" rx="4"/>
+  <text class="label" x="620" y="125" text-anchor="middle">s10 channels</text>
+  <text class="sub" x="620" y="142" text-anchor="middle">list_channels()</text>
+
+  <!-- channel rows -->
+  <rect class="box" x="520" y="155" width="200" height="40" rx="4"/>
+  <text class="label" x="620" y="180" text-anchor="middle">c1 (priority=0, healthy)</text>
+
+  <rect class="box" x="520" y="205" width="200" height="40" rx="4"/>
+  <text class="label" x="620" y="230" text-anchor="middle">c2 (priority=1, healthy)</text>
+
+  <rect class="box" x="520" y="255" width="200" height="40" rx="4"/>
+  <text class="label" x="620" y="280" text-anchor="middle">c3 (priority=2, healthy)</text>
+
+  <!-- mark_unhealthy note -->
+  <text class="sub" x="620" y="320" text-anchor="middle">failed ch → mark_unhealthy(id)</text>
+  <text class="sub" x="620" y="338" text-anchor="middle">→ next priority ch</text>
+
+  <!-- s12 mount -->
+  <rect class="box" x="200" y="400" width="540" height="40" rx="4"/>
+  <text class="label" x="470" y="425" text-anchor="middle">app.mount("/", s12_app)  —  /admin/cache/stats still reachable</text>
+
+  <!-- Upstream (mock OpenAI) -->
+  <rect class="box" x="500" y="400" width="220" height="40" rx="4"/>
+  <text class="label" x="610" y="425" text-anchor="middle">Upstream (mock OpenAI)</text>
+
+  <!-- arrows: client -> local route -->
+  <line class="arrow" x1="140" y1="90" x2="200" y2="125"/>
+
+  <!-- local route -> retry fn -->
+  <line class="arrow" x1="320" y1="180" x2="320" y2="210"/>
+
+  <!-- retry fn -> channel loop -->
+  <line class="arrow" x1="320" y1="280" x2="320" y2="310"/>
+
+  <!-- channel loop -> channels list -->
+  <line class="arrow" x1="440" y1="340" x2="520" y2="180"/>
+
+  <!-- retry loop: c1 -> retry fn (back-arrow) -->
+  <path class="retry" d="M520,180 Q360,170 360,210" />
+  <text class="sub" x="430" y="195" fill="#d33682">503 → retry (0.2s)</text>
+
+  <!-- 503 again -->
+  <path class="retry" d="M520,180 Q360,175 360,210" stroke-dasharray="3 2"/>
+
+  <!-- 200 ok: c1 -> client -->
+  <path class="ok" d="M610,200 Q220,460 90,110" />
+  <text class="label" x="200" y="475" fill="#2a9d4a">200 → return</text>
+
+  <!-- fallback: c1 fails -> c2 -->
+  <path class="fallback" d="M620,200 Q620,240 620,250" />
+  <text class="sub" x="640" y="240" fill="#cb4b16">mark_unhealthy(c1)</text>
+  <path class="fallback" d="M620,260 Q620,290 620,300" />
+
+  <text class="sub" x="400" y="510" text-anchor="middle">3 attempts per ch, exp backoff (0.2s, 0.4s); all-transient → next priority channel</text>
+</svg>
