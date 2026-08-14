@@ -57,7 +57,7 @@ class ChatCompletionRequest(BaseModel):
 @app.post("/v1/chat/completions")
 async def chat_with_retry(req: ChatCompletionRequest):
     try:
-        provider = pick_provider(req.model)
+        pick_provider(req.model)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     # Find any channel whose provider matches; fall back through priorities.
