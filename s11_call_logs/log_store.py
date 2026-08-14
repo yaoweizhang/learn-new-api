@@ -1,7 +1,7 @@
 """In-memory log store with async flush.
 
 Real impl writes to SQLite/MySQL/PostgreSQL. Here we use a thread-safe
-deque and an async task that flushes every 0.5s.
+deque and an async task that flushes every 0.1s.
 """
 from __future__ import annotations
 
