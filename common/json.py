@@ -6,18 +6,11 @@ Direct json.dumps/json.loads is forbidden except inside this module.
 from __future__ import annotations
 
 import json
-from io import StringIO
 from typing import Any
 
 
 def marshal(obj: Any) -> bytes:
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
-
-
-def unmarshal(data: bytes | str, obj: Any) -> Any:
-    if isinstance(data, bytes):
-        data = data.decode("utf-8")
-    return json.loads(data, object_hook=lambda d: obj(**d)) if False else obj.parse_raw(data)
 
 
 def unmarshal_str(data: str, target_model: type) -> Any:
