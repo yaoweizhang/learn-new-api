@@ -243,11 +243,11 @@ pytest tests/test_s12_caching.py -v
   `app.mount("/v1", s08_app)` 改成 `app.mount("/", s08_app)` + s08
   路由改名 `/chat/completions`，但那会改动 s08-s11 所有章节的测试，
   留到接口契约统一清理那一章再做。
-- **body 读完不再喂回，s11 的 model 永远记成 "?"** —— Starlette 的
-  body 只能读一次；s12 先读出来算 key，下游再读就是空。s11 的
-  `LogMiddleware` 拿不到 model。v2 把 key 算出来的同时把 model 写
-  到 `request.state.model`，s11 改成读 `request.state.model`（中
-  间件之间的状态透传）。
+- **body 读完仍可被下游 middleware 复用** —— Starlette 的
+  `BaseHTTPMiddleware` 在首次 `await request.body()` 后会把字节缓存
+  到 `request._body`，下游中间件（包括 s11 的 `LogMiddleware`）再读
+  拿到的依然是同一份完整 body，所以 s11 的 `request.state.model` 字
+  段会正常记录实际 model，不需要走 `request.state` 透传。
 - **TTL 固定 300 秒** —— 不暴露给客户端、不按模型分级。生产里
   高频问答（"今天天气"）应该 TTL 短（30s），代码补全（"写个快排"）
   可以 TTL 长（1 天）；本章先让缓存生效，配置粒度是 v2 的事。
