@@ -1,5 +1,7 @@
 # s15_docker_deployment
 
+> Previous: [s14](../s14_admin_dashboard/) · Next: [s16](../s16_observability/)
+
 ## 问题
 
 到 s14,我们的 FastAPI 应用已经在开发机上跑得通:`python s14_admin_dashboard/code.py` 一开浏览器就能看到仪表盘。问题是:"在我机器上能跑" 不等于 "上生产能跑"。

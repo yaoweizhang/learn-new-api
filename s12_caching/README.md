@@ -1,5 +1,7 @@
 # s12：精确匹配响应缓存（in-memory dict + sha256 key）
 
+> Previous: [s11](../s11_call_logs/) · Next: [s13](../s13_retry_fallback/)
+
 ## 问题
 
 前 11 章里，每次客户端问"gpt-4o-mini 给我讲个笑话"，请求都会原封

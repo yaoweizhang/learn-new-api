@@ -1,5 +1,7 @@
 # s14：最简服务端渲染的管理后台（Jinja2 + 会话 Cookie）
 
+> Previous: [s13](../s13_retry_fallback/) · Next: [s15](../s15_docker_deployment/)
+
 ## 问题
 
 走到第 13 章，网关已经能跑了：用户签到、配额扣减、渠道选择 + 重试

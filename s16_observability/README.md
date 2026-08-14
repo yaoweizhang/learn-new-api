@@ -1,5 +1,7 @@
 # s16: 可观测性 — Prometheus 指标 + 结构化日志 + trace_id
 
+> Previous: [s15](../s15_docker_deployment/) · Next: [s_full](../s_full/)
+
 ## 问题
 
 到 s15 为止,我们只能回答"服务有没有起来"(看 `/healthz`) 和"请求成功没有"(看 HTTP 状态码)。如果用户报告"今天 chat 很慢",我们需要:

@@ -1,5 +1,7 @@
 # s08: Per-User Token Bucket Rate Limiting
 
+> Previous: [s07](../s07_pre_consume_settle/) · Next: [s09](../s09_user_system/)
+
 ## Problem
 
 Quota controls *cost* — a user with plenty of balance can still flood the

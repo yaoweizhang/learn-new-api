@@ -1,5 +1,7 @@
 # s07: Pre-consume and Settle
 
+> Previous: [s06](../s06_token_counting/) · Next: [s08](../s08_rate_limiting/)
+
 ## Problem
 
 A user with 100 tokens of quota could submit 100 parallel requests of 100

@@ -1,5 +1,7 @@
 # s11: 异步调用日志（buffer + flush_loop）
 
+> Previous: [s10](../s10_channel_management/) · Next: [s12](../s12_caching/)
+
 ## 问题
 
 前 10 章里，每条 `/v1/chat/completions` 请求走完一遍就消失了：上游返
