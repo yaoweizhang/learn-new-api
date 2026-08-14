@@ -26,7 +26,10 @@ class TraceAndMetricsMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
         response = await call_next(request)
         elapsed = time.perf_counter() - start
-        # Note: real chat path is /v1/v1/chat/completions (see s04/s05 ledger).
+        # Two distinct chat handlers exist in the stack: s13 owns /v1/chat/completions
+        # (defined on s13's own app before the mount) and the mount chain also exposes
+        # /v1/v1/chat/completions via s12→s11→s10→s09→s08 (s09 mounts s08 at /v1).
+        # Match both so the counter fires regardless of which front door a client uses.
         # Counter labels use "unknown" by default; production should plumb
         # request.state.model from the chat handler. Kept as-is per YAGNI.
         if request.url.path in ("/v1/chat/completions", "/v1/v1/chat/completions"):

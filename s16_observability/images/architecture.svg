@@ -56,7 +56,7 @@
   <!-- /metrics endpoint -->
   <rect class="met" x="420" y="260" width="160" height="60"/>
   <text x="500" y="283" text-anchor="middle" class="label">GET /metrics</text>
-  <text x="500" y="299" text-anchor="middle" class="small">text/plain; v=0.0.4</text>
+  <text x="500" y="299" text-anchor="middle" class="small">text/plain; v=1.0.0; charset=utf-8</text>
   <line class="arrow2" x1="280" y1="205" x2="418" y2="285"/>
 
   <!-- Prometheus scraper -->

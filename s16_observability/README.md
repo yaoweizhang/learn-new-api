@@ -14,7 +14,7 @@
 
 引入三个最小但够用的机制:
 
-1. **Prometheus 指标**:`prometheus_client` 在进程内维护计数器与直方图,`/metrics` 端点以 `text/plain; version=0.0.4` 暴露。
+1. **Prometheus 指标**:`prometheus_client` 在进程内维护计数器与直方图,`/metrics` 端点以 `text/plain; version=1.0.0; charset=utf-8` 暴露。
 2. **结构化日志**:`structlog` 把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki 解析。
 3. **`trace_id` 透传**:一个 `BaseHTTPMiddleware` 读 `x-trace-id` 请求头(没有就生成),回写到响应头,并写进每条日志。
 
@@ -60,7 +60,8 @@ python -m s16_observability.code     # 或: uvicorn s16_observability.code:app
 curl -s localhost:8016/metrics | head -20
 # HELP learn_new_api_requests_total Total /v1/chat/completions requests
 # TYPE learn_new_api_requests_total counter
-# (此刻还没有 chat 请求打点,counter 不会出现在输出里 —— 见下方取舍)
+# (HELP/TYPE 这两行在进程启动时就会出现,所以现有测试不发起 chat 也能过;
+# 实际带 label 的样本行只有在有 chat 请求触发 inc() 之后才会出现 —— 见下方取舍)
 ```
 
 发个 chat 请求(让计数器产生数据):
@@ -106,6 +107,6 @@ python -m pytest tests/test_s16_observability.py -v
 | 日志聚合(Loki / ELK 客户端) | **不做** | 同上。结构化 JSON 已经够 `docker logs \| jq` 用了,真正接入 Loki 是部署侧的事。 |
 | 告警规则(Prometheus alerting rules) | **不做** | 告警是 SRE 域,不是代码域。 |
 | `model` 标签 | **永远是 `"unknown"`** | brief 用 `request.headers.get("x-model", "unknown")`,但模型在 JSON body 不在头里。正确做法是从 chat handler 写到 `request.state.model`。YAGNI,留默认。生产里 `model` label 高基数会爆 Prometheus,需要采样。 |
-| `/v1/chat/completions` 路径匹配 | **同时匹配 `/v1/chat/completions` 与 `/v1/v1/chat/completions`** | brief 只写了前者,但实际可达路径是后者(见 s04/s05 ledger)。两个都匹配保证计数器真的会被打到。 |
+| `/v1/chat/completions` 路径匹配 | **同时匹配 `/v1/chat/completions` 与 `/v1/v1/chat/completions`** | brief 只写了 `/v1/chat/completions`,但实际可达路径有两条:<br>- `/v1/chat/completions` —— s13 自己的路由(s13 在 mount 之前先定义)<br>- `/v1/v1/chat/completions` —— 挂载链 s12→s11→...→s08<br>中间件两条都计数,这样无论客户端走哪个入口都能上 metric。 |
 | `/metrics` 与 mount 顺序 | **`/metrics` 在 mount 之前注册** | Starlette 路由顺序坑。 |
 | 中间件 vs 装饰器 | **中间件** | 一处定义全局生效;装饰器需要给每个 handler 加 `@track_metrics`,易漏。 |

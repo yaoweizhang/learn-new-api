@@ -20,3 +20,11 @@ def test_trace_id_propagates_to_response():
     with TestClient(app) as c:
         r = c.get("/healthz", headers={"x-trace-id": "abc-123"})
     assert r.headers.get("x-trace-id") == "abc-123"
+
+
+def test_chat_request_increments_counter():
+    with TestClient(app) as c:
+        c.post("/v1/chat/completions", json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]})
+        r = c.get("/metrics")
+    assert "learn_new_api_requests_total" in r.text
+    assert 'model="unknown"' in r.text  # default label since we don't plumb request.state.model
