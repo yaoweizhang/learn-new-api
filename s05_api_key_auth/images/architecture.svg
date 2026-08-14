@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" font-family="monospace">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
+    </marker>
+  </defs>
+
+  <!-- Client -->
+  <rect x="10" y="100" width="80" height="50" fill="#eee" stroke="#333"/>
+  <text x="50" y="125" text-anchor="middle">Client</text>
+  <text x="50" y="140" text-anchor="middle" font-size="9">+ Bearer</text>
+
+  <!-- Bearer check -->
+  <rect x="160" y="60" width="170" height="130" fill="#cfc" stroke="#333"/>
+  <text x="245" y="85" text-anchor="middle" font-size="13">require_api_key</text>
+  <text x="245" y="105" text-anchor="middle" font-size="10">Authorization</text>
+  <text x="245" y="120" text-anchor="middle" font-size="10">Bearer &lt;key&gt;</text>
+  <text x="245" y="145" text-anchor="middle" font-size="10">is_blocked(key)?</text>
+  <text x="245" y="160" text-anchor="middle" font-size="10">lookup_key(key)</text>
+  <text x="245" y="180" text-anchor="middle" font-size="10">-&gt; Principal</text>
+
+  <!-- Provider dispatch -->
+  <rect x="400" y="60" width="160" height="130" fill="#fed" stroke="#a6a" stroke-width="2"/>
+  <text x="480" y="85" text-anchor="middle" font-size="13">Provider dispatch</text>
+  <text x="480" y="110" text-anchor="middle" font-size="10">/v1/chat/completions</text>
+  <text x="480" y="130" text-anchor="middle" font-size="10">pick_provider(model)</text>
+  <text x="480" y="150" text-anchor="middle" font-size="10">to_upstream / from_upstream</text>
+  <text x="480" y="175" text-anchor="middle" font-size="10">httpx.AsyncClient.post</text>
+
+  <!-- Upstream -->
+  <rect x="630" y="100" width="80" height="50" fill="#eee" stroke="#333"/>
+  <text x="670" y="125" text-anchor="middle">Upstream</text>
+  <text x="670" y="140" text-anchor="middle" font-size="9">(OpenAI/Claude/Gemini)</text>
+
+  <!-- Client -> Bearer check -->
+  <line x1="90" y1="125" x2="160" y2="125" stroke="#333" marker-end="url(#a)"/>
+  <text x="125" y="118" text-anchor="middle" font-size="10">POST + Bearer</text>
+
+  <!-- Bearer check -> Provider dispatch (allowed) -->
+  <line x1="330" y1="125" x2="400" y2="125" stroke="#2a7" marker-end="url(#g)" stroke-width="1.5"/>
+  <text x="365" y="118" text-anchor="middle" font-size="10" fill="#2a7">Principal OK</text>
+
+  <!-- Provider dispatch -> Upstream -->
+  <line x1="560" y1="125" x2="630" y2="125" stroke="#333" marker-end="url(#a)"/>
+  <text x="595" y="118" text-anchor="middle" font-size="10">HTTP</text>
+
+  <!-- 401 reject branch -->
+  <line x1="245" y1="190" x2="245" y2="240" stroke="#a33" marker-end="url(#r)" stroke-width="1.5"/>
+  <text x="245" y="258" text-anchor="middle" font-size="10" fill="#a33">missing / unknown / blocked -&gt; 401</text>
+</svg>
