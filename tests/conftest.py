@@ -6,13 +6,11 @@ adapter regressions.
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
 import pytest
 import respx
-from fastapi.testclient import TestClient
 from httpx import Response
 
 # Make chapter modules importable as `sNN_topic.code`
@@ -22,7 +20,7 @@ sys.path.insert(0, str(ROOT))
 
 @pytest.fixture
 def upstream_openai():
-    """Mock OpenAI chat completion + streaming endpoint."""
+    """Mock OpenAI /v1/chat/completions (handles both non-streaming and streaming; SSE is selected by the request body, not the URL)."""
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             return_value=Response(
