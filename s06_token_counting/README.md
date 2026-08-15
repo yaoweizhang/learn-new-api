@@ -10,6 +10,8 @@
 其它都按字符/4),并把结果挂到响应的 `usage` 上。现在我们在账单到达
 用户之前,就知道每条请求花了多少 token。
 
+> **tiktoken**（OpenAI 开源的 tokenizer 库，按 BPE 规则把文本切成 token 并计费）—— 后续章节直接复用，不再重复解释。
+
 ## 问题
 
 `s05` 把请求转出去、原样把上游给回来的 `usage` 透传——这只有在模型"已经做完活"之后才正确。我们想要的是:
@@ -38,10 +40,14 @@ token,等到上游回复时:
 - 否则就用 `prompt_tokens` 估算值 + `len(reply) // 4`(对完成
   token)合成一份 `usage`。
 
+下面这张 ASCII 流程图把"先计数再转发"画出来——图里有 `Client`、本章要写的 `s06` 中继、以及远端 `Upstream` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块 `s06` 是本章要写的：先 count prompt 再转发，并 merge upstream 的 usage 回给客户端。
+
 ```
 Client ──POST──▶ s06 ──count prompt──▶ Upstream ──reply──▶ merge usage ──▶ Client
                                   └── 非 OpenAI 走 char/4 兜底
 ```
+
+下面这张架构图给读者一幅全局鸟瞰：图里仍是 `Client / s06 / Upstream` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块 `s06` 中继就是本章要写的——预热计数 + 合并上游 usage。
 
 ![architecture](images/architecture.svg)
 
