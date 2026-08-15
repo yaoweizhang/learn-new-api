@@ -1,4 +1,4 @@
-# s01: 最小的转发中继内核
+# s01: 最小的转发中继内核 — 中间站一个程序,所有调用方都走它
 
 > Previous: — · Next: [s02](../s02_openai_protocol/)
 
@@ -6,9 +6,15 @@
 
 > **Layer**：L1 协议与转发
 
-**本章新增**:一个 HTTP 转发器——一条路由,把 JSON 请求体传给单一上游,再把回复原样返回。
+## 本章要做什么
+
+加一个 FastAPI 进程,一条 `/relay` 路由把 JSON body 转发到单一上游,再把响应原样吐回。学完你会拿到一个最薄但能跑的中继——之后所有章节都建立在这个内核上。
 
 新增依赖:`fastapi`、`uvicorn`、`httpx`、`pydantic`。
+
+## 在整体中的位置
+
+网关的最内层循环——所有其它功能(鉴权、限速、配额、日志)都挂在它外层。没有它,根本没有"网关"这件事。
 
 ## 问题
 
@@ -20,11 +26,11 @@
 
 一个进程:接住请求、转发出去、再把答复送回来。说白了就是一个针对入站 HTTP 请求的 `while True` 循环,循环体里只做一件事——转发。
 
-下图给出一幅全局鸟瞰：图里有 `Client`、本章要写的 `Relay` 进程、以及远处的 `Upstream` 三个角色。请求箭头从 `Client` 走到 `Relay` 再走到 `Upstream`，响应则反向沿两条路回来；中间那一块 `Relay` 是本章要写的进程。
+下图给出一幅全局鸟瞰——图里有 `Client`、本章要写的 `Relay` 进程、以及远处的 `Upstream` 三个角色。请求箭头从 `Client` 走到 `Relay` 再走到 `Upstream`,响应则反向沿两条路回来;中间那一块 `Relay` 是本章要写的进程:
 
 ![architecture](images/architecture.svg)
 
-下面这张 ASCII 流程图把同一段流程压成一行——图里仍是 `Client / Relay / Upstream` 三角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块就是本章要写的 `Relay`：
+下面这张 ASCII 流程图把同一段流程压成一行,作为上面的对照——图里仍是 `Client / Relay / Upstream` 三角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块就是本章要写的 `Relay`:
 
 ```
 Client  ──POST /relay──▶  Relay  ──POST FORWARD_TARGET──▶  Upstream
@@ -45,7 +51,7 @@ def health() -> dict:
     return {"status": "ok"}
 ```
 
-**2. 一个请求形态。** Pydantic 在我们花一次网络往返之前先校验请求体。本章只强制要求 `model` 和 `messages`;s02 才会把它变成真正的 OpenAI schema:
+**2. 一个请求形态。** Pydantic（数据校验库：用 Python 类型注解定义结构、自动校验入参）在我们花一次网络往返之前先校验请求体。本章只强制要求 `model` 和 `messages`;s02 才会把它变成真正的 OpenAI schema:
 
 ```python
 class RelayRequest(BaseModel):
@@ -53,7 +59,7 @@ class RelayRequest(BaseModel):
     messages: list[dict]
 ```
 
-**3. 转发起。** 这里用的是 `httpx.AsyncClient`——`requests` 的异步版本。异步不是装饰,是硬需求:中继几乎所有时长都花在等待上游上,阻塞式客户端每条在飞的请求都会占一个 OS 线程,吞吐几乎立刻见顶。
+**3. 转发起。** 这里用的是 `httpx.AsyncClient`(支持异步的 HTTP 客户端库,与同步 requests 对应)——`requests` 的异步版本。异步不是装饰,是硬需求:中继几乎所有时长都花在等待上游上,阻塞式客户端每条在飞的请求都会占一个 OS 线程,吞吐几乎立刻见顶。
 
 ```python
 @app.post("/relay")
@@ -75,7 +81,7 @@ async def relay(req: RelayRequest) -> dict:
 - `timeout=30.0` —— 别继承一个无限大的默认值。挂住的上游不能反过来挂住中继。
 - `except httpx.HTTPError` → **502**。传输层失败是我们上游的锅,不是调用方的;`502 Bad Gateway` 把这件事说得很清楚。
 - `if r.status_code >= 400` —— 把上游的状态码原样透传。OpenAI 返回 429,调用方就应该看到 429,而不是被洗成 500。
-- 每次请求都用 `async with` 关闭客户端（及其连接池（client 复用的 TCP 连接集合））。简单，但确实是浪费——s10 用一个共享连接池修掉这点。
+- 每次请求都用 `async with` 关闭客户端(及其连接池(client 复用的 TCP 连接集合))。简单,但确实是浪费——s10 用一个共享连接池修掉这点。
 
 配置全部走环境变量,所以任何一章都不用动代码就能切换目标:
 
@@ -113,11 +119,11 @@ curl -X POST http://localhost:8001/relay \
 pytest tests/test_s01_minimal_relay.py -v
 ```
 
-上游用 `respx`（拦截 httpx 出站请求的 mock 库）mock 拦截，mock 路由写在 `tests/conftest.py`（pytest 共享 fixture 的约定文件）里的 `upstream_openai` 固定器（`pytest fixture`（pytest 测试装置：在测试前后准备/清理共享资源）），所以测试能离线跑，同时仍然断言真实的线协议形态——中继必须返回上游 `choices[0].message.content`，并且只该调一次上游。
+上游用 `respx`（拦截 httpx 出站请求的 mock 库）mock 拦截,测试用 `tests/conftest.py`（pytest 共享 fixture 的约定文件）里的 `upstream_openai` fixture（`pytest fixture`（pytest 测试装置：在测试前后准备/清理共享资源）），所以测试能离线跑,同时仍然断言真实的线协议形态——中继必须返回上游 `choices[0].message.content`,并且只该调一次上游。
 
-> **测试栈词汇**：本章及后续用到 `pytest` 的几个概念——`fixture`（测试装置，见上）、`autouse`（fixture 的自动应用标志：声明后 pytest 会自动套用到所有测试）、`conftest.py`（pytest 共享 fixture 的约定文件，见上）、`TestClient`（FastAPI 自带的同步测试客户端：不启 HTTP 直接在内存里调用 app）、`respx`（见上）。后文直接复用这些词，不再重复解释。
+> **测试栈词汇**：本章及后续用到 `pytest` 的几个概念——`fixture`（测试装置,见上）、`autouse`（fixture 的自动应用标志：声明后 pytest 会自动套用到所有测试）、`conftest.py`（pytest 共享 fixture 的约定文件,见上）、`TestClient`（FastAPI 自带的同步测试客户端：不启 HTTP 直接在内存里调用 app）、`respx`（见上）。后文直接复用这些词,不再重复解释。
 >
-> HTTP 状态码速查：`401` 未授权（token 错或缺失）、`402` 支付被拒（余额/配额不足）、`422` 请求格式错（参数校验未通过）、`502` 网关/上游挂了（拿到下游报错）。
+> HTTP（超文本传输协议）状态码速查：`401` 未授权（token 错或缺失）、`402` 支付被拒（余额/配额不足）、`422` 请求格式错（参数校验未通过）、`502` 网关/上游挂了（拿到下游报错）。
 
 ## → new-api 源码
 
@@ -137,3 +143,7 @@ pytest tests/test_s01_minimal_relay.py -v
 - **没有协议转换**。请求体原样转发,所以调用方必须已经会说上游方言。→ s02、s04。
 - **没有配额/日志/指标**。→ s07、s11、s16。
 - **每次新建连接池**。正确,但慢;长连接客户端才是生产答案。
+
+## 下章预告
+
+`s01` 的 `/relay` 是我们自创的路径,LLM 生态已经统一讲 OpenAI 的 `chat.completions`。s02 把路由改成 `/v1/chat/completions`,免费拿到所有 OpenAI SDK。
