@@ -1,5 +1,7 @@
 # s10: 渠道管理（管理员 CRUD + 优先级/权重选路）
 
+> Previous: [s09](../s09_user_system/) · Next: [s11](../s11_call_logs/)
+
 ## 问题
 
 之前所有章节里，我们的上游都是写死在代码里的：要么 `s04_multi_provider`
