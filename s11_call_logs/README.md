@@ -2,6 +2,12 @@
 
 > Previous: [s10](../s10_channel_management/) · Next: [s12](../s12_caching/)
 
+## 设计要点
+
+The log store is a `LogStore` Protocol with `InMemoryLogStore` as the default.
+Tests can call `set_default(...)` to substitute a recording fake. Future
+chapters (s_full onward) reuse the same shape.
+
 ## 问题
 
 前 10 章里，每条 `/v1/chat/completions` 请求走完一遍就消失了：上游返

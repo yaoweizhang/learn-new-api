@@ -76,3 +76,49 @@ def test_logs_written_after_call(upstream_openai):
     logs = list_logs()
     assert len(logs) == 1
     assert logs[0]["model"] == "gpt-4o-mini"
+
+
+def test_injected_log_store_observes_calls(upstream_openai):
+    """Replace _default with a recording fake; the middleware should
+    route through our injected store, not the module-level one."""
+    from s11_call_logs import log_store
+    from s05_api_key_auth.storage import register_key
+    from s07_pre_consume_settle.quota import set_balance
+    import bcrypt
+
+    class Recording:
+        def __init__(self):
+            self.entries: list[dict] = []
+        def enqueue(self, entry):
+            self.entries.append(entry)
+        def list(self):
+            return list(self.entries)
+        def reset(self):
+            self.entries.clear()
+        def drain_now(self):
+            pass
+
+    rec = Recording()
+    saved = log_store.get_default()
+    log_store.set_default(rec)
+    try:
+        # Re-establish the same chat-call setup as test_logs_written_after_call
+        # (channel + API key + quota) so the middleware fires.
+        create_channel("c1", "openai", "https://api.openai.com", weight=100, priority=0)
+        pwd = b"secret123"
+        pw_hash = bcrypt.hashpw(pwd, bcrypt.gensalt()).decode("utf-8")
+        uid = create_user("u@example.com", pw_hash, is_admin=True)
+        api_key = "sk-test-key-injected"
+        register_key(user_id=str(uid), key=api_key)
+        set_balance(str(uid), 10_000_000)
+
+        with TestClient(app) as c:
+            r = c.post(
+                "/v1/chat/completions",
+                headers={"authorization": f"Bearer {api_key}"},
+                json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+            )
+        assert r.status_code == 200, r.text
+        assert any(e.get("model") == "gpt-4o-mini" for e in rec.entries)
+    finally:
+        log_store.set_default(saved)

@@ -92,3 +92,46 @@ def test_full_relay_claude_path(upstream_claude):
         assert sent.headers.get("x-api-key") == "sk-ant-test"
     finally:
         del os.environ["UPSTREAM_CLAUDE_KEY"]
+
+
+def test_injected_log_store_observes_calls(upstream_openai):
+    """Replace s_full.models.log._default with a recording fake; the chat
+    route should route through our injected store, not the module-level one."""
+    from s_full.models import log as s_full_log
+
+    class Recording:
+        def __init__(self):
+            self.entries: list[dict] = []
+        def enqueue(self, entry):
+            self.entries.append(entry)
+        def list(self):
+            return list(self.entries)
+        def reset(self):
+            self.entries.clear()
+        def drain_now(self):
+            pass
+
+    from s_full.services.billing import top_up
+    from s_full.models.user import create_user, reset_db
+    from s_full.models.channel import create_channel, reset_channels
+    from s_full.middleware.auth import issue_token
+    reset_db(); reset_channels()
+    uid = create_user("u@x.com", "x")
+    top_up("u@x.com", 1_000_000)
+    create_channel("c1", "openai", "https://api.openai.com", weight=100, priority=0)
+    token = issue_token(uid, "u@x.com", is_admin=False)
+
+    rec = Recording()
+    saved = s_full_log.get_default()
+    s_full_log.set_default(rec)
+    try:
+        with TestClient(app) as c:
+            r = c.post(
+                "/v1/chat/completions",
+                headers={"authorization": f"Bearer {token}"},
+                json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+            )
+        assert r.status_code == 200, r.text
+        assert any(e.get("model") == "gpt-4o-mini" for e in rec.entries)
+    finally:
+        s_full_log.set_default(saved)
