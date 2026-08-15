@@ -10,6 +10,8 @@
 原样转发 SSE chunk,使客户端能看到首 token 延迟。非流式请求仍按 s02
 的方式返回 JSON。
 
+> **SSE**（Server-Sent Events：服务端单向流式推数据，HTTP 长连接 + 文本帧）—— 后续章节直接复用，不再重复解释。
+
 ## 问题
 
 `s02` 用 `r = await client.post(...)` 等整个响应,然后 `r.json()`。对
@@ -33,12 +35,16 @@ event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n
   `cache-control: no-cache` 和 `x-accel-buffering: no`(后者告诉 nginx
   不要做缓冲,反向代理常常会一直等到阈值才放行 SSE body)。
 
+下面这张 ASCII 时序图把流式响应一口气画出来——图里有 `Client / Relay / Upstream` 三角色，纵向是时间、横向是消息流向，箭头方向 = SSE chunk 走向（`◀` 是服务端向客户端推数据），中间那一块就是本章要写的 Relay：while 上一接 chunk 立刻 yield 给客户端。
+
 ```
 Client ──POST /v1/chat/completions {stream:true}──▶  Relay  ──POST FORWARD_TARGET──▶  Upstream
         ◀──── SSE chunk 1 ────                   ◀──── SSE chunk 1 ────
         ◀──── SSE chunk 2 ────                   ◀──── SSE chunk 2 ────
         ◀──── SSE [DONE] ────                    ◀──── SSE [DONE] ────
 ```
+
+下面这张架构图给读者一幅全局鸟瞰：图里仍是 `Client / Relay / Upstream` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 SSE 流式 chunk），中间那一块就是本章要写的 Relay——拿到一个 chunk 立刻 yield，边流边推。
 
 ![architecture](images/architecture.svg)
 
