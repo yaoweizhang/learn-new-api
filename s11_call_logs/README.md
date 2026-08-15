@@ -4,9 +4,9 @@
 
 ## 设计要点
 
-The log store is a `LogStore` Protocol with `InMemoryLogStore` as the default.
-Tests can call `set_default(...)` to substitute a recording fake. Future
-chapters (s_full onward) reuse the same shape.
+日志存储是一个 `LogStore` 协议，默认实现是 `InMemoryLogStore`。测试可以调
+`set_default(...)` 注入一个 recording fake；后续章节（s_full 之后）也复用
+同一个形状。
 
 ## 问题
 
