@@ -83,8 +83,8 @@ python -m pytest tests/test_s15_docker_deployment.py -v
 
 ## → new-api 源码
 
-- `D:/study/learning_serial/new-api/Dockerfile` —— new-api 的多阶段 Dockerfile:`builder` 镜像编译 Go 二进制 → `运行时` 镜像只放 alpine + 二进制 + 配置;比 s15 的单阶段更省空间,但需要 Go 工具链(我们这一章是纯 Python 不需要)。
-- `D:/study/learning_serial/new-api/docker-compose.yml` —— new-api 的 compose 有 `one-api`(`oneapi-network`)、`mysql`、`redis` 三个 service,并且加了 `network_mode` 和 secrets;比 s15 的版本丰富得多,但思路一致:`healthcheck` → `depends_on` → 端口映射。
+- 兄弟目录 `new-api/Dockerfile`(和本仓库同级的 sibling 仓库) —— new-api 的多阶段 Dockerfile:`builder` 镜像编译 Go 二进制 → `运行时` 镜像只放 alpine + 二进制 + 配置;比 s15 的单阶段更省空间,但需要 Go 工具链(我们这一章是纯 Python 不需要)。
+- 兄弟目录 `new-api/docker-compose.yml` —— new-api 的 compose 有 `one-api`(`oneapi-network`)、`mysql`、`redis` 三个 service,并且加了 `network_mode` 和 secrets;比 s15 的版本丰富得多,但思路一致:`healthcheck` → `depends_on` → 端口映射。
 
 ## 取舍
 
