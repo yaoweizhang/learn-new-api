@@ -210,7 +210,7 @@ pytest tests/test_s_full_smoke.py -v
 - `test_streaming_passes_through_chunks` —— SSE chunk 透传给客户端
 - `test_streaming_refunds_when_upstream_reports_usage` —— 上游报 usage 时按真实 usage 扣费
 - `test_streaming_gemini_returns_400` —— Gemini 路径暂不支持 streaming，直接 400
-- `test_streaming_429_refunds_estimate` —— 上游 429 + 空 body 时 pre-consume 全额退还（客户端仍见 200+空 body，因为 Starlette 在第一个 byte 写出前就已发完 HTTP 头——见"取舍"小节）
+- `test_streaming_429_refunds_estimate` —— 上游 429 + 空 body 时 pre-consume 全额退还（客户端仍见 200+空 body，因为 Starlette 在第一个 byte 写出前就已发完 HTTP 头——见"取舍 / 流式响应在 Starlette 下有…'条目"）
 
 **Quota / Billing 双向结算**：
 
