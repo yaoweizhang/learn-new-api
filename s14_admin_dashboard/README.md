@@ -135,7 +135,7 @@ app.mount("/", s13_app)              # 挂载最后
 Starlette 按注册顺序迭代路由。客户端打 `/dashboard/login`，本地
 路由先匹配，根本不进 s13 → s12 → ... 那条挂载链。`/v1/chat/
 completions` 反过来：本地没这条，落到挂载链，s13 自己 match 上。
-这是 s04.2 / s04.3 / s05.2 / s13 都在踩的同一个 Starlette 坑——
+这是 `s04_multi_provider` / `s05_api_key_auth` / `s13_retry_fallback` 都在踩的同一个 Starlette 坑——
 **本地路由必须先注册，挂载必须最后**。
 
 ### 数据复用：直接 import 内存单例
