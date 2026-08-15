@@ -22,6 +22,8 @@
 
 这适合教学（每个 chapter 独立可读、独立可测），但**不像真实项目**。读者去看 `new-api` 仓库，看到的是另一种目录风格：
 
+下面这张目录示意把 `new-api` 的标准目录列出来——每一行是一个目录分类，旁边注释说明它在新-api 里的职责（gin 的 Handler / 业务编排 / 业务逻辑 / 数据模型 / 中间件 / 公共工具）；`s_full` 的目标就是把这套目录结构用 FastAPI 复刻一遍。
+
 ```
 new-api/
   router/      # 路由层（gin 的 Handler）
@@ -41,6 +43,8 @@ new-api/
 把 s01-s16 的代码**复制**到 `s_full/` 下的清晰子目录里，对外提供**单一** FastAPI app。`s_full` 拥有自己的 routers，不挂载 chapter chain。
 
 ### 目录映射
+
+下面这张目录映射表把 s_full 的子目录结构与各自的章节来源一一对应——每一行是一个文件，注释说明它承担的职责 + 对应的教程章节；左边是新目录（`routes / services / models / adapters / middleware`），右边是章节溯源（`<- s05` 之类），用来回答"如果这是一份独立项目，目录应该长什么样"。
 
 ```
 s_full/
@@ -73,6 +77,8 @@ s_full/
 ## 工作原理
 
 ### `/v1/chat/completions` 的请求生命周期
+
+下面这张 ASCII 流程图把"一次 chat 请求从进入到出"画出来——图里有客户端请求、本章要写的 `TraceAndMetricsMiddleware`、以及 `chat_completions` handler 内部 9 个步骤（鉴权 → 限流 → 计量 + 预扣 → 选 Provider → to_upstream → 调上游 → from_upstream → 结算 → 记日志），纵向是步骤顺序，箭头方向 = 请求/响应走向（`▶` 是往下走，`▼` 是进入下一段），本章写的是把 s01-s16 累积的所有功能在这条链里串成单一入口。
 
 ```
 HTTP POST /v1/chat/completions
