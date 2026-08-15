@@ -14,7 +14,7 @@
 2. **没法做容灾**。一个渠道挂了，所有请求全部失败——既没有备选渠道，也没有"降级到次选"的策略。
 3. **没法区分优先级**。生产里同一个模型通常有多个上游（主账号 + 备用账号、Azure + 自建），它们的优先级和配额权重各不相同；写死的代码表达不了。
 
-所以需要一张"渠道表"：每个渠道记录 provider、base_url、weight（权重）、priority（优先级），由管理员通过 HTTP 增删改查，注册后立刻生效；路由层在调用上游前从这张表里"按规则选一个"。
+所以需要一张"渠道表"（每个 `channel`（new-api 里的"上游通道"：一条独立的 LLM 厂商接入配置））：每个渠道记录 provider、base_url、`weight`（权重：同优先级内越大越优先）、`priority`（优先级：数字越小越优先），由管理员通过 HTTP 增删改查，注册后立刻生效；路由层在调用上游前从这张表里"按规则选一个"。
 
 ## 方案
 
@@ -23,7 +23,7 @@
 - **`s10_channel_management/channels.py`** — 内存表 + 选路算法。`Channel` 是一个 `@dataclass`，字段：`id / name / provider / base_url / weight / priority / enabled / healthy`。`create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for` 是仅有的几个公开函数。所有读写都在 `threading.Lock` 保护下进行；进程内全局单例。
 - **`s10_channel_management/code.py`** — FastAPI 装配。挂载 s09 整块 app，在自己身上新增两条管理员路由：`POST /admin/channels`、`GET /admin/channels`。鉴权沿用 s09 的 JWT；用 `Depends(_require_admin)` 闸门把关，非管理员一律 `403 admin only`。
 
-路由形状：
+路由形状——下面这张块状路由表把本章要写的 2 条管理员接口压成一览：左是 `method + path`，中间是 header 必带 `Authorization: Bearer <admin jwt>`，右是返回码与返回体；本章要写的核心就是"注册 + 列出"两个动作。
 
 ```
 POST /admin/channels   Authorization: Bearer <admin jwt>   -> 201 {id, name}
