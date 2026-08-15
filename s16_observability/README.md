@@ -88,7 +88,7 @@ curl -s localhost:8016/metrics | head -20
 发个 chat 请求(让计数器产生数据):
 
 ```bash
-curl -s localhost:8016/v1/v1/chat/completions \
+curl -s localhost:8016/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}'
 curl -s localhost:8016/metrics | grep learn_new_api_requests_total

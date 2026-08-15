@@ -63,7 +63,7 @@ from s05_api_key_auth.storage import register_key
 from s07_pre_consume_settle.quota import set_balance
 from s08_rate_limiting.bucket import configure
 
-register_key("sk-u", "u1")
+register_key("u1", "sk-u")
 set_balance("u1", 10_000_000)
 configure("u1", capacity=60, refill_per_sec=1.0)  # 默认值
 ```

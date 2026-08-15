@@ -52,10 +52,10 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
 `sort_keys` + `separators` 让序列化结果**与字段顺序无关**——`{"a":1,
 "b":2}` 和 `{"b":2,"a":1}` 算同一个 key。
 
-路由形状——下面这张块状路由表把本章要写的 2 条接口压成一览:左是 `method + path`,中间是入参(`/v1/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body),右是返回码与返回体;本章要写的核心就是"读缓存或写缓存"一条转发路径 + 一条统计接口:
+路由形状——下面这张块状路由表把本章要写的 2 条接口压成一览:左是 `method + path`,中间是入参(`/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body),右是返回码与返回体;本章要写的核心就是"读缓存或写缓存"一条转发路径 + 一条统计接口:
 
 ```
-POST /v1/v1/chat/completions      Bearer API key, body={model, messages, stream?, temperature?}  -> 200 + (首次写缓存, 命中直接返回)
+POST /v1/chat/completions      Bearer API key, body={model, messages, stream?, temperature?}  -> 200 + (首次写缓存, 命中直接返回)
 GET  /admin/cache/stats                                                              -> 200 {size, live}
 ```
 
@@ -103,7 +103,7 @@ app.mount("/", s11_app)
 
 class CacheMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        if request.method == "POST" and request.url.path == "/v1/v1/chat/completions":
+        if request.method == "POST" and request.url.path == "/v1/chat/completions":
             body_bytes = await request.body()
             try:
                 payload = json.loads(body_bytes)
@@ -141,11 +141,11 @@ class CacheMiddleware(BaseHTTPMiddleware):
    读完必须重组:否则下游拿到的会是空响应。`Response(content=body,
    status_code=..., headers=..., media_type=...)` 把同样的 bytes 包
    回去,保留状态码和 headers。
-3. **路径检查必须对齐挂载链**。`s09` 把 s08 挂在 `/v1`,s08 的
-   chat 路由是 `/v1/chat/completions`;所以从 s12 对外看,路径是
-   `/v1/v1/chat/completions`。`request.url.path` 看到的是客户端实
-   际打过来的路径——这里必须写 `/v1/v1/chat/completions`,否则中间
-   件根本进不去 if 分支。这是已知的双前缀债务,见取舍。
+3. **路径检查必须对齐挂载链**。`s09` 现在把 s08 挂在 `/`(已经统一成
+   `/`),s08 的 chat 路由是 `/v1/chat/completions`;所以从 s12 对外看,
+   路径就是 `/v1/chat/completions`(单前缀,已无历史双前缀债务)。
+   `request.url.path` 看到的是客户端实际打过来的路径——这里写
+   `/v1/chat/completions`。
 
 ### `/admin/cache/stats`:可观测
 
@@ -178,13 +178,13 @@ set_balance(str(uid), 1_000_000)
 "
 
 # 第一次:走到上游(mock),同时写入缓存
-curl -s -X POST http://localhost:8012/v1/v1/chat/completions \
+curl -s -X POST http://localhost:8012/v1/chat/completions \
   -H 'authorization: Bearer sk-test' \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 
 # 第二次:同 payload → 直接从内存返回(毫秒级,不再打上游)
-curl -s -X POST http://localhost:8012/v1/v1/chat/completions \
+curl -s -X POST http://localhost:8012/v1/chat/completions \
   -H 'authorization: Bearer sk-test' \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
@@ -263,6 +263,7 @@ pytest tests/test_s12_caching.py -v
   到 `request._body`,下游中间件(包括 s11 的 `LogMiddleware`)再读
   拿到的依然是同一份完整 body,所以 s11 的 `request.state.model` 字
   段会正常记录实际 model,不需要走 `request.state` 透传。
+- **路径 `/v1/chat/completions` 是单前缀** —— 不再有双前缀债务。s09 改 `app.mount("/", s08_app)` 后,整条链路(s12 → s11 → s10 → s09 → s08)对外的 chat 路径就是 `/v1/chat/completions`,中间件路径检查按真实可达路径写。
 - **TTL 固定 300 秒** —— 不暴露给客户端、不按模型分级。生产里
   高频问答("今天天气")应该 TTL 短(30s),代码补全("写个快排")
   可以 TTL 长(1 天);本章先让缓存生效,配置粒度是 v2 的事。

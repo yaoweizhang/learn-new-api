@@ -18,7 +18,7 @@ s08 之前所有用户都是匿名的"key 持有者"。没有 `/auth/signup` 这
 
 ## 在整体中的位置
 
-鉴权的"用户维度"——s05 用 key 实现粗粒度身份,从此往后系统能区分"哪个用户"。
+鉴权的"用户维度"——s05 用 key 实现粗粒度身份,s09 用 JWT + 注册/登录实现真用户身份。**双轨鉴权其二**：s09 的 JWT 守 dashboard / admin 路径(`/auth/signup`、`/auth/login`、`/auth/logout`、`/me`、admin 路由);chat 路径仍走 s05 的 Bearer API key。两条并存、不替代：s09 不是为了替换 s05，而是给运营/管理面发了"真身份"钥匙,chat 端点继续用 API key 这把"调用钥匙"。
 
 ## 问题
 
@@ -89,7 +89,7 @@ Payload 三个字段:`sub`(用户 id)、`email`、`is_admin`。`exp` 默认 1 �
 
 ```python
 app = FastAPI(title="learn-new-api s09")
-app.mount("/v1", s08_app)              # s08 的 /v1/chat/completions 原样保留
+app.mount("/", s08_app)               # s08 的 /v1/chat/completions 原样保留
 
 @app.post("/auth/signup", status_code=201)
 def signup(creds: Credentials):

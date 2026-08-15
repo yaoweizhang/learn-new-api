@@ -41,10 +41,10 @@ s10 解决了挑通道，但每次调用有没有发生、在哪失败、谁打�
 - **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore` 默认实现。`LogStore` 是个 `Protocol`（Python 的结构性子类型，仅靠方法签名匹配），只有 `enqueue` / `list` / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表:`enqueue` 把一行塞进缓冲,后台 `flush_loop` 每 100ms 把整段搬到 `list`。重置用 `reset_logs()`。模块层保留 `enqueue`/`list_logs` 等 thin wrapper 转发到一个 `_default` 实例,方便测试用 `set_default(rec)` 注入假实现。
 - **`s11_call_logs/code.py`** —— FastAPI 装配。挂载 s10 整块 app,在自己身上新增一个中间件(`LogMiddleware`)和两条管理员路由(`/admin/logs`、`/admin/stats`)。中间件在 `/v1/chat/completions` 返回 200 时把响应日志塞进 default 实例,由后台循环搬运到落盘列表。
 
-路由形状——下面这张块状路由表把本章要写的 3 条接口压成一览:左是 `method + path`,中间是入参(`/v1/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body),右是返回码与返回体;本章要写的核心就是"转发 + 异步落日志 + 读日志/统计"三件事:
+路由形状——下面这张块状路由表把本章要写的 3 条接口压成一览:左是 `method + path`,中间是入参(`/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body),右是返回码与返回体;本章要写的核心就是"转发 + 异步落日志 + 读日志/统计"三件事:
 
 ```
-POST /v1/v1/chat/completions      Bearer API key, body={model, messages...}   -> 200 + 异步日志
+POST /v1/chat/completions      Bearer API key, body={model, messages...}   -> 200 + 异步日志
 GET  /admin/logs                                                          -> 200 [log entries]
 GET  /admin/stats                                                         -> 200 {total, by_model}
 ```
@@ -190,15 +190,15 @@ from s05_api_key_auth.storage import register_key
 register_key(user_id='u1', key='sk-test')
 "
 
-# 调用 chat(注意:实际可访问路径是 /v1/v1/chat/completions,见取舍)
-curl -s -X POST http://localhost:8011/v1/v1/chat/completions \
+# 调用 chat
+curl -s -X POST http://localhost:8011/v1/chat/completions \
   -H 'authorization: Bearer sk-test' \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 
 # 等 100ms 让 flush_loop 跑一次,然后看日志
 curl -s http://localhost:8011/admin/logs
-# -> [{"path":"/v1/v1/chat/completions","ts":...,"status":200,"model":"gpt-4o-mini"}]
+# -> [{"path":"/v1/chat/completions","ts":...,"status":200,"model":"gpt-4o-mini"}]
 
 curl -s http://localhost:8011/admin/stats
 # -> {"total":1,"by_model":{"gpt-4o-mini":1}}
@@ -236,7 +236,6 @@ pytest tests/test_s11_call_logs.py -v
 - **没有流式(SSE)调用的日志** —— 中间件里 `body_iterator` 替换对流式响应会破坏流(迭代器只能读一次,我们读完后塞回的那份已经丢失了"分块"语义)。本章测试只覆盖非流式路径,**SSE 流式调用不会进日志**——这是已知缺口,README 和测试都标了出来。v2 要么用 FastAPI 的 `add_event_handler` 在流式响应结束时钩一次,要么干脆放弃中间件、改在 s08 的 `chat_completions` 函数体里直接 `enqueue`。
 - **`model` 通过 `request.state.model` 传递** —— Brief 原本写的是 `request.query_params.get("model", "?")`,永远是 `"?"` 因为 model 在 body 里。本章的修正手法是:中间件先 `await request.body()` 读出原始 bytes、解出 model 写到 `request.state.model`,再用一个新的 `receive()` 把同一份 bytes 喂回去给下游 FastAPI。这是 Starlette 标准做法;副作用是 body 会被读两次(小开销,kilobytes 级),换来干净的"中间件读 model"语义。
 - **没有 `_require_admin` 闸门** —— `/admin/logs`、`/admin/stats` 当前对所有能访问的人开放。生产里必须收紧,但"管理员能看自己的调用日志"和"调用方能看到自己的用量"是两个不同的产品决策(前者运维、后者用户控制台),先分开再讨论统一鉴权。
-- **外路径 `/v1/v1/chat/completions` 是双前缀** —— s09 把 s08 挂在 `/v1` 下,而 s08 自己又用 `/v1/chat/completions`,结果是整条链路(s11 → s10 → s09 → s08)对外的 chat 路径变成 `/v1/v1/chat/completions`。本测试已经按实际可达路径写。README 这里只点出来;修正 `app.mount("/v1", s08_app)` 到 `app.mount("/", s08_app)` + 把 s08 改名 `/chat/completions` 是后续章节清理接口契约时一起做。
 - **`time.sleep(0.2)` 是已知的时序依赖** —— 见"测试"一节。Brief 原本就是这么设计的;这是"异步 + 周期 flush"的固有特性。v2 改成事件驱动后就消除。
 - **`on_event("startup")` 已弃用** —— FastAPI 0.110+ 推荐用 lifespan context manager。本章沿用 brief 的写法保持一致;后续章节统一升级时一起改。
 

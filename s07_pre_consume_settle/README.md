@@ -81,13 +81,15 @@ settle(principal.user_id, estimate, actual)
 
 `max(usage.prompt_tokens, prompt_tokens)` 是为了应对上游 tokenizer 和本地 tokenizer 略有差异的情况——取较大值保证不会因为估算偏小而出现"调用已经花掉 X 配额、但我们只补了 X-1"的账目缺口。
 
+**注意**：s07 这里的 `max(...)` 在 s_full 的 `services/billing.py` 替换为"pt/ct 任一缺失则保留 pre_deducted"。原因是 pre-consume 已经 floor 在 estimate 上，再 max 会让用户永远按 estimate 付费，掩盖超额路径；s_full 选择显式承担"pt/ct 缺失 → 不退款"的语义。
+
 ## 运行
 
 ```python
 from s05_api_key_auth.storage import register_key
 from s07_pre_consume_settle.quota import set_balance
 
-register_key("sk-u", "u1")
+register_key("u1", "sk-u")
 set_balance("u1", 10_000)
 ```
 

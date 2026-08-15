@@ -37,10 +37,10 @@ s14 看板上线,但运维还在手写 systemd unit。
 
 ## 方案
 
-把整个 s01-s15 链路打包成一个**单容器**,再加一个独立的 Redis 容器:
+把整个 s01-s15 链路打包成一个**单容器**:
 
 - `Dockerfile`:基于 `python:3.11-slim`,按 `requirements.txt` 锁版本,把全部源码 COPY 进去,暴露 8015 端口,设置 `HEALTHCHECK`。
-- `docker-compose.yml`:两服务 —— `gateway`(我们的应用)和 `redis`,`gateway` `depends_on` redis。
+- `docker-compose.yml`:单服务 —— `gateway`(我们的应用),把整个 s01-s15 链路打包成一个 service,无外部依赖。
 - `code.py`:在 s14 之上挂一个 `/healthz` 路由,**深检** DB 连接和上游可达性,直接由 Docker 的 `HEALTHCHECK CMD` 调用。
 
 ## 工作原理
@@ -68,7 +68,7 @@ CMD [...]            # 容器启动命令
 - 当前实现返回硬编码 `{"ok": True, "checks": {"db": True, "upstream": True}}` —— 测试环境不能真去戳 DB 或者访问 OpenAI,这里只搭骨架。
 - 生产里这里真的去:(1) 调一下 `s09_user_system.users.find_by_email('healthcheck@example.com')` 验证 SQLite 可读;(2) 用 `httpx.get('https://api.openai.com', timeout=2.0)` 验证外网可达。任一异常就把 `checks[...]` 标 `False`,全部 `all(...)` 失败整个 `ok` 才 `False`。
 
-**docker-compose**:`gateway` 服务 build 当前目录(就是 `Dockerfile`),`ports: 8015:8015` 把容器 8015 暴露到宿主 8015。`redis` 是给未来的 rate limit / cache 预留的位置 —— 这一章不真用,但 compose 文件先到位,后面章节可以无缝接。
+**docker-compose**:`gateway` 服务 build 当前目录(就是 `Dockerfile`),`ports: 8015:8015` 把容器 8015 暴露到宿主 8015。本章 compose **不含 redis 之类外部依赖**——`依赖什么 / 单容器多容器`是部署策略选择,留给后续按部署形态调整。本章聚焦"应用层打包 + 健康检查"这一层。
 
 ## 运行
 

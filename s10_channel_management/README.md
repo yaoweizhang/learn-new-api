@@ -42,7 +42,7 @@ POST /admin/channels   Authorization: Bearer <admin jwt>   -> 201 {id, name}
 GET  /admin/channels   Authorization: Bearer <admin jwt>   -> 200 [Channel...]
 ```
 
-注册后立刻可用——`pick_channel_for(provider)` 从已注册渠道里按 `(priority asc, weight desc, healthy=True)` 排序取第一条。**s10 暂时不接 `/v1/chat/completions`**——把"渠道表注册好"和"用渠道表转发请求"分开是这一章的关键简化,留到后续章节接。理由很简单:本章要演示的是"动态注册 + 选路算法",把转发层一起拉进来会让 diff 翻倍,而且选路 bug 和转发 bug 会混在一起排查。
+注册后立刻可用——`pick_channel_for(model_name)` 从已注册渠道里按 provider 过滤、取最低优先级档、档内按 `weight` 加权随机(同 `weight=0` 时回退 round-robin)。**s10 暂时不接 `/v1/chat/completions`**——把"渠道表注册好"和"用渠道表转发请求"分开是这一章的关键简化,留到后续章节接。理由很简单:本章要演示的是"动态注册 + 选路算法",把转发层一起拉进来会让 diff 翻倍,而且选路 bug 和转发 bug 会混在一起排查。
 
 ## 工作原理
 
@@ -85,21 +85,32 @@ def create_channel(name, provider, base_url, weight, priority) -> Channel:
 ### `pick_channel_for`:选路算法
 
 ```python
-def pick_channel_for(model_prefix: str) -> Channel | None:
+def pick_channel_for(model_name: str) -> Channel | None:
+    provider = _provider_for_model(model_name)
+    if provider is None:
+        return None
     with _lock:
-        candidates = [c for c in _channels.values() if c.enabled and c.healthy]
+        candidates = [
+            c for c in _channels.values()
+            if c.enabled and c.healthy and c.provider == provider
+        ]
     if not candidates:
         return None
-    candidates.sort(key=lambda c: (c.priority, -c.weight))
-    return candidates[0]
+    min_priority = min(c.priority for c in candidates)
+    tier = [c for c in candidates if c.priority == min_priority]
+    weights = [max(c.weight, 0) for c in tier]
+    if sum(weights) == 0:
+        return tier[random.randrange(len(tier))]   # round-robin fallback
+    return random.choices(tier, weights=weights, k=1)[0]
 ```
 
-排序键是 `(priority, -weight)`:
+三步算法:
 
-- `priority` 小的在前(priority=0 是最高优先级)。
-- 同优先级内,`weight` 大的在前(`weight=100` 比 `weight=10` 优先)。
+1. **过滤**:先按 `enabled and healthy and provider == pick_provider(model_name)` 滤一轮——同一 model 只在能服务它的 provider 里挑。
+2. **取最低优先级档**:`min_priority` 决定这一档;`priority` 数字越小越优先(`priority=0` 是最高优先级),档外的不参与选择。
+3. **档内加权随机**:档内按 `weight` 做 `random.choices(tier, weights=weights, k=1)[0]` 加权抽样。**所有渠道 `weight=0` 时**回退到 `random.randrange(len(tier))` 的 round-robin,避免 `random.choices` 在全 0 权重上报错。
 
-只选 `enabled=True` 且 `healthy=True` 的渠道;没有候选返回 `None`。`mark_unhealthy(cid)` 把某个渠道的 `healthy` 置 False,下一次 `pick_channel_for` 自动跳过——为 s13 的健康检查/重试预留接口,但本章**不实际起循环检测**(见取舍)。
+`mark_unhealthy(cid)` 把某个渠道的 `healthy` 置 False,下一次 `pick_channel_for` 自动跳过——为 s13 的健康检查/重试预留接口,但本章**不实际起循环检测**(见取舍)。
 
 ### `code.py`:FastAPI 装配
 
@@ -214,7 +225,7 @@ pytest tests/test_s10_channel_management.py -v
 - **没有健康检查循环 / 重试 / 降级** —— YAGNI。这一章只解决"渠道表存在、管理员能增删改查、按规则选一条"这三件事。`mark_unhealthy` 接口已经留好,s13 会接上后台 goroutine:每次请求前 ping 一遍,连续失败 N 次自动 `mark_unhealthy`,选路自动跳过;连续成功 M 次再恢复。
 - **没有持久化** —— 进程一重启渠道表清零;和 s09 的 users 表不同,本章不引入 SQLite。生产里渠道是低频变更的运营数据,本来就该走数据库;s12 切 Postgres 时一并接上。
 - **没有 `/admin/channels/{id}` 删除/更新接口** —— brief 只要求 POST + GET。新-api 那边有完整的 update/delete,但管理员工具的最低闭环(创建 + 列出)已经够演示"动态配置"的意义。
-- **`pick_channel_for` 实现是简化形态** —— 实际是 priority asc + 档内 weighted random（`random.choices` 选一条），文档仍提醒读者这是教学最小集，不是 new-api 的完整 `GetRandomSatisfiedChannel` 实现。
+- **`pick_channel_for` 实现是教学最小集** —— 实际是 priority asc + 档内 weighted random（`random.choices` 选一条），`weight=0` 时回退 round-robin。new-api 的完整 `GetRandomSatisfiedChannel` 还做按 model 名分桶、按 group 分组、按 status 屏蔽等更细的事；本章只演示"档内加权分发"这一核心思想。
 
 ## 下章预告
 
