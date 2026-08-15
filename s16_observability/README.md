@@ -41,7 +41,8 @@ client ◀── 200 + x-trace-id: abc-123 + JSON 日志一行──
 指标在 `metrics.py` 里集中定义，中间件只在匹配 chat 路径时打点（避免 `/healthz`、`/metrics` 把基数撑爆）：
 
 ```python
-if request.url.path in ("/v1/chat/completions", "/v1/v1/chat/completions"):
+if request.url.path == "/v1/chat/completions":
+    model = getattr(request.state, "model", None) or "unknown"
     REQUESTS.labels(model=model, status=response.status_code).inc()
     LATENCY.labels(model=model).observe(elapsed)
 ```
@@ -89,10 +90,11 @@ Docker 镜像下，这行 JSON 直接进 `docker logs`；K8s 下进 stdout，由
 python -m pytest tests/test_s16_observability.py -v
 ```
 
-两个用例：
+三个用例：
 
 - `test_metrics_endpoint_exposes_counters` —— `/metrics` 返回 200 且文本含 `learn_new_api_requests_total`（counter 名字）。
 - `test_trace_id_propagates_to_response` —— 客户端发的 `x-trace-id` 头出现在响应头里。
+- `test_chat_request_increments_counter` —— 走完一次 chat 调用后，`/metrics` 文本里出现 `model="gpt-4o-mini"` 的样本行（证明中间件从 JSON body 读到 model 并打了 label）。
 
 ## → new-api 源码
 
@@ -108,7 +110,7 @@ python -m pytest tests/test_s16_observability.py -v
 | 分布式追踪导出（OpenTelemetry / OTLP） | **不做** | YAGNI。教程只演示"传 trace_id"，不演示"把它送到 Tempo / Jaeger"。要加就是 `opentelemetry-instrumentation-fastapi` + OTLP exporter，工作量 +1 天。 |
 | 日志聚合（Loki / ELK 客户端） | **不做** | 同上。结构化 JSON 已经够 `docker logs \| jq` 用了，真正接入 Loki 是部署侧的事。 |
 | 告警规则（Prometheus alerting rules） | **不做** | 告警是 SRE 域，不是代码域。 |
-| `model` 标签 | **永远是 `"unknown"`** | brief 用 `request.headers.get("x-model", "unknown")`，但模型在 JSON body 不在头里。正确做法是从 chat handler 写到 `request.state.model`。YAGNI，留默认。生产里 `model` label 高基数会爆 Prometheus，需要采样。 |
-| `/v1/chat/completions` 路径匹配 | **同时匹配 `/v1/chat/completions` 与 `/v1/v1/chat/completions`** | brief 只写了 `/v1/chat/completions`，但实际可达路径有两条：<br>- `/v1/chat/completions` —— s13 自己的路由（s13 在 mount 之前先定义）<br>- `/v1/v1/chat/completions` —— 挂载链 s12→s11→...→s08<br>中间件两条都计数，这样无论客户端走哪个入口都能上 metric。 |
+| `model` 标签 | **从 JSON body 读** | 中间件用 `await request.body()` 把 chat body 读出来、`json.loads` 解出 `model` 写到 `request.state.model`，再用 `receive()` 把同一份 bytes 喂回给下游（Starlette 标准做法）。label 真正携带模型名而不是 "unknown"。生产里 `model` label 高基数会爆 Prometheus，需要采样。 |
+| `/v1/chat/completions` 路径匹配 | **只匹配 `/v1/chat/completions`** | chat 端点的真实入口是 `/v1/chat/completions`（挂载链里其它层不再独立注册此路径）。中间件只在这条路径打点，避免 `/healthz`、`/metrics` 把基数撑爆。 |
 | `/metrics` 与 mount 顺序 | **`/metrics` 在 mount 之前注册** | Starlette 路由顺序坑。 |
 | 中间件 vs 装饰器 | **中间件** | 一处定义全局生效；装饰器需要给每个 handler 加 `@track_metrics`，易漏。 |
