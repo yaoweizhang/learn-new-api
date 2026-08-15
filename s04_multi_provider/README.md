@@ -1,4 +1,4 @@
-# s04: 多厂商适配器分派
+# s04: 多厂商适配器分派 — 按 model 前缀挑适配器,请求体各转各的
 
 > Previous: [s03](../s03_streaming_sse/) · Next: [s05](../s05_api_key_auth/)
 
@@ -6,9 +6,17 @@
 
 > **Layer**：L1 协议与转发
 
-**本章新增**:同一个 OpenAI 形态的客户端现在可以打 Claude 或 Gemini,因
-为中继按模型名选出一个 `Provider` 实现、把两侧(请求入、响应出)做转
-换。
+## 本章要做什么
+
+引入 `Provider` 抽象基类,按模型名前缀(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini)挑适配器。每个 provider 把 OpenAI 请求翻译成自家线协议(线协议:网关与客户端约定的 JSON / HTTP 形态),再把响应翻回 OpenAI 形态。学完你能用一个客户端对接三家上游。
+
+## 上一章复盘
+
+s03 把协议窄到 OpenAI 一种 vendor。现在要加 Claude / Gemini,但客户端不应该改。
+
+## 在整体中的位置
+
+网关唯一的"协议多元"出口——前面 3 章只接 OpenAI 形态,从此往后客户端始终用 OpenAI 形态说话,网关按 model 决定用哪家上游。
 
 ## 问题
 
@@ -25,16 +33,16 @@ OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`
 1. **把 OpenAI 请求翻译成自家线协议** (`to_upstream`)。
 2. **把自家响应翻回 OpenAI 形态** (`from_upstream`)。
 
-路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
+路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器 (`Adaptor`,new-api 术语:厂商适配器接口),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
 
-下面这张 ASCII 流程图把分派路径压成一行——图里有 `Client`、本章要写的 `Relay(按模型名前缀选)`、以及根据前缀派生的 `Provider` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块就是本章要写的 Relay——按模型名挑 adapter。
+下面这张 ASCII 流程图把分派路径压成一行——和下面那张架构图相对照:上面这张是单跳时序,下面那张是角色拓扑,中间那块都是"按模型名前缀选":
 
 ```
 Client ──POST /v1/chat/completions──▶  Relay(按模型名前缀选)  ──POST upstream──▶  Provider
         ◀────── OpenAI JSON ─────────                                    ◀──── JSON ────
 ```
 
-下面这张架构图给读者一幅全局鸟瞰：图里有 `Client`、`Relay`、以及根据模型名前缀动态选出的 `Provider` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块就是本章要写的 Relay——按模型名挑 adapter。
+下面这张架构图给读者一幅全局鸟瞰——图里有 `Client`、`Relay`、以及根据模型名前缀动态选出的 `Provider` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块就是本章要写的 Relay,按模型名挑 adapter:
 
 ![architecture](images/architecture.svg)
 
@@ -166,7 +174,7 @@ pytest tests/test_s04_multi_provider.py -v
 | `OpenAIProvider` | `relay/channel/openai/adaptor.go` —— OpenAI 专属的请求/响应转换 |
 | `ClaudeProvider` | `relay/channel/claude/adaptor.go` —— Anthropic Messages 的转换 |
 | `GeminiProvider` | `relay/channel/gemini/adaptor.go` —— Google `generateContent` 的转换 |
-| `pick_provider(model)` | `relay/relay.go` —— 通过检查模型名把入站请求派发到对应 channel |
+| `pick_channel_for(model)` | `relay/relay.go` —— 通过检查模型名把入站请求派发到对应 channel |
 
 new-api 走得更远:它有一个 `GetAdaptor(meta)` 工厂,把 `(channel,
 model)` 元组映射到适配器实例;另外每 channel 都有 `Key` 模式(我们这
@@ -192,3 +200,7 @@ model)` 元组映射到适配器实例;另外每 channel 都有 `Key` 模式(我
 - **每请求新建连接池**。正确,但慢;长连接客户端才是生产答
   案。→ s10。
 - **没有重试 / 退避**。→ s13。
+
+## 下章预告
+
+s04 任何能访问的客户端都能打网关,只要有路径就行。s05 加 API key 鉴权,把"匿名"打掉。
