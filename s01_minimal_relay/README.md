@@ -29,7 +29,7 @@ Client  ──POST /relay──▶  Relay  ──POST FORWARD_TARGET──▶  U
 
 整个内核由三块组成。
 
-**1. 一个存活探针路由。** 零依赖,后续每章都会用到(以及 s15 中 Docker 的健康检查):
+**1. 一个存活探针路由。** 零依赖,后续每章都会用到(包括 s15 中 Docker 的健康检查——s15 又额外加了一条 `/healthz` 深检路由,这里 `/health` 维持最朴素的"进程在跑"语义):
 
 ```python
 @app.get("/health")
