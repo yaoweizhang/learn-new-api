@@ -2,6 +2,10 @@
 
 > Previous: [s11](../s11_call_logs/) · Next: [s13](../s13_retry_fallback/)
 
+> *"完全相同 prompt 才命中"* —— 规范化后的消息数组作 key。
+
+> **Layer**：L4 路由与韧性
+
 ## 问题
 
 前 11 章里，每次客户端问"gpt-4o-mini 给我讲个笑话"，请求都会原封

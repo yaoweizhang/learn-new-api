@@ -2,6 +2,10 @@
 
 > Previous: [s13](../s13_retry_fallback/) · Next: [s15](../s15_docker_deployment/)
 
+> *"把 in-memory 表露出来"* —— admin UI 把内存状态暴露给运维。
+
+> **Layer**：L5 运维与可观测
+
 ## 问题
 
 走到第 13 章，网关已经能跑了：用户签到、配额扣减、渠道选择 + 重试

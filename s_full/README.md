@@ -2,6 +2,10 @@
 
 > Previous: [s16](../s16_observability/) · Next: —
 
+> *"16 章合一就是生产形态"* —— 教学挂 mount，生产 include_router。
+
+> **Layer**：LX 整合形态
+
 > 这是教程最后一章，把 s01-s16 的所有功能**重新组织**成一个生产形态的应用，目录结构对齐 `new-api` 的 `Router → Controller → Service → Model`。
 >
 > **本章不引入任何新功能**——把同样的代码整理到更干净的目录里，让读者理解"教学拆解 vs 生产目录"之间的对应关系。

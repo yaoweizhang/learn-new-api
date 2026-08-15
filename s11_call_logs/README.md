@@ -2,6 +2,10 @@
 
 > Previous: [s10](../s10_channel_management/) · Next: [s12](../s12_caching/)
 
+> *"100ms 异步刷一次"* —— 日志不该卡请求主流程。
+
+> **Layer**：L5 运维与可观测
+
 ## 设计要点
 
 日志存储是一个 `LogStore` 协议，默认实现是 `InMemoryLogStore`。测试可以调

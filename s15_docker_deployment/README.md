@@ -2,6 +2,10 @@
 
 > Previous: [s14](../s14_admin_dashboard/) · Next: [s16](../s16_observability/)
 
+> *"compose 一行起服务"* —— 本地 compose 等于生产。
+
+> **Layer**：L5 运维与可观测
+
 ## 问题
 
 到 s14，我们的 FastAPI 应用在开发机上跑得通：`python s14_admin_dashboard/code.py` 一开浏览器就能看到仪表盘。但"在我机器上能跑"不等于"上生产能跑"。

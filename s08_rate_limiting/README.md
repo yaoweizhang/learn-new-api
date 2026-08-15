@@ -2,6 +2,10 @@
 
 > Previous: [s07](../s07_pre_consume_settle/) · Next: [s09](../s09_user_system/)
 
+> *"桶里取 token"* —— rate limit 就是漏桶原理。
+
+> **Layer**：L3 计量与扣费
+
 ## 问题
 
 s07 的配额控制的是**花费**——一个余额很足的用户仍可能把上游打爆，把同一代理上其它所有租户的延迟都拖下水。一个吵闹的调用方 1 秒打 100 次 `/v1/chat/completions`，所有其它租户的体验都会跟着劣化。

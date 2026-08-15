@@ -2,6 +2,10 @@
 
 > Previous: [s02](../s02_openai_protocol/) · Next: [s04](../s04_multi_provider/)
 
+> *"一个字一个字流出去"* —— 客户端先看到第一个字就算赢。
+
+> **Layer**：L1 协议与转发
+
 **本章新增**:当 `stream=true` 时,中继打开一个 `httpx` 流式客户端、
 原样转发 SSE chunk,使客户端能看到首 token 延迟。非流式请求仍按 s02
 的方式返回 JSON。

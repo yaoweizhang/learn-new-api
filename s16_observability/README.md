@@ -2,6 +2,10 @@
 
 > Previous: [s15](../s15_docker_deployment/) · Next: [s_full](../s_full/)
 
+> *"trace_id 把请求串起来"* —— trace 先有，指标后跟。
+
+> **Layer**：L5 运维与可观测
+
 ## 问题
 
 到 s15 为止，我们只能回答两类问题："服务有没有起来"（看 `/healthz`）、"请求成功没有"（看 HTTP 状态码）。如果用户报告"今天 chat 很慢"，我们需要：

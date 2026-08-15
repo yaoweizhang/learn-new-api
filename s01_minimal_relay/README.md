@@ -2,6 +2,10 @@
 
 > Previous: — · Next: [s02](../s02_openai_protocol/)
 
+> *"把请求转出去"* —— 转发是最朴素的网关。
+
+> **Layer**：L1 协议与转发
+
 **本章新增**:一个 HTTP 转发器——一条路由,把 JSON 请求体传给单一上游,再把回复原样返回。
 
 新增依赖:`fastapi`、`uvicorn`、`httpx`、`pydantic`。

@@ -2,6 +2,10 @@
 
 > Previous: [s03](../s03_streaming_sse/) · Next: [s05](../s05_api_key_auth/)
 
+> *"前缀选 provider"* —— model 名就是路由键。
+
+> **Layer**：L1 协议与转发
+
 **本章新增**:同一个 OpenAI 形态的客户端现在可以打 Claude 或 Gemini,因
 为中继按模型名选出一个 `Provider` 实现、把两侧(请求入、响应出)做转
 换。

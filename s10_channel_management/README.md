@@ -2,6 +2,10 @@
 
 > Previous: [s09](../s09_user_system/) · Next: [s11](../s11_call_logs/)
 
+> *"priority + weight 排序"* —— 选路只是排序加过滤。
+
+> **Layer**：L4 路由与韧性
+
 ## 问题
 
 之前所有章节里，我们的上游都是写死在代码里的：要么 `s04_multi_provider` 里用一个简单的 if/elif 把 `model` 前缀映射到 base_url，要么 `s05` 用一张内存表把 API key 和用户绑死。一旦系统要对外服务，立刻就遇到三个问题：

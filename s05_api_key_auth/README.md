@@ -2,6 +2,10 @@
 
 > Previous: [s04](../s04_multi_provider/) · Next: [s06](../s06_token_counting/)
 
+> *"Bearer 一行拦住所有人"* —— header 一行守住所有下游。
+
+> **Layer**：L2 鉴权与身份
+
 **本章新增**:每次访问 `/v1/chat/completions` 都必须带上合法的 API
 key,放在 `Authorization: Bearer <key>` 里。未知、缺失、被封禁的 key
 统统返回 `401`。

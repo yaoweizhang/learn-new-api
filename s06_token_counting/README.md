@@ -2,6 +2,10 @@
 
 > Previous: [s05](../s05_api_key_auth/) · Next: [s07](../s07_pre_consume_settle/)
 
+> *"tiktoken 数明白"* —— token 不是字符，也不是 word。
+
+> **Layer**：L3 计量与扣费
+
 **本章新增**:在请求飞行前就数 prompt token(OpenAI 走 tiktoken,
 其它都按字符/4),并把结果挂到响应的 `usage` 上。现在我们在账单到达
 用户之前,就知道每条请求花了多少 token。

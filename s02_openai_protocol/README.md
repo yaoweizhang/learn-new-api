@@ -2,6 +2,10 @@
 
 > Previous: [s01](../s01_minimal_relay/) · Next: [s03](../s03_streaming_sse/)
 
+> *"对外说 OpenAI"* —— 一个 wire format 兼容所有 SDK。
+
+> **Layer**：L1 协议与转发
+
 **本章新增**:入站面采用 OpenAI 的 `/v1/chat/completions` 路径和 JSON
 schema。任何 OpenAI 客户端(官方 SDK、LangChain、LlamaIndex、终端里
 的 `curl`)都能原样对我们发起调用。
