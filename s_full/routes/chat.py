@@ -198,7 +198,12 @@ async def chat_completions(
         refund(p.user_id, estimate)
         raise HTTPException(r.status_code, r.text)
 
-    translated = provider.from_upstream(json.loads(r.text))
+    try:
+        translated = provider.from_upstream(json.loads(r.text))
+    except (ValueError, json.JSONDecodeError):
+        from s_full.services.quota import refund
+        refund(p.user_id, estimate)
+        raise HTTPException(502, "upstream returned malformed body")
     actual = settle(p.user_id, estimate, translated.get("usage", {}))
     enqueue_log({
         "user_id": p.user_id, "model": req.model, "status": r.status_code,

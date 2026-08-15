@@ -2,7 +2,10 @@ import sys
 from pathlib import Path
 
 import pytest
+import respx
+import time
 from fastapi.testclient import TestClient
+from httpx import Response
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -272,3 +275,111 @@ def test_billing_settle_uses_upstream_usage_not_pre_consume_floor():
     assert quota.get_balance(8) == 993
     # The function returned the actual cost (= 5 + 2 = 7).
     assert actual == 7
+
+
+def test_non_stream_502_refunds_when_upstream_returns_malformed_json():
+    """C1 regression: upstream returns 200 with body='not json'. The pre-consume
+    must be refunded (no silent loss) and the client must get a 502, not a 500."""
+    from s_full.services.billing import top_up
+    from s_full.services.quota import get_balance
+    from s_full.models.user import create_user, reset_db
+    from s_full.models.channel import create_channel, reset_channels
+    from s_full.middleware.auth import issue_token
+    reset_db(); reset_channels()
+    uid = create_user("u@x.com", "x")
+    top_up("u@x.com", 1_000_000)
+    create_channel("c1", "openai", "https://api.openai.com", weight=100, priority=0)
+    token = issue_token(uid, "u@x.com", is_admin=False)
+    balance_before = get_balance(uid)
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(200, content=b"not json")
+        )
+        with TestClient(app) as c:
+            r = c.post(
+                "/v1/chat/completions",
+                headers={"authorization": f"Bearer {token}"},
+                json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+            )
+    assert r.status_code == 502, r.text
+    # Pre-consume was refunded because the response couldn't be parsed.
+    balance_after = get_balance(uid)
+    assert balance_after == balance_before
+
+
+def test_jwt_missing_sub_returns_401_not_500():
+    """I1 regression: PyJWT doesn't enforce 'sub'. A hand-rolled token without
+    it must surface as 401, not bubble up as a 500 from a KeyError."""
+    import jwt
+    from s_full.middleware.auth import SECRET
+    from s_full.models.user import create_user, reset_db
+    from s_full.models.channel import create_channel, reset_channels
+    reset_db(); reset_channels()
+    uid = create_user("u@x.com", "x")
+    create_channel("c1", "openai", "https://api.openai.com", weight=100, priority=0)
+    # Token omits 'sub' on purpose; includes a valid exp so PyJWT doesn't reject.
+    token = jwt.encode(
+        {"email": "u@x.com", "exp": int(time.time()) + 3600},
+        SECRET,
+        algorithm="HS256",
+    )
+    with TestClient(app) as c:
+        r = c.post(
+            "/v1/chat/completions",
+            headers={"authorization": f"Bearer {token}"},
+            json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+        )
+    assert r.status_code == 401, r.text
+
+
+def test_billing_settle_returns_pre_deducted_when_partial_usage():
+    """I2 regression: when upstream returns only prompt_tokens (no completion),
+    billing.settle must return pre_deducted (treat the usage report as
+    incomplete) — no refund, no extra charge."""
+    from s_full.services import quota, billing
+    quota.reset()
+    quota.set_balance(9, 1_000)
+    quota.deduct(9, 261)
+    # 'completion_tokens' deliberately absent. Old behavior refunded (pt or 0) * RATE
+    # = 5, charging the user only 5. New behavior keeps the full pre-consume.
+    actual = billing.settle(9, pre_deducted=261, usage={"prompt_tokens": 5})
+    assert actual == 261
+    assert quota.get_balance(9) == 1_000 - 261  # no refund
+
+
+def test_streaming_429_refunds_estimate():
+    """I3 regression: streaming upstream returning a 4xx/5xx with empty body
+    must propagate the error and refund the pre-consume (the user got nothing)."""
+    from s_full.services.billing import top_up
+    from s_full.services.quota import get_balance
+    from s_full.models.user import create_user, reset_db
+    from s_full.models.channel import create_channel, reset_channels
+    from s_full.middleware.auth import issue_token
+    reset_db(); reset_channels()
+    uid = create_user("u@x.com", "x")
+    top_up("u@x.com", 1_000_000)
+    create_channel("c1", "openai", "https://api.openai.com", weight=100, priority=0)
+    token = issue_token(uid, "u@x.com", is_admin=False)
+    balance_before = get_balance(uid)
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(429, content=b"", headers={"content-type": "text/event-stream"})
+        )
+        with TestClient(app) as c:
+            r = c.post(
+                "/v1/chat/completions",
+                headers={"authorization": f"Bearer {token}"},
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": "hi"}],
+                    "max_tokens": 256,
+                    "stream": True,
+                },
+            )
+    # Error must surface to the client. TestClient turns the upstream exception
+    # into a 500 when a streaming response raises mid-stream, OR surfaces the
+    # thrown HTTPException status. Either way the response must NOT be 200.
+    assert r.status_code >= 400, r.text
+    # Pre-consume was refunded because the stream never produced any chunks.
+    balance_after = get_balance(uid)
+    assert balance_after == balance_before
