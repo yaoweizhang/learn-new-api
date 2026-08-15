@@ -36,6 +36,9 @@ def require_api_key(request: Request) -> Principal:
         claims = jwt.decode(token, SECRET, algorithms=["HS256"])
     except Exception:
         raise HTTPException(status_code=401, detail="invalid token")
+    if "sub" not in claims:
+        # PyJWT doesn't enforce "sub"; reject early.
+        raise HTTPException(status_code=401, detail="invalid token")
     return Principal(
         user_id=int(claims["sub"]),
         email=claims.get("email", ""),
