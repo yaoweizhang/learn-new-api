@@ -34,7 +34,7 @@ async def chat_completions(req: ChatCompletionRequest, p: Principal = Depends(re
     # ... 预扣估算、调上游、结算，和 s07 一致 ...
 ```
 
-> Note: 这是修好后的 typed-parameter 写法。`s05` 当时用的是 `dependencies=[Depends(require_api_key)]` —— 那样只在路由层跑依赖，不会把 `Principal` 注入 handler 签名，handler 只能去碰 `request.state.principal`。详见 s_full 的 "request.state.principal 的陷阱" 一节。
+> Note: fastapi 的依赖注入有两种写法：typed-parameter（`p: Principal = Depends(require_api_key)`）和 `dependencies=[Depends(require_api_key)]` 列表。`s05` 当时用的是后一种写法——只在路由层跑依赖，不会把 `Principal` 注入 handler 签名，handler 只能去碰 `request.state.principal`。本章节用 typed-parameter，详见 s_full 的 "request.state.principal 的陷阱" 一节。
 
 **检查顺序很重要**：鉴权 → 限速 → 配额扣减 → 调上游。没有合法 key 的用户根本到不了桶这步（401）；令牌充足但没有配额的用户拿到 `402`，而不是 `429`。倒过来排会浪费上游调用、把没有 key 的探测请求也算进限速统计。
 
@@ -84,7 +84,7 @@ pytest tests/test_s08_rate_limiting.py -v
 
 ## 取舍
 
-- **进程内桶是单进程的**。每个 worker 有自己的计数器，所以多 worker 部署下用户实际能拿到 `N_workers × capacity` 的突发。s12 把桶挪到 Redis，用 `INCR` + `EXPIRE` 让所有 worker 共享状态。
+- **进程内桶是单进程的**。每个 worker 有自己的计数器，所以多 worker 部署下用户实际能拿到 `N_workers × capacity` 的突发。真实部署要把桶挪到 Redis，用 `INCR` + `EXPIRE` 让所有 worker 共享状态——但那是后续章节重写的事，本章是单进程 in-memory。
 - **默认限制是全局的**。生产从数据库读每用户限制（tier、channel、plan）。本章把 60/1 写死——重点是算法，不是策略。
 - **没有 `Retry-After` 头**。真实实现会加这个让礼貌的客户端知道何时退避；我们保持响应 body 极简。
 - **按用户，不是按 token**。限速作用于 API key 持有者，而不是按上游模型分。多租户的模型级配额会把桶再按 `(user_id, model)` 拆。
