@@ -45,7 +45,7 @@ new-api 自己有 React 写的完整 Web 后台（`web/` 目录），那是个�
   .list_logs()` 读。**用户数保持 0**——s09 没有 `list_all()`，本章
   不为这一个数字去给 s09 加 SQL count（YAGNI）。
 
-路由形状：
+路由形状——下面这张块状路由表把本章要写的 4 条接口压成一览：左是 `method + path`，中间是入参（登录是表单 body），右是返回码与返回体；本章要写的核心就是"登录 + 仪表盘"两个 dashboard 路由 + 仍然挂着从 s13 来的一条转发接口。
 
 ```
 GET  /dashboard/login              -> 200 HTML form
