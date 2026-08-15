@@ -27,7 +27,7 @@
 
 | 模型名前缀 | 策略 | 出处 |
 |---|---|---|
-| `gpt-`/`o` | `tiktoken`(`cl100k_base`) | `s06_token_counting/tokenizer.py:count_openai` |
+| `gpt-`/`o` | `tiktoken`(`cl100k_base`) | `s06_token_counting/tokenizer.py:count_openai` (`cl100k_base` 是 OpenAI gpt-4*/gpt-3.5-turbo 用的 BPE 编码) |
 | 其它 | `len(content) // 4` | `s06_token_counting/tokenizer.py:count_estimate` |
 
 `s06_token_counting/code.py:chat_completions` 在转发前先数 prompt
