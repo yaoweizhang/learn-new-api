@@ -161,12 +161,26 @@ curl -s http://localhost:8010/admin/channels -H "authorization: Bearer $ADMIN"
 pytest tests/test_s10_channel_management.py -v
 ```
 
-两个测试覆盖关键契约：
+九个测试覆盖关键契约，分两组：
+
+**管理员鉴权**（handler 层的 401/403 路径）：
 
 | 测试 | 断言 |
 | --- | --- |
 | `test_admin_can_create_channel` | 管理员带合法 JWT POST `/admin/channels` 返回 201。 |
 | `test_non_admin_cannot_create_channel` | 普通用户带合法 JWT POST `/admin/channels` 返回 403。 |
+
+**`pick_channel_for` 选路算法**（按 `(priority, weight, healthy)` 规则从渠道表里挑一条）：
+
+| 测试 | 断言 |
+| --- | --- |
+| `test_pick_channel_for_returns_none_when_empty` | 渠道表为空时返回 `None`，不抛异常。 |
+| `test_pick_channel_for_returns_none_for_unknown_model` | 渠道表非空但没有任何渠道能服务该模型时返回 `None`。 |
+| `test_pick_channel_for_filters_by_provider` | 按 `model` 前缀筛掉 provider 不匹配的渠道（`gpt-*` 不会落到 claude 渠道，反之亦然）。 |
+| `test_pick_channel_for_skips_unhealthy_and_disabled` | `mark_unhealthy` 标记的渠道被跳过，即使 `weight` 更高。 |
+| `test_pick_channel_for_picks_lowest_priority_first` | `priority` 比 `weight` 优先——低优先级小权重要胜过高优先级大权重。 |
+| `test_pick_channel_for_distributes_load_by_weight` | 同优先级内按 `weight` 加权随机分配（用 monkey patch `random.choices` 让结果可重现），跑 200 次两个渠道至少各被选中一次。 |
+| `test_pick_channel_for_handles_zero_weights` | 同优先级内所有渠道 `weight=0` 时回退到 round-robin，不抛 `random.choices` 异常。 |
 
 `_clean` fixture 在每个测试前后调用 `reset_channels()`，保证渠道表不串。
 
