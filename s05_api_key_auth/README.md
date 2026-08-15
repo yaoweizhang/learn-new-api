@@ -27,7 +27,7 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 存储层(`storage.py`)本章是进程内的;真实实现会换 Redis + 数据库。
 `storage.py` 和 `code.py` 的这种拆分,正好对齐 new-api 在 `model/`(持久化)和 `middleware/`(HTTP 装配)之间的切分。
 
-下面这张 ASCII 流程图把鉴权边界画出来——图里有 `Client`、本章要写的 `require_api_key` 依赖闸门、转发路由以及远端 `Upstream` 四个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块 `require_api_key` 闸门是本章要写的：输入是请求头，输出是 `Principal` 挂到 `request.state` 或者 401 拦下来。
+下面这张 ASCII 流程图画鉴权边界——图里有 `Client`、`require_api_key` 依赖闸门、转发路由、远端 `Upstream` 四个角色，箭头方向 = 请求/响应走向，中间那一块 `require_api_key` 闸门就是本章要写的。
 
 ```
 Client ──POST + Bearer ──▶  require_api_key  ──▶  /v1/chat/completions  ──▶  Upstream
