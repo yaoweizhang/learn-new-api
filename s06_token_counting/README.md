@@ -67,7 +67,7 @@ def count_openai(messages, model):
 
 非 OpenAI 模型没有官方分词器,所以我们退回业内常用的 1 token ~ 4 字
 符的经验估算。故意粗糙——对账单估算已经够用,等拿到准确计数再替换掉
-(后续 `s11_billing_quotas` 会用真实计数)。
+(后续 `s07_pre_consume_settle` 会用真实计数)。
 
 调度器:
 
@@ -131,9 +131,8 @@ python -m pytest tests/test_s06_token_counting.py -v
 
 ## 取舍
 
-- **还没有流式 token 计数**。计数在请求阶段算;流式响应要把 token
-  数到 SSE chunk 落地的那一刻再算。那是 `s08_streaming_token_
-  counting`。
+- **还没有流式 token 计数**。计数在请求阶段算;流式响应(`s03_streaming_sse`)要把 token
+  数到 SSE chunk 落地的那一刻再算,目前还是 pre-consume 估算 + settle 校正的组合。
 - **char/4 比较粗糙**。在英文上对 Claude/Gemini 准确率大约 ±20%——
   给软配额提示够用,精确计费则不行。生产路径应该在上游提供
   `/count_tokens` 时调它。
