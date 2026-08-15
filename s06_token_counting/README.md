@@ -1,16 +1,24 @@
-# s06: Token 计数
+# s06: Token 计数 — 调用前估 token,调用后用上游报数,差额结算
 
 > Previous: [s05](../s05_api_key_auth/) · Next: [s07](../s07_pre_consume_settle/)
 
-> *"tiktoken 数明白"* —— token 不是字符，也不是 word。
+> *"tiktoken 数明白"* —— token 不是字符,也不是 word。
 
 > **Layer**：L3 计量与扣费
 
-**本章新增**:在请求飞行前就数 prompt token(OpenAI 走 tiktoken,
-其它都按字符/4),并把结果挂到响应的 `usage` 上。现在我们在账单到达
-用户之前,就知道每条请求花了多少 token。
+## 本章要做什么
 
-> **tiktoken**（OpenAI 开源的 tokenizer 库，按 BPE 规则把文本切成 token 并计费）—— 后续章节直接复用，不再重复解释。
+在请求飞行前就数 prompt token(OpenAI 走 tiktoken,其它按字符/4),把结果挂到响应的 `usage` 上。学完你能在账单到达用户之前就知道每条请求花了多少 token。
+
+> **tiktoken**(OpenAI 开源的 tokenizer 库,按 BPE 规则把文本切成 token 并计费) —— 后续章节直接复用,不再重复解释。
+
+## 上一章复盘
+
+s05 知道是谁,但不知道这一笔要花多少。
+
+## 在整体中的位置
+
+经济系统的"度量衡"——s07 预扣 / 结算依赖 s06 提供的两个数字(预估值 + 实际值)。没有它,扣费只能黑盒估算。
 
 ## 问题
 
@@ -40,14 +48,14 @@ token,等到上游回复时:
 - 否则就用 `prompt_tokens` 估算值 + `len(reply) // 4`(对完成
   token)合成一份 `usage`。
 
-下面这张 ASCII 流程图把"先计数再转发"画出来——图里有 `Client`、本章要写的 `s06` 中继、以及远端 `Upstream` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块 `s06` 是本章要写的：先 count prompt 再转发，并 merge upstream 的 usage 回给客户端。
+下面这张 ASCII 流程图把"先计数再转发"画出来,和下面那张架构图相对照——上面这张是单跳时序,下面那张是角色拓扑,中间那块都是 s06 中继(预热计数 + 合并 upstream usage):
 
 ```
 Client ──POST──▶ s06 ──count prompt──▶ Upstream ──reply──▶ merge usage ──▶ Client
                                   └── 非 OpenAI 走 char/4 兜底
 ```
 
-下面这张架构图给读者一幅全局鸟瞰：图里仍是 `Client / s06 / Upstream` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块 `s06` 中继就是本章要写的——预热计数 + 合并上游 usage。
+下面这张架构图给读者一幅全局鸟瞰——图里仍是 `Client / s06 / Upstream` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块 `s06` 中继就是本章要写的——预热计数 + 合并上游 usage:
 
 ![architecture](images/architecture.svg)
 
@@ -136,3 +144,7 @@ python -m pytest tests/test_s06_token_counting.py -v
 - **还没有流式 token 计数**。计数在请求阶段算;流式响应(`s03_streaming_sse`)要把 token 数到 SSE chunk 落地的那一刻再算,目前还是 pre-consume 估算 + settle 校正的组合。
 - **char/4 比较粗糙**。在英文上对 Claude/Gemini 准确率大约 ±20%——给软配额提示够用,精确计费则不行。生产路径应该在上游提供 `/count_tokens` 时调它。
 - **overhead 是硬编码的**。每条消息 4 token 这条规则来自 OpenAI cookbook;真实 overhead 随 role 和工具定义而变。一章内我们接受这点漂移,后面再按 model-specific 规则读。
+
+## 下章预告
+
+s06 能算账,但还没人记账。s07 在调用前预扣,调用后退补,让用户不为失败调用付费。
