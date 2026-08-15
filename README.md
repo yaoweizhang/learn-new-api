@@ -1,4 +1,4 @@
-# learn-new-api
+# learn-new-api——AI API 网关的 Python 教程
 
 **new-api** 是一类 AI API 网关：把多家上游（OpenAI、Anthropic、Gemini、本地推理服务）合并成一个 OpenAI 兼容端点。客户端拿自己的账号余额/配额，发任意上游的请求——对外说 OpenAI 的话，任何 OpenAI SDK 都能直接连。
 
