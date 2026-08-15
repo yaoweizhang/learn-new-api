@@ -16,14 +16,14 @@ admin 后台是**人用的界面**，不是给脚本用的。每次让人去拼 
 JSON、再 `jq` 一下才能知道"系统现在怎样"，运营成本就上来了。学习项
 目也希望有一个"看得见"的入口——点开浏览器就能看到系统状态。
 
-但 new-api 自己有 React 写的完整 Web 后台（`web/` 目录），那是个正
-经的 SPA，跟 Go 后端走 REST。如果我们要照搬那个，体量比后端还大
-——Vue/React 构建工具链、状态管理、路由、组件库、TypeScript 类型
-定义，光搭起来就够写三章。
+new-api 自己有 React 写的完整 Web 后台（`web/` 目录），那是个正经
+的 SPA，跟 Go 后端走 REST。照搬那个，体量比后端还大——Vue/React
+构建工具链、状态管理、路由、组件库、TypeScript 类型定义，光搭起来
+就够写三章。本章不碰那个体量。
 
 ## 方案
 
-在网关内挂一个**最薄的服务端渲染**后台：
+网关内挂一个**最薄的服务端渲染**后台：
 
 - **`s14_admin_dashboard/code.py`** —— 一个新的 FastAPI 实例，挂
   上 `/dashboard/login`（GET 渲染表单、POST 校验凭证并下发 Cookie）
@@ -70,7 +70,7 @@ def login_post(email: str = Form(...), password: str = Form(...)):
 不能放环境变量。
 
 Cookie 只是 `admin=1` 的明文标记：**没有签名**。浏览器改个
-`admin=1` 就能进去。生产环境要么用 `itsdangerous.URLSafeTimed
+`admin=1` 就能进去。生产里要么用 `itsdangerous.URLSafeTimed
 Serializer` 签名 Cookie，要么直接用 s09 的 JWT——我们已经为用户
 写过 JWT 了，admin JWT 复用同一套就行。
 
@@ -82,9 +82,9 @@ def _require_admin(request: Request):
         return HTMLResponse("unauthorized", status_code=401)
 ```
 
-注意：返回的是 **401 不是 302**。理论上应该 302 重定向到 `/dashboard
-/login`，但 Starlette 的 `TestClient` 默认会跟随重定向——重定向
-到 `/dashboard/login`（200）后最终状态码是 200，断言
+注意：返回的是 **401 而不是 302**。理论上应该 302 重定向到
+`/dashboard/login`，但 Starlette 的 `TestClient` 默认会跟随重定
+向——重定向到 `/dashboard/login`（200）后最终状态码是 200，断言
 `status_code in (302, 401)` 会失败。直接返回 401 让 TestClient 停在
 原响应上是简化测试。**生产里应该 302**——浏览器体验更好（自动跳
 登录页）。
@@ -153,8 +153,8 @@ stats = {
 
 `channels` 和 `log_store` 都是模块级单例（线程锁保护），dashboard
 handler 直接调函数读当前状态。**没有数据库查询**——重启进程回到
-初始状态。这是一个最小可用的"看得到数字"后台，不是"可编辑的
-CRUD 后台"。
+初始状态。这是一个"看得到数字"的最小后台，不是"可编辑的 CRUD 后
+台"。
 
 ## 运行
 
@@ -257,7 +257,7 @@ pytest tests/test_s14_admin_dashboard.py -v
   登录页，但 `TestClient` 默认跟随重定向，302 + 跟随 → 200，
   断言 `status_code in (302, 401)` 会失败。**直接返 401** 让
   TestClient 不跟随，重定向到登录页留给浏览器自己去体验。
-  这是一个"为测试妥协"的实现偏差——见 `_require_admin` 注释。
+  这是一个为测试妥协的实现偏差——见 `_require_admin` 注释。
 - **stats 字典每次现算** —— 每次 GET `/dashboard/` 都重新调
   `list_channels()` 和 `list_logs()`。渠道 / 日志量大了之后这
   会慢（O(n) 拷贝）。生产里要么缓存 60 秒、要么从 Prometheus
