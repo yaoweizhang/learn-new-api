@@ -16,16 +16,18 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 ## 方案
 
-引入一个 `Principal`(一个 `user_id` 加一个 `scopes` 元组)和一个
-`Depends(require_api_key)` 依赖,它会在 chat-completion 处理器之前运行。这个依赖做这几件事:
+引入一个 `Principal`（当前请求代表的用户身份与权限：一个 `user_id` 加一个 `scopes`（权限标签元组，挂在 Principal 上）元组）和一个
+`Depends`（FastAPI 依赖注入：路由前自动跑的函数）`require_api_key` 依赖，它会在 chat-completion 处理器之前运行。这个依赖做这几件事：
 
 1. 从请求里读 `Authorization: Bearer <key>`。
-2. 检查 `storage.is_blocked(key)`(未来黑名单钩子——本章永远返 `False`)。
+2. 检查 `storage.is_blocked(key)`（黑名单查询钩子，返回是否被封禁——未来接 Redis；本章永远返 `False`）。
 3. 在 `storage.lookup_key` 里查这个 key,查不到抛 `401`。
 4. 成功的话,把 `Principal` 挂到 `request.state`,供下游中间件使用。
 
 存储层(`storage.py`)本章是进程内的;真实实现会换 Redis + 数据库。
 `storage.py` 和 `code.py` 的这种拆分,正好对齐 new-api 在 `model/`(持久化)和 `middleware/`(HTTP 装配)之间的切分。
+
+下面这张 ASCII 流程图把鉴权边界画出来——图里有 `Client`、本章要写的 `require_api_key` 依赖闸门、转发路由以及远端 `Upstream` 四个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块 `require_api_key` 闸门是本章要写的：输入是请求头，输出是 `Principal` 挂到 `request.state` 或者 401 拦下来。
 
 ```
 Client ──POST + Bearer ──▶  require_api_key  ──▶  /v1/chat/completions  ──▶  Upstream
@@ -33,6 +35,8 @@ Client ──POST + Bearer ──▶  require_api_key  ──▶  /v1/chat/compl
                                 ▼
                           Principal 挂在 request.state
 ```
+
+下面这张架构图给读者一幅全局鸟瞰：图里有 `Client / require_api_key / 上游` 几个角色，请求自左向右、响应自右向左折返；中间那一块 `require_api_key` 闸门就是本章要写的代码——读 Bearer 头、查 key、挂 Principal。
 
 ![architecture](images/architecture.svg)
 
