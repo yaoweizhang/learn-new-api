@@ -40,7 +40,7 @@ messages、同 temperature 才算相同。语义相似（"讲个笑话" vs "给�
 `sort_keys` + `separators` 让序列化结果**与字段顺序无关**——`{"a":1,
 "b":2}` 和 `{"b":2,"a":1}` 算同一个 key。
 
-路由形状：
+路由形状——下面这张块状路由表把本章要写的 2 条接口压成一览：左是 `method + path`，中间是入参（`/v1/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body），右是返回码与返回体；本章要写的核心就是"读缓存或写缓存"一条转发路径 + 一条统计接口。
 
 ```
 POST /v1/v1/chat/completions      Bearer API key, body={model, messages, stream?, temperature?}  -> 200 + (首次写缓存, 命中直接返回)
