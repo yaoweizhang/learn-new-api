@@ -42,6 +42,12 @@ async def chat_completions(req: ChatCompletionRequest, p: Principal = Depends(re
     # ... 预扣估算、调上游、结算,和 s07 一致 ...
 ```
 
+> Note: 这是修好后的 typed-parameter 写法。`s05` 当时用的是
+> `dependencies=[Depends(require_api_key)]` —— 那样只在路由层跑依赖,
+> 不会把 `Principal` 注入 handler 签名,handler 只能去碰
+> `request.state.principal`。详见 s_full 的
+> "request.state.principal 的陷阱" 一节。
+
 检查顺序很重要:鉴权 → 限速 → 配额扣减 → 调上游。没有合法 key 的用
 户根本到不了桶这步;令牌充足但没有配额的用户拿到 `402`,而不是
 `429`。
