@@ -1,4 +1,4 @@
-# s13：失败即升级——渠道级回落（不重试，换下一条）
+# s13：失败即回落——渠道级 fallback（不重试，换下一条）
 
 > Previous: [s12](../s12_caching/) · Next: [s14](../s14_admin_dashboard/)
 
@@ -14,7 +14,7 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
 经被记了一次。在多个用户并发问同一个问题时尤其浪费：明明临时抖
 一下，我们却把整次推理丢给客户端去重试。
 
-**这一章的判断：网关不再做"瞬态错误原地重试"——一次失败就升级到
+**这一章的判断：网关不再做"瞬态错误原地重试"——一次失败就回落到
 下一条渠道。**理由有三个：
 
 1. **重试 vs 降级**：重试同一渠道是在赌"上游马上就好"；多渠道架
@@ -61,7 +61,7 @@ GET  /admin/cache/stats                                       -> 200 {size, live
 一次同渠道的请求直接被 `for ch in candidates` 的 `if not ch["healthy
 "]: continue` 跳掉。要恢复得手动调 `/admin/channels/{id}/enable`
 （s10 已实现，本章不重复）。这是有意的——"再调一次也大概率失败"
-的渠道不值得浪费一次升级机会。
+的渠道不值得浪费一次回落机会。
 
 ## 工作原理
 
@@ -76,14 +76,14 @@ async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             r = await client.post(url, content=body, headers=upstream_headers)
         except httpx.HTTPError as exc:
-            # Transport 失败（超时、连接拒绝、DNS）——升级到下一条
+            # Transport 失败（超时、连接拒绝、DNS）——回落到下一条
             last_error = str(exc)
             ch_mod.mark_unhealthy(ch["id"])
             continue
         if r.status_code < 400:
             ...
             return JSONResponse(translated)
-        # 非 2xx——升级到下一条
+        # 非 2xx——回落到下一条
         last_status = r.status_code
         last_body = r.text
         last_error = f"{r.status_code}: {r.text}"
@@ -129,7 +129,7 @@ app.mount("/", s12_app)  # 挂载 s12 最后
 Starlette 按注册顺序迭代路由。客户端打 `/v1/chat/completions`，Sta
 rlette 看到本地有这条路由，直接处理，根本不进 s12 那条挂载链——所以
 s12 → s11 → s10 → s09 → s08 那一长串 chat 端点逻辑本章**完全跳过**。
-这是有意的：s13 是 chat 端点的"升级版"，应该替换而不是叠加。
+这是有意的：s13 是 chat 端点的"带回落"版本，应该替换而不是叠加。
 
 但 s12 的 `/admin/cache/stats` 路由仍然可达——因为本地没定义它，
 Starlette 接着往下走到挂载链，s12 自己 match 上。
@@ -178,14 +178,14 @@ pytest tests/test_s13_retry_fallback.py -v
 依赖的所有 in-memory 状态。
 
 **为什么 `assert mock.calls.call_count == 2`？** 本章测试就是要证明
-"立即升级，不重试"。如果第一条渠道被调 2 次，说明回到了 tenacity
+"立即回落，不重试"。如果第一条渠道被调 2 次，说明回到了 tenacity
 式重试——这正是我们要防的回归。
 
 ## → new-api 源码
 
 真实部署里同样的"渠道级回落"在 Go 里长这样：
 
-- `service/channel_select.go` —— 渠道选择 + 升级的真正核心。里面定
+- `service/channel_select.go` —— 渠道选择 + 回落的真正核心。里面定
   义了 `RetryParam` 结构（`Retry`、`resetNextTry`、`IncreaseRetry()`
   `ResetRetryNextTry()`），还有 `CacheGetRandomSatisfiedChannel` 处
   理跨分组轮询、按 priority 选下一条渠道。注意这里的 `Retry` 不是
@@ -198,8 +198,8 @@ pytest tests/test_s13_retry_fallback.py -v
   接改内存 dict；真实部署里要走 GORM 写库 + Redis 缓存（避免每条请
   求都打 DB）。
 - `relay/helper/` 里的 relay 入口 —— 这里是真正调上游的地方。我们
-  这一章把"调上游 + 升级渠道"全塞进一个 handler；new-api 是按层拆
-  开：handler 调 relay、relay 调 provider、provider 调 HTTP，升级和
+  这一章把"调上游 + 回落渠道"全塞进一个 handler；new-api 是按层拆
+  开：handler 调 relay、relay 调 provider、provider 调 HTTP，回落和
   切渠道在 relay 那一层。
 
 > Windows 文件系统不分大小写，本地 IDE 里看着像 `ChannelSelect.go`
@@ -208,14 +208,14 @@ pytest tests/test_s13_retry_fallback.py -v
 
 ## 取舍
 
-- **不做 in-request 重试** —— 一次失败就升级，单条抖动就被换掉。
+- **不做 in-request 重试** —— 一次失败就回落，单条抖动就被换掉。
   在信道稳定的 production 里，这点代价是值得的：在 1s 内换掉 1 个
   不稳定的渠道 vs 死磕 0.6s + 3 次同渠道重试，前者更可预测。
 - **`mark_unhealthy` 没有自动恢复** —— 一旦被标 unhealthy，得手动
   调 s10 的 `/admin/channels/{id}/enable`。真实部署里会跑一个后台
   健康检查任务（比如每 30s 发一次 OPTIONS 请求），发现恢复了就
   `mark_healthy`。本章不实现后台任务，YAGNI。
-- **没有"瞬态 vs 永久"区分** —— 4xx 也走升级。会浪费一两次握手
+- **没有"瞬态 vs 永久"区分** —— 4xx 也走回落。会浪费一两次握手
   换另一条渠道 401，但好处是状态码白名单不再需要维护。生产里如
   果在意这点延迟，可以参考 new-api 的 `RetryParam` 加一道"401/403
   立刻 upgrade"的快速路径。
