@@ -25,10 +25,14 @@ schema。任何 OpenAI 客户端(官方 SDK、LangChain、LlamaIndex、终端里
 
 转发循环本身逐字节不变。唯一改的是我们"在外头叫什么"。
 
+下面这张 ASCII 流程图把本章的形态压成一行——图里有 `Client`、本章要写的 OpenAI 形态 API、远端 `Upstream` 三个角色，箭头方向 = 请求/响应走向（`▶` 发请求、`◀` 回 JSON），中间那一块就是本章要写的 OpenAI 形态 API（重命名路由 + 收窄 schema）：
+
 ```
 Client ──POST /v1/chat/completions──▶  OpenAI 形态的 API  ──POST FORWARD_TARGET──▶  Upstream
         ◀────── JSON ────────────                         ◀──────── JSON ───────────
 ```
+
+下面这张架构图给读者一幅全局鸟瞰：图里仍是 `Client / OpenAI 形态 API / Upstream` 三个角色，请求自左向右、响应自右向左折返；中间那一块就是本章要写的 OpenAI 形态 API——重命名路由 + 收窄 schema。
 
 ![architecture](images/architecture.svg)
 
