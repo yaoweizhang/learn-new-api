@@ -184,12 +184,17 @@ export JWT_SECRET="..."                 # JWT 签名密钥（默认 "change-me-i
 pytest tests/test_s_full_smoke.py -v
 ```
 
-预期 10 个测试通过：
+预期 14 个测试通过：
 
 **Smoke**：
 
 - `test_health` —— `/health` 返回 200
 - `test_full_relay_roundtrip` —— 注册用户 → 充值 → 创建 channel → 调 `/v1/chat/completions`（mock 上游）→ 200
+- `test_non_stream_502_refunds_when_upstream_returns_malformed_json` —— 上游 200 但 body 非 JSON 时，pre-consume 全额退还，客户端拿到 502
+
+**Auth**：
+
+- `test_jwt_missing_sub_returns_401_not_500` —— 缺 `sub` 声明的 token 返回 401（而不是 500）
 
 **Provider key 注入**：
 
@@ -205,11 +210,13 @@ pytest tests/test_s_full_smoke.py -v
 - `test_streaming_passes_through_chunks` —— SSE chunk 透传给客户端
 - `test_streaming_refunds_when_upstream_reports_usage` —— 上游报 usage 时按真实 usage 扣费
 - `test_streaming_gemini_returns_400` —— Gemini 路径暂不支持 streaming，直接 400
+- `test_streaming_429_refunds_estimate` —— 上游 429 + 空 body 时 pre-consume 全额退还（客户端仍见 200+空 body，因为 Starlette 在第一个 byte 写出前就已发完 HTTP 头——见"取舍"小节）
 
 **Quota / Billing 双向结算**：
 
 - `test_quota_settle_charges_overage_bidir` —— 预扣不足时按真实 usage 双向结算超量
 - `test_billing_settle_uses_upstream_usage_not_pre_consume_floor` —— settle 用上游 usage 而非 pre-consume floor
+- `test_billing_settle_returns_pre_deducted_when_partial_usage` —— 上游只报 `prompt_tokens` 或只报 `completion_tokens` 时，usage 视为不完整，保留 pre-consume（不退款）
 
 `upstream_openai` fixture（来自 `tests/conftest.py`）用 respx mock 了 `https://api.openai.com/v1/chat/completions`，跟 s01-s13 用的是同一个。
 

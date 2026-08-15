@@ -47,7 +47,7 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
   最后挂载 s12（不是 s08），让 `/admin/cache/stats` 仍可达。
 - **s13 自有路由** —— `@app.post("/v1/chat/completions")` 写在
   `app.mount("/", s12_app)` **之前**，Starlette 按注册顺序匹配路由，
-  本地路由把挂载的同名路由挡住。这跟 s04.3 / s04.2 一样的 Starlette
+  本地路由把挂载的同名路由挡住。这跟 `s04_multi_provider` 一样的 Starlette
   坑。
 
 路由形状：
