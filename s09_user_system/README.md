@@ -1,5 +1,7 @@
 # s09: 用户系统（bcrypt + JWT）
 
+> Previous: [s08](../s08_rate_limiting/) · Next: [s10](../s10_channel_management/)
+
 ## 问题
 
 s05 之前我们用一张“API key → 用户”的内存表来做鉴权。这种做法在演示阶段没问题，
