@@ -26,10 +26,10 @@
 
 引入两个最小部件：
 
-- **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore` 默认实现。`LogStore` 是个 `typing.Protocol`（Python 的结构性子类型/鸭子类型 + 类型注解，实现类只要方法签名对得上就算满足，不必显式继承），只有 `enqueue` / `list` / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表：`enqueue` 把一行塞进缓冲，后台 `flush_loop` 每 100ms 把整段搬到 `list`。重置用 `reset_logs()`。模块层保留 `enqueue`/`list_logs` 等 thin wrapper 转发到一个 `_default` 实例，方便测试用 `set_default(rec)` 注入假实现。
+- **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore` 默认实现。`LogStore` 是个 `Protocol`（Python 的结构性子类型，仅靠方法签名匹配），只有 `enqueue` / `list` / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表：`enqueue` 把一行塞进缓冲，后台 `flush_loop` 每 100ms 把整段搬到 `list`。重置用 `reset_logs()`。模块层保留 `enqueue`/`list_logs` 等 thin wrapper 转发到一个 `_default` 实例，方便测试用 `set_default(rec)` 注入假实现。
 - **`s11_call_logs/code.py`** —— FastAPI 装配。挂载 s10 整块 app，在自己身上新增一个中间件（`LogMiddleware`）和两条管理员路由（`/admin/logs`、`/admin/stats`）。中间件在 `/v1/chat/completions` 返回 200 时把响应日志塞进 default 实例，由后台循环搬运到落盘列表。
 
-路由形状：
+路由形状——下面这张块状路由表把本章要写的 3 条接口压成一览：左是 `method + path`，中间是入参（`/v1/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body），右是返回码与返回体；本章要写的核心就是"转发 + 异步落日志 + 读日志/统计"三件事。
 
 ```
 POST /v1/v1/chat/completions      Bearer API key, body={model, messages...}   -> 200 + 异步日志
@@ -37,7 +37,7 @@ GET  /admin/logs                                                          -> 200
 GET  /admin/stats                                                         -> 200 {total, by_model}
 ```
 
-`/admin/logs` 和 `/admin/stats` 不挂 `_require_admin`——和 s10 一样留到后续章节统一收紧（取舍里展开）。
+`/admin/logs` 和 `/admin/stats` 不挂 `_require_admin`（管理员闸门依赖，验证 token 是否带 is_admin=true）——和 s10 一样留到后续章节统一收紧（取舍里展开）。
 
 ## 工作原理
 
@@ -130,7 +130,7 @@ class LogMiddleware(BaseHTTPMiddleware):
 三个关键点：
 
 1. **`request.state.model` 把 model 从 body 传到中间件**。Brief 原本用 `request.query_params.get("model", "?")`——这是 bug，因为 model 在请求体里，不在查询串里。我们先 `await request.body()` 读出原始 bytes，`json.loads` 解出 `model`，写到 `request.state.model`；然后用一个新的 `receive()` 函数把同样的 bytes 重新喂回去，下游 FastAPI 看到的就是"这次请求没动过"。这是 Starlette 里读取并回放 body 的标准手法。
-2. **`body_iterator` 替换**。下游已经把响应体包成异步迭代器，我们要读出全部 bytes 用 `enqueue` 入队，就要把迭代器换成我们自己生成同一份 bytes 的版本。对非流式响应（`JSONResponse`）完全没问题；流式响应会被这条捷径打乱，所以对 SSE 我们不替换——见取舍。
+2. **`body_iterator` 替换**（Starlette/FastAPI 响应体的异步字节迭代器）。下游已经把响应体包成异步迭代器，我们要读出全部 bytes 用 `enqueue` 入队，就要把迭代器换成我们自己生成同一份 bytes 的版本。对非流式响应（`JSONResponse`）完全没问题；流式响应会被这条捷径打乱，所以对 SSE 我们不替换——见取舍。
 3. **挂载顺序**：`app.mount("/", s10_app)` 放在最后。Starlette 按注册顺序匹配路由；先 mount 会让 `Mount("/")` 吸收掉 `/admin/logs`、`/admin/stats`。
 
 后台任务：
