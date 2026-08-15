@@ -6,7 +6,7 @@
 
 - 多人共用一个网关，按调用扣费（quota 预扣 + 结算）
 - 一个模型名背后挂多个渠道，按优先级/权重选，失败自动 fallback
-- 管理员后台：加渠道、看用量、看错误、查 p99
+- 管理员后台：加渠道、看用量、看错误、查 p99（第 99 分位延迟）
 - 调用日志、缓存、限流、可观测性
 
 原始实现是 Go（[songquanpeng/new-api](https://github.com/songquanpeng/new-api)），代码量大、模块耦合深。光看代码很难理解"渠道级 fallback + quota 预扣结算 + token 计数"这些概念是怎么咬合的——设计动机埋在 if 后面。
@@ -70,31 +70,8 @@ flowchart LR
     classDef LX fill:#212121,stroke:#000,color:#fff
 ```
 
-## 跑任意一章
-
-每一章都是独立可跑的 FastAPI app：
-
-```sh
-cd sNN_topic
-python code.py
-```
-
-每个 `code.py` 会把项目根加进 `sys.path`，跨章节 import 直接写就行。启起来后看那一章 README 里的 curl 和路径。
-
-## 跑测试
-
-```sh
-make test                # 全部
-make test-s05            # 只跑 s05
-```
-
-## 其他
-
-```sh
-make run-s05             # 用 8005 端口起 s05
-make clean               # 清 __pycache__、.pytest_cache、*.db
-```
-
 ## 依赖
 
 Python 3.11+。先 `pip install -r requirements.txt`。
+
+跑过几次测试后想清残留：`make clean`（删 `__pycache__`、`.pytest_cache`、`*.db`）。
