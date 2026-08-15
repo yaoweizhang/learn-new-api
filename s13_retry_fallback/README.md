@@ -54,7 +54,7 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
   本地路由把挂载的同名路由挡住。这跟 `s04_multi_provider` 一样的 Starlette
   坑。
 
-路由形状：
+路由形状——下面这张块状路由表把本章要写的接口压成一览：左是 `method + path`，中间是入参（`/v1/chat/completions` 接 body），右是返回码与返回体；本章要写的核心就是"遍历渠道、失败即回落"一条转发路径 + 仍然挂着从 s12 来的一条统计接口。
 
 ```
 POST /v1/chat/completions     body={model, messages}        -> 200 + 上游响应（或 502）
