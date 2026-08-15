@@ -99,7 +99,6 @@ async def _relay_stream(
     url: str,
     upstream_headers: dict,
     body_bytes: bytes,
-    provider,
     principal: Principal,
     estimate: int,
     model: str,
@@ -187,7 +186,7 @@ async def chat_completions(
 
     if req.stream:
         return StreamingResponse(
-            _relay_stream(url, headers, body_bytes, provider, p, estimate, req.model),
+            _relay_stream(url, headers, body_bytes, p, estimate, req.model),
             media_type="text/event-stream",
         )
 

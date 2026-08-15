@@ -16,8 +16,6 @@ class ClaudeProvider(Provider):
             "content-type": "application/json",
         }
         model = req["model"]
-        if model.startswith("claude-"):
-            model = model
         body = {
             "model": model,
             "max_tokens": req.get("max_tokens", 1024),
