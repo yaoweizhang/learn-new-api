@@ -7,6 +7,10 @@ later chapter extends.
 from __future__ import annotations
 
 import os
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import httpx
 from fastapi import FastAPI, HTTPException

@@ -1,12 +1,37 @@
+# Python build artifacts
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+# Virtual envs
 .venv/
+venv/
 .env
+
+# Test / coverage cache
 .pytest_cache/
 .mypy_cache/
-*.egg-info/
-.DS_Store
 htmlcov/
 .coverage
+
+# Editor / OS cruft
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
+
+# Distribution
 dist/
 build/
+
+# Claude Code / superpowers skill internal artifacts (not for readers)
+.superpowers/
+docs/superpowers/
+
+# Runtime data / SQLite databases created by chapters
+*.db
+*.sqlite
+*.sqlite3
+/tmp/

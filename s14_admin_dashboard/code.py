@@ -6,6 +6,10 @@ The dashboard reuses data from earlier chapters (channels, logs).
 from __future__ import annotations
 
 import os
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse

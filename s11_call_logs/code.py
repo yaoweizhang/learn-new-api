@@ -20,7 +20,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import pathlib
+import sys
 import time
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware

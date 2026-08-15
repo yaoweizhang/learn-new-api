@@ -16,6 +16,10 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
+import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response

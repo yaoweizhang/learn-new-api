@@ -20,3 +20,6 @@ all:
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} +
 	rm -rf .pytest_cache
+	find . -maxdepth 3 -type f \( -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \) -delete
+	-rm -f /tmp/learn-new-api-*.db 2>/dev/null || true
+	@echo "clean: __pycache__, .pytest_cache, *.db litter"

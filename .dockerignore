@@ -1,0 +1,48 @@
+# Editor / OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Test / coverage
+.pytest_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+tests/
+
+# Virtual envs
+.venv/
+venv/
+
+# Claude Code / superpowers skill artifacts
+.superpowers/
+
+# Local config
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# Runtime data
+*.db
+*.sqlite
+*.sqlite3
+
+# Docs that aren't needed in the image
+docs/
+*.md
+!README.md
+!s*/README.md

@@ -1,6 +1,9 @@
 # learn-new-api
 
-Build your own AI API gateway, one chapter at a time. Companion tutorial to [`new-api`](../new-api/).
+Build your own AI API gateway, one chapter at a time.
+
+Each chapter adds one concept — HTTP forwarding, then SSE, then auth, then quota —
+on top of the previous one, ending with a production-shape integration in `s_full/`.
 
 ## Reader Path
 
@@ -26,19 +29,27 @@ Build your own AI API gateway, one chapter at a time. Companion tutorial to [`ne
 
 ## Run any chapter
 
+Each chapter is independently runnable from its own directory:
+
 ```sh
 cd sNN_topic
 python code.py
 ```
 
-Then call the route shown in that chapter's README.
+Each `code.py` adds the project root to `sys.path` so cross-chapter imports resolve
+without needing `PYTHONPATH` or `make` indirection. Then call the route shown in
+that chapter's README.
 
 ## Run all tests
 
 ```sh
-make test
+make test                # full suite
+make test-s05            # one chapter
 ```
 
-## Inspiration
+## Other targets
 
-Format mirrors [learn-claude-code](../learn-claude-code/). Real-world reference is [new-api](../new-api/).
+```sh
+make run-s05             # boot chapter s05 (uses port 8005 by default)
+make clean               # remove __pycache__, .pytest_cache, *.db litter
+```
