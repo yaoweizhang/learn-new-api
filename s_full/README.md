@@ -1,14 +1,26 @@
-# s_full——生产形态整合版
+# s_full——生产形态整合版 — 教学挂载 → 生产装配,include_router 替代 mount
 
 > Previous: [s16](../s16_observability/) · Next: —
 
-> *"16 章合一就是生产形态"* —— 教学挂 mount，生产 include_router。
+> *"16 章合一就是生产形态"* —— 教学挂 mount,生产 include_router。
 
 > **Layer**：LX 整合形态
 
-> 这是教程最后一章，把 s01-s16 的所有功能**重新组织**成一个生产形态的应用，目录结构对齐 `new-api` 的 `Router → Controller → Service → Model`。
+## 本章要做什么
+
+把 s01-s16 的代码**原样复制**到 `s_full/` 下的清晰子目录——`routes / services / models / adapters / middleware` 五层结构,对外暴露单一 FastAPI app,`include_router` 替代 `app.mount`。学完你看到"教学拆解 → 生产装配"的目录重组。
+
+## 上一章复盘
+
+s16 是教学最后一章,代码结构是 mount chain,目录扁。
+
+## 在整体中的位置
+
+16 章的"生产装配"——把 mount 换成 include_router,目录拆成 routes / services / models / middleware,代码仍是同一份。
+
+> 这是教程最后一章,把 s01-s16 的所有功能**重新组织**成一个生产形态的应用,目录结构对齐 `new-api` 的 `Router → Controller → Service → Model`。
 >
-> **本章不引入任何新功能**——把同样的代码整理到更干净的目录里，让读者理解"教学拆解 vs 生产目录"之间的对应关系。
+> **本章不引入任何新功能**——把同样的代码整理到更干净的目录里,让读者理解"教学拆解 vs 生产目录"之间的对应关系。
 
 ---
 
