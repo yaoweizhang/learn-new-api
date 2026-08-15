@@ -61,8 +61,7 @@ async def _relay_stream(req: ChatCompletionRequest) -> AsyncIterator[bytes]:
 把这些字节直接推给 FastAPI 的响应,后者再 flush 到线缆。`aiter_bytes()`
 返回的是上游随手缓冲出的内容——并不假设"一 SSE 帧一个 chunk"。
 
-`accept: text/event-stream` 头是个礼貌性的声明:大多数上游都尊重但并
-不要求它,因为请求体形态本身已经在宣告流式了。
+`accept: text/event-stream` 头是个礼貌性的声明:大多数上游都尊重但并不要求它,因为请求体形态本身已经在宣告流式了。
 
 ```python
 @app.post("/v1/chat/completions")
@@ -79,10 +78,8 @@ async def chat_completions(req: ChatCompletionRequest):
 
 为什么这两个响应头?
 
-- `cache-control: no-cache` —— 中间节点不能把一份开放式流当成缓存
-  分发。
-- `x-accel-buffering: no` —— 关掉 nginx 的 `proxy_buffering`,否则
-  nginx 会一直攒到阈值才放行,客户端看到的 SSE 会"卡住"。
+- `cache-control: no-cache` —— 中间节点不能把一份开放式流当成缓存分发。
+- `x-accel-buffering: no` —— 关掉 nginx 的 `proxy_buffering`,否则 nginx 会一直攒到阈值才放行,客户端看到的 SSE 会"卡住"。
 
 ## 运行
 
@@ -114,8 +111,7 @@ curl -N -X POST http://localhost:8003/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"stream":true}'
 ```
 
-不设 `UPSTREAM_OPENAI_KEY` 时,上游返回 401——这正好说明中继在向
-前转发。配上真实 key 就能拿到流式文本。
+不设 `UPSTREAM_OPENAI_KEY` 时,上游返回 401——这正好说明中继在向前转发。配上真实 key 就能拿到流式文本。
 
 ## 测试
 
@@ -151,7 +147,7 @@ channel adaptor 知道每家厂商的帧形态。我们这里先压成一段直�
 - **没有帧解析或重组**。我们转发原始字节;如果哪天上游改了 SSE 形
   态(Anthropic 用 `event:` 行),中继就会破。→ s04 引入按厂商的适
   配器。
-- **没有客户端断连向上游传播**。如果调用方中途挂断,我们会一直从
+- **没有客户端断连向上游传播**。如果调用方中途挂断,我们就一直从
   上游读到它关闭,白花 token 和钱。→ s08 把 `request.is_disconnected()`
   接进生成器。
 - **不能取消上游请求**。同样的问题换个形式。→ s08。
