@@ -10,6 +10,8 @@
 
 当 `stream=true` 时,中继打开 `httpx` 流式客户端原样转发 SSE chunk,客户端立即看到首 token 延迟。非流式请求仍按 s02 路径返回 JSON。学完你会拿到一个"首字延迟几百毫秒"的网关。
 
+> **SSE**（Server-Sent Events：服务端单向流式推数据，HTTP 长连接 + 文本帧）—— 后续章节直接复用，不再重复解释。
+
 ## 上一章复盘
 
 s02 客户端拿到完整 JSON 才开始渲染,7 秒延迟。生产聊天 UX 接受不了。
@@ -36,10 +38,10 @@ event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n
 - **stream=false**:走和 s02 一样的 `await client.post(...)`,返回
   `JSONResponse`。
 - **stream=true**:打开 `httpx.AsyncClient.stream(...)`,返回一个 FastAPI
-  `StreamingResponse` (FastAPI 的流式响应类型,按 chunk 推送),用 `async for
+  `StreamingResponse`（FastAPI 的流式响应类型，按 chunk 推送），用 `async for
   chunk in upstream.aiter_bytes()` 产出字节。两个响应头要紧:
-  `cache-control: no-cache` 和 `x-accel-buffering: no`(后者告诉 nginx
-  不要做缓冲,反向代理常常会一直等到阈值才放行 SSE body)。
+  `cache-control: no-cache` 和 `x-accel-buffering: no`（后者告诉 nginx
+  不要做缓冲，反向代理常常会一直等到阈值才放行 SSE body）。
 
 下面这张 ASCII 时序图把流式响应一口气画出来——和下面那张架构图相对照:上面这张是端到端时序(chunk 随时间一条一条往下走),下面那张是角色拓扑(谁在哪、消息怎么流):
 
@@ -73,9 +75,9 @@ async def _relay_stream(req: ChatCompletionRequest) -> AsyncIterator[bytes]:
                 yield chunk
 ```
 
-`AsyncIterator`（Python 异步迭代器:`async for` 协议）配合 `httpx` 不等上游发送完整个 body,只读上游写出来的内容;`yield chunk` 把这些字节直接推给 FastAPI 的响应,后者再 flush（flush：把缓冲立即推给客户端）到线缆。`aiter_bytes()`（httpx 流响应的字节迭代器）返回的是上游随手缓冲出的内容——并不假设"一 SSE 帧一个 chunk"(chunk:流式响应中的一段字节,不是固定 SSE 帧)。
+`AsyncIterator`（Python 异步迭代器:`async for` 协议）配合 `httpx` 不等上游发送完整个 body,只读上游写出来的内容;`yield chunk` 把这些字节直接推给 FastAPI 的响应,后者再 flush（flush：把缓冲立即推给客户端）到线缆。`aiter_bytes()`（httpx 流响应的字节迭代器）返回的是上游随手缓冲出的内容——并不假设"一 SSE 帧一个 chunk"（chunk：流式响应中的一段字节，不是固定 SSE 帧）。
 
-`accept: text/event-stream` 头(accept 头:客户端声明能接受的响应类型,流式场景礼貌性声明)是个礼貌性的声明:大多数上游都尊重但并不要求它,因为请求体形态本身已经在宣告流式了。
+`accept: text/event-stream` 头（accept 头：客户端声明能接受的响应类型，流式场景礼貌性声明）是个礼貌性的声明:大多数上游都尊重但并不要求它,因为请求体形态本身已经在宣告流式了。
 
 ```python
 @app.post("/v1/chat/completions")
@@ -93,7 +95,7 @@ async def chat_completions(req: ChatCompletionRequest):
 为什么这两个响应头?
 
 - `cache-control: no-cache` (禁止中间节点缓存开放式流) —— 中间节点不能把一份开放式流当成缓存分发。
-- `x-accel-buffering: no` (关掉 nginx `proxy_buffering` 的指令) —— 关掉 nginx 的 `proxy_buffering`(x-accel-buffering 概念:nginx 反向代理的缓冲开关),否则 nginx 会一直攒到阈值才放行,客户端看到的 SSE 会"卡住"。
+- `x-accel-buffering: no`（关掉 nginx `proxy_buffering` 的指令） —— 关掉 nginx 的 `proxy_buffering`（x-accel-buffering 概念：nginx 反向代理的缓冲开关），否则 nginx 会一直攒到阈值才放行，客户端看到的 SSE 会"卡住"。
 
 ## 运行
 

@@ -8,7 +8,7 @@
 
 ## 本章要做什么
 
-引入 `Provider` 抽象基类,按模型名前缀(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini)挑适配器。每个 provider 把 OpenAI 请求翻译成自家线协议(线协议:网关与客户端约定的 JSON / HTTP 形态),再把响应翻回 OpenAI 形态。学完你能用一个客户端对接三家上游。
+引入 `Provider` 抽象基类,按模型名前缀(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini)挑适配器。每个 provider 把 OpenAI 请求翻译成自家线协议（线协议：网关与客户端约定的 JSON / HTTP 形态）,再把响应翻回 OpenAI 形态。学完你能用一个客户端对接三家上游。
 
 ## 上一章复盘
 
@@ -33,7 +33,7 @@ OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`
 1. **把 OpenAI 请求翻译成自家线协议** (`to_upstream`)。
 2. **把自家响应翻回 OpenAI 形态** (`from_upstream`)。
 
-路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器 (`Adaptor`,new-api 术语:厂商适配器接口),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
+路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器（`Adaptor`，new-api 术语：厂商适配器接口），然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
 
 下面这张 ASCII 流程图把分派路径压成一行——和下面那张架构图相对照:上面这张是单跳时序,下面那张是角色拓扑,中间那块都是"按模型名前缀选":
 
@@ -174,7 +174,7 @@ pytest tests/test_s04_multi_provider.py -v
 | `OpenAIProvider` | `relay/channel/openai/adaptor.go` —— OpenAI 专属的请求/响应转换 |
 | `ClaudeProvider` | `relay/channel/claude/adaptor.go` —— Anthropic Messages 的转换 |
 | `GeminiProvider` | `relay/channel/gemini/adaptor.go` —— Google `generateContent` 的转换 |
-| `pick_channel_for(model)` | `relay/relay.go` —— 通过检查模型名把入站请求派发到对应 channel |
+| `pick_provider(model)` | `relay/relay.go` —— 通过检查模型名把入站请求派发到对应 channel |
 
 new-api 走得更远:它有一个 `GetAdaptor(meta)` 工厂,把 `(channel,
 model)` 元组映射到适配器实例;另外每 channel 都有 `Key` 模式(我们这

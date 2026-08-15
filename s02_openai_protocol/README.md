@@ -2,13 +2,15 @@
 
 > Previous: [s01](../s01_minimal_relay/) · Next: [s03](../s03_streaming_sse/)
 
-> *"对外说 OpenAI"* —— 一个 wire format（线协议：网关与客户端约定的 JSON / HTTP 形态）兼容所有 SDK。
+> *"对外说 OpenAI"* —— 一个 wire format 兼容所有 SDK。
 
 > **Layer**：L1 协议与转发
 
 ## 本章要做什么
 
 入站面采用 OpenAI 的 `/v1/chat/completions` 路径和 JSON schema（schema：请求/响应的字段定义）。任何 OpenAI 客户端(官方 SDK、LangChain、LlamaIndex、终端里的 `curl`)都能原样对我们发起调用。学完你会拿到一个"客户端零修改"的网关。
+
+> **wire format**（线协议：网关与客户端约定的 JSON / HTTP 形态）—— 后续章节直接复用，不再重复解释。
 
 ## 上一章复盘
 

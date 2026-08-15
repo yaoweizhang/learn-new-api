@@ -8,7 +8,7 @@
 
 ## 本章要做什么
 
-引入内存渠道注册表 + 管理员增删接口,`pick_channel_for(provider)` 按 `(priority asc, weight desc, healthy=True)` 排序取一条。学完你能用同一个客户端把请求分到多个 OpenAI/Claude/Gemini 账号。
+引入内存渠道注册表 + 管理员增删接口，`pick_channel_for(model_name)` 按 model 前缀选可用渠道，优先级升序取最紧一档，档内按权重加权随机。学完你能用同一个客户端把请求分到多个 OpenAI/Claude/Gemini 账号。
 
 ## 上一章复盘
 
@@ -26,7 +26,7 @@ s09 有真用户,网关只有一条 OpenAI 通道。出问题就 502。
 2. **没法做容灾**。一个渠道挂了,所有请求全部失败——既没有备选渠道,也没有"降级到次选"的策略。
 3. **没法区分优先级**。生产里同一个模型通常有多个上游(主账号 + 备用账号、Azure + 自建),它们的优先级和配额权重各不相同;写死的代码表达不了。
 
-所以需要一张"渠道表"(每个 `channel`(new-api 里的"上游通道":一条独立的 LLM 厂商接入配置)):每个渠道记录 provider、base_url、`weight`(权重:同优先级内越大越优先)、`priority`(优先级:数字越小越优先),由管理员通过 HTTP 增删改查,注册后立刻生效;路由层在调用上游前从这张表里"按规则选一个"。
+所以需要一张"渠道表"（每个 `channel`（new-api 里的"上游通道"：一条独立的 LLM 厂商接入配置））:每个渠道记录 provider、base_url、`weight`（权重：同优先级内越大越优先）、`priority`（优先级：数字越小越优先），由管理员通过 HTTP 增删改查,注册后立刻生效;路由层在调用上游前从这张表里"按规则选一个"。
 
 ## 方案
 
@@ -205,7 +205,7 @@ pytest tests/test_s10_channel_management.py -v
 真实部署里同样的"渠道表 + 管理员 CRUD"长这样:
 
 - `controller/channel.go` —— 管理员路由的实现:list/add/update/delete/test 等 handler;负责把 HTTP 请求翻译成 `model.Channel` 上的方法调用,再把数据库行转回 JSON。和我们这里的 `_require_admin` + `ChannelIn` + `channels.create_channel` 完全对应。
-- `model/channel.go` —— `Channel` struct 定义 + GORM 映射 + 钩子:字段远多于我们这里的 `Channel`(多了 `key / base_url / group / model / model_mapping / channel_balance / status / ...`),但核心三元 `priority / weight / enabled` 一一对应。
+- `model/channel.go` —— `Channel` struct 定义 + GORM 映射 + 钩子：字段远多于我们这里的 `Channel`（多了 `key / base_url / group / model / model_mapping / channel_balance / status / ...`），但核心三元 `priority / weight / enabled` 一一对应。
 
 > 上面两个文件名在 GitHub 上是 `controller/channel.go`、`model/channel.go`(小写)。Windows 文件系统不分大小写,本地 IDE 里看着像 `Channel.go` 也常见;Linux/macOS 部署时按小写路径访问。
 
@@ -214,7 +214,7 @@ pytest tests/test_s10_channel_management.py -v
 - **没有健康检查循环 / 重试 / 降级** —— YAGNI。这一章只解决"渠道表存在、管理员能增删改查、按规则选一条"这三件事。`mark_unhealthy` 接口已经留好,s13 会接上后台 goroutine:每次请求前 ping 一遍,连续失败 N 次自动 `mark_unhealthy`,选路自动跳过;连续成功 M 次再恢复。
 - **没有持久化** —— 进程一重启渠道表清零;和 s09 的 users 表不同,本章不引入 SQLite。生产里渠道是低频变更的运营数据,本来就该走数据库;s12 切 Postgres 时一并接上。
 - **没有 `/admin/channels/{id}` 删除/更新接口** —— brief 只要求 POST + GET。新-api 那边有完整的 update/delete,但管理员工具的最低闭环(创建 + 列出)已经够演示"动态配置"的意义。
-- **`pick_channel_for` 只用 weight 排序,没有按权重加权随机** —— 同优先级内 `weight=100` 永远压过 `weight=50`,所以 `weight` 在这里实际上扮演"次级优先级"的角色。真正的"加权随机轮询"留到 s11/s13 再做。
+- **`pick_channel_for` 实现是简化形态** —— 实际是 priority asc + 档内 weighted random（`random.choices` 选一条），文档仍提醒读者这是教学最小集，不是 new-api 的完整 `GetRandomSatisfiedChannel` 实现。
 
 ## 下章预告
 

@@ -8,7 +8,7 @@
 
 ## 本章要做什么
 
-把整个 s01-s15 链路打包进 `python:3.11-slim` 单容器;docker-compose 配 redis 容器 + `HEALTHCHECK` 探活,`/healthz` 路由做业务级深检。学完用一条 `docker compose up` 拉起完整网关。
+把整个 s01-s15 链路打包进 `python:3.11-slim` 单容器;`HEALTHCHECK` 探活,`/healthz` 路由做业务级深检。学完用一条 `docker compose up` 拉起完整网关（单进程 in-memory，没有 redis / mysql 依赖）。
 
 ## 上一章复盘
 

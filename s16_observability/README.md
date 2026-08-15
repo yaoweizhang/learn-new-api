@@ -2,7 +2,7 @@
 
 > Previous: [s15](../s15_docker_deployment/) · Next: [s_full](../s_full/)
 
-> *"trace_id 把请求串起来"* —— trace 先有,指标后跟。
+> *"trace_id 把请求串起来"* —— trace 先有，指标后跟。
 
 > **Layer**：L5 运维与可观测
 

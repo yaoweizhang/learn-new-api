@@ -12,11 +12,11 @@
 
 ## 上一章复盘
 
-s10 路由有日志,但"谁调了什么、什么状态码"全靠日志文件 grep。
+s10 解决了挑通道，但每次调用有没有发生、在哪失败、谁打的——全靠脑补。
 
 ## 在整体中的位置
 
-可观测性的"原始信号"层——后续 s14 dashboard、s16 trace 都从 s11 的 log_store 读。
+可观测性的"原始信号"层——s14 dashboard 从 s11 的 log_store 读，s16 提供单独的 trace + metric 中间件。
 
 ## 设计要点
 
@@ -38,7 +38,7 @@ s10 路由有日志,但"谁调了什么、什么状态码"全靠日志文件 gre
 
 引入两个最小部件:
 
-- **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore` 默认实现。`LogStore` 是个 `Protocol`(Python 的结构性子类型,仅靠方法签名匹配),只有 `enqueue` / `list` / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表:`enqueue` 把一行塞进缓冲,后台 `flush_loop` 每 100ms 把整段搬到 `list`。重置用 `reset_logs()`。模块层保留 `enqueue`/`list_logs` 等 thin wrapper 转发到一个 `_default` 实例,方便测试用 `set_default(rec)` 注入假实现。
+- **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore` 默认实现。`LogStore` 是个 `Protocol`（Python 的结构性子类型，仅靠方法签名匹配），只有 `enqueue` / `list` / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表:`enqueue` 把一行塞进缓冲,后台 `flush_loop` 每 100ms 把整段搬到 `list`。重置用 `reset_logs()`。模块层保留 `enqueue`/`list_logs` 等 thin wrapper 转发到一个 `_default` 实例,方便测试用 `set_default(rec)` 注入假实现。
 - **`s11_call_logs/code.py`** —— FastAPI 装配。挂载 s10 整块 app,在自己身上新增一个中间件(`LogMiddleware`)和两条管理员路由(`/admin/logs`、`/admin/stats`)。中间件在 `/v1/chat/completions` 返回 200 时把响应日志塞进 default 实例,由后台循环搬运到落盘列表。
 
 路由形状——下面这张块状路由表把本章要写的 3 条接口压成一览:左是 `method + path`,中间是入参(`/v1/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body),右是返回码与返回体;本章要写的核心就是"转发 + 异步落日志 + 读日志/统计"三件事:

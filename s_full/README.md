@@ -2,7 +2,7 @@
 
 > Previous: [s16](../s16_observability/) · Next: —
 
-> *"16 章合一就是生产形态"* —— 教学挂 mount,生产 include_router。
+> *"16 章合一就是生产形态"* —— 教学挂 mount，生产 include_router。
 
 > **Layer**：LX 整合形态
 
