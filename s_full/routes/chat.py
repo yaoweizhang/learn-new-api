@@ -106,15 +106,22 @@ async def _relay_stream(
 ) -> AsyncIterator[bytes]:
     """Open an upstream SSE stream and yield bytes verbatim.
 
-    On transport error: refund the full estimate and propagate the
-    exception so the StreamingResponse emits an error to the client.
     On normal completion: parse the LAST `data:` chunk for usage if
     available, then call `settle(...)` (which refunds any difference
     between the pre-consume and actual). Finally enqueue a log entry.
+
+    On abnormal termination — transport error mid-stream OR client
+    disconnect (which raises `GeneratorExit`, a `BaseException` not
+    caught by `except Exception`) — refund the full estimate so the
+    user isn't charged for a response they never received. The state
+    flag guards against double-refund if the inner try's `except`
+    already ran before the outer `BaseException` handler executes.
     """
+    from s_full.services.quota import refund
+
     timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
-    last_data_payload: dict | None = None
     full_buf = bytearray()
+    state = "open"  # transitions to "settled" on success, "refunded" on abort
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
@@ -123,26 +130,24 @@ async def _relay_stream(
                 async for chunk in upstream.aiter_bytes():
                     full_buf.extend(chunk)
                     yield chunk
-    except Exception:
-        from s_full.services.quota import refund
-        refund(principal.user_id, estimate)
+        # Stream completed normally — settle and log.
+        last_data_payload = _parse_last_data_chunk(bytes(full_buf))
+        usage = (last_data_payload.get("usage") if last_data_payload else None) or {}
+        actual = settle(principal.user_id, estimate, usage)
+        enqueue_log({
+            "user_id": principal.user_id,
+            "model": model,
+            "status": 200,
+            "stream": True,
+            "usage": usage,
+            "quota_charged": actual,
+        })
+        state = "settled"
+    except BaseException:
+        if state == "open":
+            refund(principal.user_id, estimate)
+            state = "refunded"
         raise
-
-    # Stream completed normally — settle and log.
-    last_data_payload = _parse_last_data_chunk(bytes(full_buf))
-    if last_data_payload is not None:
-        usage = last_data_payload.get("usage") or {}
-    else:
-        usage = {}
-    actual = settle(principal.user_id, estimate, usage)
-    enqueue_log({
-        "user_id": principal.user_id,
-        "model": model,
-        "status": 200,
-        "stream": True,
-        "usage": usage,
-        "quota_charged": actual,
-    })
 
 
 @router.post("/v1/chat/completions")
