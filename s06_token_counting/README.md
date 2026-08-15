@@ -8,18 +8,13 @@
 
 ## 问题
 
-`s05` 把请求转出去、原样把上游给回来的 `usage` 透传——这只有在模型
-"已经做完活"之后才正确。我们想要的是:
+`s05` 把请求转出去、原样把上游给回来的 `usage` 透传——这只有在模型"已经做完活"之后才正确。我们想要的是:
 
-1. **在调用离开我们边缘之前就报个价**。按 token 计费要求的是请求前
-   (或者同一份响应里)就拿到 token 数,而不是下次对账时拿。
-2. **统一 usage 形态**,即便上游不返回也撑得住(老版本 Claude/
-   Gemini 响应、被 mock 的上游、部分失败)。
-3. **估算要够准,可以合理计费**,同时又不必为了一次分词再付一次远端调
-   用。
+1. **在调用离开我们边缘之前就报个价**。按 token 计费要求的是请求前(或者同一份响应里)就拿到 token 数,而不是下次对账时拿。
+2. **统一 usage 形态**,即便上游不返回也撑得住(老版本 Claude/Gemini 响应、被 mock 的上游、部分失败)。
+3. **估算要够准,可以合理计费**,同时又不必为了一次分词再付一次远端调用。
 
-没有它的话,我们要么多扣(按最坏情况估)、要么少扣(干脆忘了数)——
-响应一旦发出,就都救不回来了。
+没有它的话,我们要么多扣(按最坏情况估)、要么少扣(干脆忘了数)——响应一旦发出,就都救不回来了。
 
 ## 方案
 
@@ -65,9 +60,7 @@ def count_openai(messages, model):
     return n
 ```
 
-非 OpenAI 模型没有官方分词器,所以我们退回业内常用的 1 token ~ 4 字
-符的经验估算。故意粗糙——对账单估算已经够用,等拿到准确计数再替换掉
-(后续 `s07_pre_consume_settle` 会用真实计数)。
+非 OpenAI 模型没有官方分词器,所以我们退回业内常用的 1 token ~ 4 字符的经验估算。故意粗糙——对账单估算已经够用,等拿到准确计数再替换掉(后续 `s07_pre_consume_settle` 会用真实计数)。
 
 调度器:
 
@@ -120,8 +113,7 @@ python -m pytest tests/test_s06_token_counting.py -v
 2. `test_non_openai_falls_back_to_char_estimator` —— Claude 路径:
    `usage.prompt_tokens >= 1`(证明 `count_estimate` 分支跑了)。
 
-两条测试都用 `tests/conftest.py` 里共享的 `upstream_openai` /
-`upstream_claude` respx 固定器。
+两条测试都用 `tests/conftest.py` 里共享的 `upstream_openai` / `upstream_claude` respx 固定器。
 
 ## → new-api 源码
 
@@ -131,11 +123,6 @@ python -m pytest tests/test_s06_token_counting.py -v
 
 ## 取舍
 
-- **还没有流式 token 计数**。计数在请求阶段算;流式响应(`s03_streaming_sse`)要把 token
-  数到 SSE chunk 落地的那一刻再算,目前还是 pre-consume 估算 + settle 校正的组合。
-- **char/4 比较粗糙**。在英文上对 Claude/Gemini 准确率大约 ±20%——
-  给软配额提示够用,精确计费则不行。生产路径应该在上游提供
-  `/count_tokens` 时调它。
-- **overhead 是硬编码的**。每条消息 4 token 这条规则来自 OpenAI
-  cookbook;真实 overhead 随 role 和工具定义而变。一章内我们接受这点
-  漂移,后面再按 model-specific 规则读。
+- **还没有流式 token 计数**。计数在请求阶段算;流式响应(`s03_streaming_sse`)要把 token 数到 SSE chunk 落地的那一刻再算,目前还是 pre-consume 估算 + settle 校正的组合。
+- **char/4 比较粗糙**。在英文上对 Claude/Gemini 准确率大约 ±20%——给软配额提示够用,精确计费则不行。生产路径应该在上游提供 `/count_tokens` 时调它。
+- **overhead 是硬编码的**。每条消息 4 token 这条规则来自 OpenAI cookbook;真实 overhead 随 role 和工具定义而变。一章内我们接受这点漂移,后面再按 model-specific 规则读。
