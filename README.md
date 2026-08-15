@@ -1,55 +1,67 @@
 # learn-new-api
 
-Build your own AI API gateway, one chapter at a time.
+**new-api** 是一类 AI API 网关：把多家上游（OpenAI、Anthropic、Gemini、本地推理服务）合并成一个 OpenAI 兼容端点。客户端拿自己的账号余额/配额，发任意上游的请求——对外说 OpenAI 的话，任何 OpenAI SDK 都能直接连。
 
-Each chapter adds one concept — HTTP forwarding, then SSE, then auth, then quota —
-on top of the previous one, ending with a production-shape integration in `s_full/`.
+按用户视角看，它主要解决四件事：
 
-## Reader Path
+- 多人共用一个网关，按调用扣费（quota 预扣 + 结算）
+- 一个模型名背后挂多个渠道，按优先级/权重选，失败自动 fallback
+- 管理员后台：加渠道、看用量、看错误、查 p99
+- 调用日志、缓存、限流、可观测性
 
-| # | Title | Adds |
-|---|-------|------|
-| [s01](s01_minimal_relay/) | Minimal relay kernel | HTTP forwarding |
-| [s02](s02_openai_protocol/) | OpenAI-compatible protocol | `/v1/chat/completions` |
-| [s03](s03_streaming_sse/) | Streaming responses | SSE |
-| [s04](s04_multi_provider/) | Multi-provider adapters | Claude / Gemini |
-| [s05](s05_api_key_auth/) | API key auth middleware | Bearer + blocklist |
-| [s06](s06_token_counting/) | Token counting | tiktoken |
-| [s07](s07_pre_consume_settle/) | Pre-consume & settle | Quota transactions |
-| [s08](s08_rate_limiting/) | Rate limiting | Token bucket |
-| [s09](s09_user_system/) | User system | Signup / JWT |
-| [s10](s10_channel_management/) | Channel management | Multi-upstream + weights |
-| [s11](s11_call_logs/) | Call logs & stats | Async write |
-| [s12](s12_caching/) | Response cache + Redis | Exact cache |
-| [s13](s13_retry_fallback/) | Retry / fallback | Tenacity + priorities |
-| [s14](s14_admin_dashboard/) | Minimal admin dashboard | Jinja2 CRUD |
-| [s15](s15_docker_deployment/) | Docker deployment | Compose + healthcheck |
-| [s16](s16_observability/) | Observability | Prometheus + trace_id |
-| [s_full](s_full/) | Full integration | All of the above |
+原始实现是 Go（[songquanpeng/new-api](https://github.com/songquanpeng/new-api)），代码量大、模块耦合深。光看代码很难理解"渠道级 fallback + quota 预扣结算 + token 计数"这些概念是怎么咬合的——设计动机埋在 if 后面。
 
-## Run any chapter
+这个仓库把那套核心骨架拆成 16 个递进的 FastAPI 章节，每章只解决一个具体问题，最后在 `s_full/` 把它们拼回一个生产形态的应用。读完全部约等于用 Python 把 new-api 的核心架构重新实现了一遍，但每一步都能看到**前因后果**——前一步为什么这么写、后一步在哪里接管。
 
-Each chapter is independently runnable from its own directory:
+## 阅读路径
+
+| # | 章节 | 这一步解决什么 |
+|---|---|---|
+| [s01](s01_minimal_relay/) | 最小转发 | HTTP 转发 |
+| [s02](s02_openai_protocol/) | OpenAI 协议 | 对外说 OpenAI 的话 |
+| [s03](s03_streaming_sse/) | 流式响应 | SSE |
+| [s04](s04_multi_provider/) | 多 provider | Claude / Gemini 也能转 |
+| [s05](s05_api_key_auth/) | API key 鉴权 | Bearer + 黑名单 |
+| [s06](s06_token_counting/) | Token 计数 | tiktoken |
+| [s07](s07_pre_consume_settle/) | 预扣 + 结算 | 调一次扣多少 |
+| [s08](s08_rate_limiting/) | 限流 | Token bucket |
+| [s09](s09_user_system/) | 用户系统 | 注册 / 登录 / JWT |
+| [s10](s10_channel_management/) | 渠道管理 | 多上游 + 优先级/权重 |
+| [s11](s11_call_logs/) | 调用日志 | 异步落 + 统计 |
+| [s12](s12_caching/) | 响应缓存 | 完全相同 prompt 命中 |
+| [s13](s13_retry_fallback/) | 失败回落 | 切到下一条渠道 |
+| [s14](s14_admin_dashboard/) | 管理后台 | Jinja2 CRUD |
+| [s15](s15_docker_deployment/) | Docker 部署 | Compose + healthcheck |
+| [s16](s16_observability/) | 可观测性 | Prometheus + trace_id |
+| [s_full](s_full/) | 完整整合 | 16 章合一 |
+
+每个章节顶部有 `Previous / Next` 导航，跟着读就行。
+
+## 跑任意一章
+
+每一章都是独立可跑的 FastAPI app：
 
 ```sh
 cd sNN_topic
 python code.py
 ```
 
-Each `code.py` adds the project root to `sys.path` so cross-chapter imports resolve
-without needing `PYTHONPATH` or `make` indirection. Then call the route shown in
-that chapter's README.
+每个 `code.py` 会把项目根加进 `sys.path`，跨章节 import 直接写就行。启起来后看那一章 README 里的 curl 和路径。
 
-## Run all tests
+## 跑测试
 
 ```sh
-make test                # full suite
-make test-s05            # one chapter
+make test                # 全部
+make test-s05            # 只跑 s05
 ```
 
-## Other targets
+## 其他
 
 ```sh
-make run-s05             # boot chapter s05 (uses port 8005 by default)
-make clean               # remove __pycache__, .pytest_cache, *.db litter
+make run-s05             # 用 8005 端口起 s05
+make clean               # 清 __pycache__、.pytest_cache、*.db
 ```
+
+## 依赖
+
+Python 3.11+。先 `pip install -r requirements.txt`。
