@@ -1,4 +1,4 @@
-# s14：最简服务端渲染的管理后台（Jinja2 + 会话 Cookie）
+# s14:最简服务端渲染的管理后台(Jinja2 + 会话 Cookie) — Jinja2 + Cookie 认证,只读看板上线
 
 > Previous: [s13](../s13_retry_fallback/) · Next: [s15](../s15_docker_deployment/)
 
@@ -6,52 +6,64 @@
 
 > **Layer**：L5 运维与可观测
 
+## 本章要做什么
+
+网关内挂一个最薄的 Jinja2 仪表盘:`/dashboard/login` 表单登录 + Cookie session,`/dashboard/` 渲染"用户/渠道/日志数"三个数字。学完运营用浏览器就能看到系统状态,不用 curl + jq。
+
+## 上一章复盘
+
+s13 韧性有了,但运营看不到调用历史。
+
+## 在整体中的位置
+
+运维的"双眼"——s11 日志 + s10 渠道 + s07 余额,从此看得见。
+
 ## 问题
 
-走到第 13 章，网关已经能跑了：用户签到、配额扣减、渠道选择 + 重试
+走到第 13 章,网关已经能跑了:用户签到、配额扣减、渠道选择 + 重试
 + 回退、缓存、日志都接好了。但**所有管理动作全靠 curl**——
 
-- 想看现在跑了多少条渠道？`curl /admin/channels`
-- 想看刚才哪条请求失败了？`curl /admin/logs`
-- 想加一条新渠道？`curl -X POST /admin/channels -d '{...}'`
-- 想改自己的密码？不好意思，得改库
+- 想看现在跑了多少条渠道?`curl /admin/channels`
+- 想看刚才哪条请求失败了?`curl /admin/logs`
+- 想加一条新渠道?`curl -X POST /admin/channels -d '{...}'`
+- 想改自己的密码?不好意思,得改库
 
-admin 后台是**人用的界面**，不是给脚本用的。每次让人去拼 curl、看
-JSON、再 `jq` 一下才能知道"系统现在怎样"，运营成本就上来了。学习项
+admin 后台是**人用的界面**,不是给脚本用的。每次让人去拼 curl、看
+JSON、再 `jq` 一下才能知道"系统现在怎样",运营成本就上来了。学习项
 目也希望有一个"看得见"的入口——点开浏览器就能看到系统状态。
 
-new-api 自己有 React 写的完整 Web 后台（`web/` 目录），那是个正经
-的 SPA，跟 Go 后端走 REST。照搬那个，体量比后端还大——Vue/React
-构建工具链、状态管理、路由、组件库、TypeScript 类型定义，光搭起来
+new-api 自己有 React 写的完整 Web 后台(`web/` 目录),那是个正经
+的 SPA,跟 Go 后端走 REST。照搬那个,体量比后端还大——Vue/React
+构建工具链、状态管理、路由、组件库、TypeScript 类型定义,光搭起来
 就够写三章。本章不碰那个体量。
 
 ## 方案
 
-网关内挂一个**最薄的服务端渲染**后台：
+网关内挂一个**最薄的服务端渲染**后台:
 
-- **`s14_admin_dashboard/code.py`** —— 一个新的 FastAPI 实例，挂
-  上 `/dashboard/login`（GET 渲染表单、POST 校验凭证并下发 Cookie）
-  和 `/dashboard/`（GET 校验 Cookie 后渲染 Jinja2 模板）。最后
-  `app.mount("/", s13_app)`，让 `/v1/chat/completions` 等老路由仍
+- **`s14_admin_dashboard/code.py`** —— 一个新的 FastAPI 实例,挂
+  上 `/dashboard/login`(GET 渲染表单、POST 校验凭证并下发 Cookie)
+  和 `/dashboard/`(GET 校验 Cookie 后渲染 Jinja2 模板)。最后
+  `app.mount("/", s13_app)`,让 `/v1/chat/completions` 等老路由仍
   可达。
 - **`templates/base.html` + `templates/dashboard.html`** —— Jinja2
-  模板。`base.html` 是页面骨架（标题 + 导航条），`dashboard.html`
-  继承它，渲染三个数字：用户数、渠道数、日志数。
+  模板。`base.html` 是页面骨架(标题 + 导航条),`dashboard.html`
+  继承它,渲染三个数字:用户数、渠道数、日志数。
 - **Cookie session** —— 一个 httponly 的 `admin=1` Cookie。这个
   Cookie **没有签名、没有加密**——明文标记"我是管理员"。生产环境
-  请用 `itsdangerous` 签名或 JWT；本章 YAGNI。
+  请用 `itsdangerous` 签名或 JWT;本章 YAGNI。
 - **数据复用** —— 渠道数从 `s10_channel_management.channels
-  .list_channels()` 读，活跃日志数从 `s11_call_logs.log_store
-  .list_logs()` 读。**用户数保持 0**——s09 没有 `list_all()`，本章
-  不为这一个数字去给 s09 加 SQL count（YAGNI）。
+  .list_channels()` 读,活跃日志数从 `s11_call_logs.log_store
+  .list_logs()` 读。**用户数保持 0**——s09 没有 `list_all()`,本章
+  不为这一个数字去给 s09 加 SQL count(YAGNI)。
 
-路由形状——下面这张块状路由表把本章要写的 4 条接口压成一览：左是 `method + path`，中间是入参（登录是表单 body），右是返回码与返回体；本章要写的核心就是"登录 + 仪表盘"两个 dashboard 路由 + 仍然挂着从 s13 来的一条转发接口。
+路由形状——下面这张块状路由表把本章要写的 4 条接口压成一览:左是 `method + path`,中间是入参(登录是表单 body),右是返回码与返回体;本章要写的核心就是"登录 + 仪表盘"两个 dashboard 路由 + 仍然挂着从 s13 来的一条转发接口:
 
 ```
 GET  /dashboard/login              -> 200 HTML form
 POST /dashboard/login              -> 302 (-> /dashboard/) + Set-Cookie, 失败 401
 GET  /dashboard/                   -> 200 rendered dashboard, 未登录 401
-GET  /v1/chat/completions          -> 仍可达（来自挂载的 s13）
+GET  /v1/chat/completions          -> 仍可达(来自挂载的 s13)
 ```
 
 ## 工作原理
@@ -274,3 +286,7 @@ pytest tests/test_s14_admin_dashboard.py -v
   前面，Starlette 会把 `/dashboard/*` 全部转给 s13 处理——s13
   没这些路由，会 404。代码里用注释 + 章节末尾的"挂载必须最后"
   强调，下一章起新挂载时务必检查。
+
+## 下章预告
+
+s14 看板有了,部署还是手动。s15 加 Docker + compose,一条命令起完整网关。
