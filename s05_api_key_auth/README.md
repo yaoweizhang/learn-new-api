@@ -107,7 +107,7 @@ import register_key; register_key('demo','sk-demo')"`),重启,再
 对开发来说,最偷懒的办法是把 helper 塞到一个启动脚本里:
 
 ```sh
-python -c "from s05_api_key_auth.storage import register_key; register_key('demo','sk-demo')" &
+python -c "from s05_api_key_auth.storage import register_key; register_key('demo','sk-demo')"
 PORT=8005 python s05_api_key_auth/code.py &
 curl -X POST http://localhost:8005/v1/chat/completions \
   -H 'authorization: Bearer sk-demo' \
