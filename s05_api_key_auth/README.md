@@ -19,7 +19,7 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 行。这个依赖做这几件事:
 
 1. 从请求里读 `Authorization: Bearer <key>`。
-2. 检查 `storage.is_blocked(key)`(Redis 黑名单钩子——本章永远返
+2. 检查 `storage.is_blocked(key)`(未来黑名单钩子——本章永远返
    `False`)。
 3. 在 `storage.lookup_key` 里查这个 key,查不到抛 `401`。
 4. 成功的话,把 `Principal` 挂到 `request.state`,供下游中间件使用。
