@@ -263,6 +263,17 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
   前扣，stream 正常结束用最后一个 `data:` chunk 的 usage 调 `settle`
   退差额；中途 `BaseException`（含 `GeneratorExit` 客户端断连）走
   `refund` 全额退还。
+- **流式响应在 Starlette 下有"已发头不能再改"的限制**：
+  `StreamingResponse` 在第一个 byte 写出之前就发完 HTTP 头（`status:
+  200`），之后再在生成器里 `raise HTTPException` 改不了客户端看到的
+  状态码。结果是：上游返回 4xx 且 body 为空时，**客户端拿到 200
+  + 空 body**，但 pre-consume 已经在 `except BaseException` 里全额
+  退还（不扣钱）。`tests/test_s_full_smoke.py::test_streaming_429_
+  refunds_estimate` 就是锁住"不扣钱 + body 为空"这个不变量。要让
+  客户端真正看到 4xx，要么在选 `StreamingResponse` 之前先做一次
+  非流式探测（破坏流式语义），要么在第一个 chunk 写出前探测
+  upstream status（也就是现在这条路，但只能改 body 改不了 status）。
+  教程选后者，简单可读；生产里再权衡。
 - **admin 操作没有审计**：直接改 channel 池，没有记录是谁改的。
 - **错误响应没有结构化**：上游返回 5xx 时，路由直接 `raise HTTPException(502, r.text)`，没有 `{"error": {...}}` 结构。
 - **`require_api_key` 不查 token 黑名单**：s09 在自己的 `_current_user`
