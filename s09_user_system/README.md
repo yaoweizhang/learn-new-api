@@ -6,6 +6,8 @@
 
 > **Layer**：L2 鉴权与身份
 
+> **术语速读**：本章用 `bcrypt`（专为密码哈希设计的慢哈希算法）做密码存储，登录成功后用 `HS256`（JWT 的一种签名算法，对称密钥）签发 `JWT`（JSON Web Token：把用户信息签名后塞进字符串）—— 三者后续章节直接复用，不再重复解释。
+
 ## 问题
 
 s05 之前我们用一张"API key → 用户"的内存表来做鉴权。这种做法在演示阶段没问题，但只要系统对外公开就立刻遇到三个痛点：
@@ -25,7 +27,7 @@ s05 之前我们用一张"API key → 用户"的内存表来做鉴权。这种�
 - **HS256 JWT**（`s09_user_system/jwt_util.py`）—— 登录成功签发 `access_token`；`/me` 用 `Depends(_current_user)` 解码 claims。签名密钥来自环境变量 `JWT_SECRET`，默认 `"change-me-in-production"` 仅用于本地开发。
 - **Token 黑名单**（`s09_user_system/token_blacklist.py`）—— 进程内集合，键为 `sha256(token).hexdigest()`。`_current_user` 在解码 JWT 之前先检查黑名单——JWT 是无状态的，所以"注销一个尚未到期的 token"必须靠显式 deny-list。
 
-整章的路由形状如下：
+整章的路由形状如下——下面这张块状路由表把本章要写的 4 条接口压成一览：表左是 `method + path`，中间是入参（`{email, password}` 表示请求体字段，`Authorization: Bearer <jwt>` 表示 header 必带），右是返回码与返回体；本章要写的核心就是这套"注册 → 登录 → 注销 → 读自己"的接口。
 
 ```
 POST /auth/signup   {email, password}            -> 201 {id, email, access_token}
