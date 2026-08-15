@@ -15,7 +15,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from s09_user_system import jwt_util, users
+from s09_user_system import jwt_util, token_blacklist, users
 from s08_rate_limiting.code import app as s08_app  # reuse whole s08 app
 
 app = FastAPI(title="learn-new-api s09")
@@ -46,20 +46,33 @@ def login(creds: Credentials):
     return {"access_token": token, "token_type": "bearer"}
 
 
-def _current_user(request: Request) -> dict:
+def _bearer(request: Request) -> str:
     auth = request.headers.get("authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="missing token")
+    return auth.removeprefix("Bearer ").strip()
+
+
+def _current_user(request: Request) -> dict:
+    token = _bearer(request)
+    if token_blacklist.get_default().is_revoked(token):
+        raise HTTPException(status_code=401, detail="token revoked")
     try:
-        claims = jwt_util.decode(auth.removeprefix("Bearer ").strip())
+        return jwt_util.decode(token)
     except Exception:
         raise HTTPException(status_code=401, detail="invalid token")
-    return claims
 
 
 @app.get("/me")
 def me(claims: dict = Depends(_current_user)):
     return {"id": int(claims["sub"]), "email": claims["email"], "is_admin": claims.get("is_admin", False)}
+
+
+@app.post("/auth/logout", status_code=204)
+def logout(request: Request):
+    token = _bearer(request)  # 401 if missing
+    token_blacklist.get_default().revoke(token)
+    return None
 
 
 # Mount s08 LAST so our local /auth/* and /me routes match first.
