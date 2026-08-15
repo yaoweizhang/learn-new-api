@@ -16,7 +16,7 @@ s05 之前我们用一张“API key → 用户”的内存表来做鉴权。这�
 
 ## 方案
 
-引入三个最小但够用的部件：
+引入四个最小但够用的部件：
 
 - **SQLite 用户表**（`s09_user_system/users.py`）—— 标准库 `sqlite3`，
   不引入 ORM。字段：`id / email / password_hash / is_admin / created_at`。
@@ -27,18 +27,23 @@ s05 之前我们用一张“API key → 用户”的内存表来做鉴权。这�
   `access_token`；`/me` 用 `Depends(_current_user)` 解码 claims。
   签名密钥来自环境变量 `JWT_SECRET`，默认 `"change-me-in-production"` 仅
   用于本地开发。
+- **Token 黑名单**（`s09_user_system/token_blacklist.py`）—— 进程内
+  集合，键为 `sha256(token).hexdigest()`。`_current_user` 在解码 JWT
+  之前先检查黑名单——JWT 是无状态的，所以"注销一个尚未到期的 token"
+  必须靠显式 deny-list。
 
 整章的路由形状如下：
 
 ```
 POST /auth/signup   {email, password}            -> 201 {id, email, access_token}
 POST /auth/login    {email, password}            -> 200 {access_token, token_type}
-GET  /me            Authorization: Bearer <jwt>   -> 200 {id, email, is_admin}
+POST /auth/logout   Authorization: Bearer <jwt>  -> 204   (把这个 token 加进黑名单)
+GET  /me            Authorization: Bearer <jwt>  -> 200 {id, email, is_admin}
 ```
 
-s08 的聊天端点不动，整块 `app` 通过 `app.mount("/v1", s08_app)` 挂载到
-s09 之下。所以走通 s09 的鉴权后，原来的 `/v1/chat/completions` 路径
-**保持不变**，只是上游入口前面多了注册/登录两道门。
+注销是**尽力而为**——已经被攻击者截获的旧 token 在被注销前仍然有效
+（JWT 验签只看签名 + exp，不查黑名单）。需要"立刻全量撤销"的话得上
+refresh-token + 黑名单的组合，那是 v2 的事。
 
 ## 工作原理
 
@@ -82,38 +87,54 @@ Payload 三个字段：`sub`（用户 id）、`email`、`is_admin`。`exp` 默�
 ### `code.py`：FastAPI 装配
 
 ```python
-app = FastAPI(title="learn-new-api s09")
-app.mount("/v1", s08_app)              # s08 的 /v1/chat/completions 原样保留
+app = FastAPI(title=”learn-new-api s09”)
+app.mount(“/v1”, s08_app)              # s08 的 /v1/chat/completions 原样保留
 
-@app.post("/auth/signup", status_code=201)
+@app.post(“/auth/signup”, status_code=201)
 def signup(creds: Credentials):
     if users.find_by_email(creds.email):
-        raise HTTPException(409, "email already registered")
+        raise HTTPException(409, “email already registered”)
     pw_hash = bcrypt.hashpw(creds.password.encode(), bcrypt.gensalt()).decode()
     uid = users.create_user(creds.email, pw_hash)
-    return {"id": uid, "email": creds.email,
-            "access_token": jwt_util.issue(uid, creds.email, is_admin=False)}
+    return {“id”: uid, “email”: creds.email,
+            “access_token”: jwt_util.issue(uid, creds.email, is_admin=False)}
+
+def _bearer(request: Request) -> str:
+    auth = request.headers.get(“authorization”, “”)
+    if not auth.startswith(“Bearer “):
+        raise HTTPException(401, “missing token”)
+    return auth.removeprefix(“Bearer “).strip()
 
 def _current_user(request: Request) -> dict:
-    auth = request.headers.get("authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(401, "missing token")
+    token = _bearer(request)
+    if token_blacklist.get_default().is_revoked(token):
+        raise HTTPException(401, “token revoked”)
     try:
-        return jwt_util.decode(auth.removeprefix("Bearer ").strip())
+        return jwt_util.decode(token)
     except Exception:
-        raise HTTPException(401, "invalid token")
+        raise HTTPException(401, “invalid token”)
 
-@app.get("/me")
+@app.post(“/auth/logout”, status_code=204)
+def logout(request: Request):
+    token = _bearer(request)        # 401 if missing
+    token_blacklist.get_default().revoke(token)
+    return None
+
+@app.get(“/me”)
 def me(claims: dict = Depends(_current_user)):
-    return {"id": int(claims["sub"]),
-            "email": claims["email"],
-            "is_admin": claims.get("is_admin", False)}
+    return {“id”: int(claims[“sub”]),
+            “email”: claims[“email”],
+            “is_admin”: claims.get(“is_admin”, False)}
 ```
 
-注意 `_current_user` 用 `Depends` 注入到 `/me` 的参数 `claims`，
-所以 `/me` 函数体本身只是把 claims 翻译成对外的 user 视图。
-登录失败统一返回 `401 invalid credentials`——不区分“邮箱不存在”和
-“密码错误”，避免被用来探测哪些邮箱已注册。
+注意三条：`_bearer` 把”提取 token”抽出来一处，`_current_user` 在解
+码前先查黑名单（用 SHA-256 算出的摘要做 key，不是原始 token），
+`/auth/logout` 走 `_bearer` 复用同一份解析逻辑。
+
+登录失败统一返回 `401 invalid credentials`——不区分”邮箱不存在”和
+“密码错误”，避免被用来探测哪些邮箱已注册。注销后再访问 `/me` 也
+返回 `401 token revoked`，跟”密码错”区分开——给客户端一个明确的
+“你的 token 被显式作废了”信号。
 
 ## 运行
 
@@ -140,6 +161,15 @@ TOKEN=$(curl -s -X POST http://localhost:8009/auth/login \
 # /me
 curl -s http://localhost:8009/me -H "authorization: Bearer $TOKEN"
 # -> {"id":1,"email":"a@b.com","is_admin":false}
+
+# 注销（撤销这个 token）
+curl -s -X POST http://localhost:8009/auth/logout \
+  -H "authorization: Bearer $TOKEN"
+# -> 204 No Content
+
+# 之后再访问 /me 用同一个 token：
+curl -i http://localhost:8009/me -H "authorization: Bearer $TOKEN"
+# -> 401 {"detail":"token revoked"}
 ```
 
 `JWT_SECRET` 强烈建议设置；不设置的话所有进程重启后旧 token 仍能用默认
@@ -151,7 +181,7 @@ curl -s http://localhost:8009/me -H "authorization: Bearer $TOKEN"
 pytest tests/test_s09_user_system.py -v
 ```
 
-四个测试覆盖主要契约：
+七个测试覆盖主要契约：
 
 | 测试 | 断言 |
 | --- | --- |
@@ -159,8 +189,12 @@ pytest tests/test_s09_user_system.py -v
 | `test_login_with_wrong_password_fails` | 错误密码返回 401。 |
 | `test_me_requires_token` | 没有 `Authorization` 头时 `/me` 返回 401。 |
 | `test_me_returns_user_with_token` | 带合法 token 调用 `/me` 返回对应 email。 |
+| `test_logout_revokes_token` | `/auth/logout` 后同一个 token 再访问 `/me` 返回 401 `token revoked`。 |
+| `test_logout_without_token_returns_401` | 不带 Bearer 调用 `/auth/logout` 返回 401。 |
+| `test_blacklist_check_isolated_per_token` | 撤销 token-A 不影响 token-B——验证 SHA-256 键隔离。 |
 
-`reset_db()` 在 fixture 中先调用、后调用，保证测试之间互不污染。
+`reset_db()` 在 fixture 中先调用、后调用；token 黑名单由平行 fixture
+重置，保证测试之间互不污染。
 
 ## new-api 源码
 

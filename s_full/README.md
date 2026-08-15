@@ -227,10 +227,23 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
 
 - **没有 channel pool 的真实选路**：`_pick(model)` 只按模型前缀选 provider，不会去 `models/channel.py` 里挑具体 channel。如果想跑 channel failover，要扩展 `routes/chat.py` 在选到 provider 之后再调 `pick_channel_for(...)` 选一个具体的 base_url。
 - **没有 retry / fallback**（参见 s13）：单次上游调用失败直接 refund + 502。
-- **没有 streaming**（参见 s03）：只支持非流式响应。`/v1/chat/completions` 不读 `stream` 字段。
 - **没有 caching**（参见 s12）：同样的 prompt 不会走 prompt cache。
+- **streaming 部分支持**：客户端发 `stream=true` 时走 `StreamingResponse`
+  把上游 SSE 字节原样透传（OpenAI / Claude 已通）。每个 `Provider`
+  标了 `supports_streaming: bool` 能力位——`GeminiProvider` 设为
+  `False`，因为 Gemini 的 `generateContent` 不原生 SSE，所以
+  `stream=true` 命中 gemini-* 模型直接返回 400。Pre-consume 在流开始
+  前扣，stream 正常结束用最后一个 `data:` chunk 的 usage 调 `settle`
+  退差额；中途 `BaseException`（含 `GeneratorExit` 客户端断连）走
+  `refund` 全额退还。
 - **admin 操作没有审计**：直接改 channel 池，没有记录是谁改的。
 - **错误响应没有结构化**：上游返回 5xx 时，路由直接 `raise HTTPException(502, r.text)`，没有 `{"error": {...}}` 结构。
+- **`require_api_key` 不查 token 黑名单**：s09 在自己的 `_current_user`
+  里加了 token 黑名单（`/auth/logout`），但 s_full 的
+  `middleware/auth.py` 走的是 JWT decode-only 路径，不查同一个黑名单。
+  是有意为之：本教程把"撤销 token"作为 s09 这一章单独讲透；跨章共
+  享一份黑名单是合并章节的工作。把 s_full 当独立应用跑时，要撤销
+  token 直接换 `JWT_SECRET` 让所有未过期 token 集体失效。
 
 ### 没做的事（YAGNI）
 

@@ -29,13 +29,17 @@ chapters (s_full onward) reuse the same shape.
 
 引入两个最小部件：
 
-- **`s11_call_logs/log_store.py`** —— 进程内的 `deque` 缓冲 + `list`
-  落盘列表。`enqueue()` 把一行日志放进 `_buffer`，后台 `flush_loop`
-  每 100ms 把 `_buffer` 整段搬到 `_flushed`。重置用 `reset_logs()`。
+- **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore`
+  默认实现。`LogStore` 是个 `typing.Protocol`，只有 `enqueue` / `list`
+  / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。
+  实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表：`enqueue`
+  把一行塞进缓冲，后台 `flush_loop` 每 100ms 把整段搬到 `list`。
+  重置用 `reset_logs()`。模块层保留 `enqueue`/`list_logs` 等 thin wrapper
+  转发到一个 `_default` 实例，方便测试用 `set_default(rec)` 注入假实现。
 - **`s11_call_logs/code.py`** —— FastAPI 装配。挂载 s10 整块 app，在
   自己身上新增一个中间件（`LogMiddleware`）和两条管理员路由
   （`/admin/logs`、`/admin/stats`）。中间件在 `/v1/chat/completions` 返
-  回 200 时把响应日志塞进 `_buffer`，由后台循环搬运到 `_flushed`。
+  回 200 时把响应日志塞进 default 实例，由后台循环搬运到落盘列表。
 
 路由形状：
 
@@ -50,38 +54,64 @@ GET  /admin/stats                                                         -> 200
 
 ## 工作原理
 
-### `log_store.py`：内存日志表
+### `log_store.py`：Protocol + InMemory 实现
 
 ```python
-_lock = threading.Lock()
-_buffer: deque[dict] = deque()
-_flushed: list[dict] = []
+class LogStore(Protocol):
+    def enqueue(self, entry: dict) -> None: ...
+    def list(self) -> list[dict]: ...
+    def reset(self) -> None: ...
+    def drain_now(self) -> None: ...
 
-def enqueue(entry):
-    with _lock:
-        _buffer.append(entry)
+class InMemoryLogStore:
+    def __init__(self, flush_interval: float = 0.1) -> None:
+        self._lock = threading.Lock()
+        self._buffer: deque[dict] = deque()
+        self._flushed: list[dict] = []
+        ...
 
-async def flush_loop(stop_event):
-    while not stop_event.is_set():
-        await asyncio.sleep(0.1)
-        with _lock:
-            while _buffer:
-                _flushed.append(_buffer.popleft())
+    def enqueue(self, entry):
+        with self._lock:
+            self._buffer.append(entry)
 
-def list_logs():
-    with _lock:
-        return list(_flushed)
+    async def flush_loop(self, stop_event):
+        while not stop_event.is_set():
+            await asyncio.sleep(0.1)
+            self.drain_now()
+
+    def list(self):
+        with self._lock:
+            return list(self._flushed)
+
+_default: LogStore = InMemoryLogStore()
+
+# 模块层 thin wrappers —— 历史 call sites 保持不变
+def enqueue(entry): _default.enqueue(entry)
+def list_logs(): return _default.list()
+def reset_logs(): _default.reset()
+def _drain_now(): _default.drain_now()
+async def flush_loop(stop_event): ...  # 包了一层 for s11/code.py
+
+def set_default(store): ...   # 测试专用 seam
+def get_default() -> LogStore: ...
 ```
 
-- `_buffer` 是写入端，写一行塞一个。
-- `_flushed` 是读取端，`/admin/logs` 直接读它。
-- 后台 `flush_loop` 每 100ms 把 `_buffer` 整段搬过去。线程安全靠一个
-  `threading.Lock` 保护——单进程内同步原语够用，跨进程的 flush 留给 v2。
+- `_buffer` 是写入端，写一行塞一个；`_flushed` 是读取端，`/admin/logs`
+  直接读它——两块都在具体实现 `InMemoryLogStore` 实例上，锁也是实例的。
+- 后台 `flush_loop` 每 100ms 把 `_buffer` 整段搬到 `_flushed`。单进程
+  内同步原语够用，跨进程的 flush 留给 v2。
+- 模块层 `_default` 是懒加载的默认实例；测试可以 `set_default(fake)`
+  注入一个 duck-typed 的 fake，验证中间件真的走了我们的注入路径。
 
 为什么不用 `asyncio.Queue`？因为日志条目来自中间件（在 asyncio 上下文
 里），但运维接口和测试代码可能从同步线程直接读。`deque + threading.
 Lock` 对两种调用方都安全；`asyncio.Queue` 跨线程就需要 `run_coroutine_
 threadsafe` 包一层，对一个内存实现来说重了。
+
+**为什么抽 `LogStore` Protocol 而不是直接用 `InMemoryLogStore`？** 两
+件事今天就受益：(1) 测试可以用 `Recording` 这种 duck-typed fake 替
+换 default，验证中间件真的不直接读模块全局；(2) 日后切 SQLite 实现
+时只换一个构造模块层 `_default` 的语句，对外契约不变。
 
 ### `code.py`：FastAPI 装配 + 中间件
 
@@ -205,11 +235,12 @@ curl -s http://localhost:8011/admin/stats
 pytest tests/test_s11_call_logs.py -v
 ```
 
-一个测试覆盖主契约：
+两个测试覆盖主契约：
 
 | 测试 | 断言 |
 | --- | --- |
-| `test_logs_written_after_call` | 走完一次 chat 调用 200 后，1 条日志出现在 `_flushed`，model 字段等于请求里写的 `gpt-4o-mini`。 |
+| `test_logs_written_after_call` | 走完一次 chat 调用 200 后，1 条日志出现在落盘列表，model 字段等于请求里写的 `gpt-4o-mini`。 |
+| `test_injected_log_store_observes_calls` | 用 `set_default(rec)` 注入一个 recording fake，请求走完后 fake 里能看到同一行——证明中间件走的是 `_default` 实例而不是直接读模块全局。 |
 
 测试里有一行 `time.sleep(0.2)`——这是已知的、可接受的时序依赖：
 `flush_loop` 真的是异步循环（`await asyncio.sleep(0.1)` + 加锁搬运），
