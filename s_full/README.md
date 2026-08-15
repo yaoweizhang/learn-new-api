@@ -78,7 +78,7 @@ s_full/
 
 ### `/v1/chat/completions` 的请求生命周期
 
-下面这张 ASCII 流程图把"一次 chat 请求从进入到出"画出来——图里有客户端请求、本章要写的 `TraceAndMetricsMiddleware`、以及 `chat_completions` handler 内部 9 个步骤（鉴权 → 限流 → 计量 + 预扣 → 选 Provider → to_upstream → 调上游 → from_upstream → 结算 → 记日志），纵向是步骤顺序，箭头方向 = 请求/响应走向（`▶` 是往下走，`▼` 是进入下一段），本章写的是把 s01-s16 累积的所有功能在这条链里串成单一入口。
+下面这张 ASCII 流程图把一次 chat 请求从进入到出画出来——图里有客户端、本章要写的 `TraceAndMetricsMiddleware`、`chat_completions` handler 三个角色。纵向是步骤顺序，`▶` 往下走、`▼` 进下一段；本章写的是把 s01-s16 累积的功能串成单一入口。
 
 ```
 HTTP POST /v1/chat/completions
