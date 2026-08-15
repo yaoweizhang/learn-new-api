@@ -1,8 +1,9 @@
-"""s13: retry transient upstream errors + fall back to next channel.
+"""s13: fail over to the next channel when the current one errors.
 
-tenacity: 3 attempts, exponential backoff (0.2s, 0.4s, 0.8s).
-If all attempts on the primary channel fail, mark it unhealthy; future calls
-pick the next-priority channel.
+Behavior: each channel is tried at most once per request. Any failure
+(transport error or non-2xx response) marks that channel unhealthy and
+escalates immediately to the next candidate. Matches new-api's design:
+no in-request retries — instead, fall through to the next priority.
 
 Composition (mirrors `s_full/routes/chat.py`):
     auth -> rate -> pre-consume -> adapter -> upstream -> settle -> return
@@ -24,12 +25,6 @@ import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from common.json import marshal
 from s04_multi_provider.adapters import pick_provider
@@ -43,8 +38,6 @@ from s12_caching.code import app as s12_app
 app = FastAPI(title="learn-new-api s13")
 
 RATE_PER_TOKEN = int(os.getenv("RATE_PER_TOKEN", "1"))
-
-TRANSIENT = (502, 503, 504, 429)
 
 
 def _key_for(provider_name: str) -> str:
@@ -67,21 +60,6 @@ def require_api_key(request: Request) -> Principal:
     if p is None:
         raise HTTPException(status_code=401, detail="unknown")
     return p
-
-
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=0.2, min=0.2, max=2.0),
-    retry=retry_if_exception_type(httpx.HTTPError),
-    reraise=True,
-)
-async def _call_with_retry(client: httpx.AsyncClient, url: str, headers: dict, body: bytes) -> httpx.Response:
-    r = await client.post(url, content=body, headers=headers)
-    if r.status_code in TRANSIENT:
-        # Convert a non-2xx into an exception so tenacity retries on it.
-        # (httpx only raises on transport errors; status codes come back normally.)
-        raise httpx.HTTPError(f"transient {r.status_code}")
-    return r
 
 
 class ChatMessage(BaseModel):
@@ -137,8 +115,9 @@ async def chat_with_retry(
                 continue
             url = f"{ch['base_url']}/v1/chat/completions"
             try:
-                r = await _call_with_retry(client, url, upstream_headers, body)
+                r = await client.post(url, content=body, headers=upstream_headers)
             except httpx.HTTPError as exc:
+                # Transport failure — escalate to the next channel.
                 last_error = str(exc)
                 ch_mod.mark_unhealthy(ch["id"])
                 continue
@@ -160,6 +139,7 @@ async def chat_with_retry(
                 }
                 translated["quota_charged"] = actual
                 return JSONResponse(translated)
+            # Non-2xx — escalate to the next channel rather than retrying.
             last_status = r.status_code
             last_body = r.text
             last_error = f"{r.status_code}: {r.text}"

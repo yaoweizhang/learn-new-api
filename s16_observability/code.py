@@ -1,6 +1,7 @@
 """s16: observability — Prometheus metrics + structured logs + trace_id."""
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import sys
@@ -27,17 +28,24 @@ class TraceAndMetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         trace_id = request.headers.get("x-trace-id") or uuid.uuid4().hex
         request.state.trace_id = trace_id
+
+        # Extract the chat model from the JSON body so the metric label is
+        # meaningful. Same body-peek + rewind pattern as s11 (Starlette
+        # caches body in request._body, so downstream middlewares still see it).
+        if request.method == "POST" and request.url.path == "/v1/chat/completions":
+            try:
+                body_bytes = await request.body()
+                payload = json.loads(body_bytes or b"{}")
+                request.state.model = payload.get("model") if isinstance(payload, dict) else None
+            except Exception:
+                request.state.model = None
+
         start = time.perf_counter()
         response = await call_next(request)
         elapsed = time.perf_counter() - start
-        # Two distinct chat handlers exist in the stack: s13 owns /v1/chat/completions
-        # (defined on s13's own app before the mount) and the mount chain also exposes
-        # /v1/v1/chat/completions via s12→s11→s10→s09→s08 (s09 mounts s08 at /v1).
-        # Match both so the counter fires regardless of which front door a client uses.
-        # Counter labels use "unknown" by default; production should plumb
-        # request.state.model from the chat handler. Kept as-is per YAGNI.
-        if request.url.path in ("/v1/chat/completions", "/v1/v1/chat/completions"):
-            model = request.headers.get("x-model", "unknown")
+
+        if request.url.path == "/v1/chat/completions":
+            model = getattr(request.state, "model", None) or "unknown"
             REQUESTS.labels(model=model, status=response.status_code).inc()
             LATENCY.labels(model=model).observe(elapsed)
         log.info(

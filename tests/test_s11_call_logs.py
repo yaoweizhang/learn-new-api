@@ -61,12 +61,11 @@ def test_logs_written_after_call(upstream_openai):
     register_key(user_id=str(uid), key=api_key)
     set_balance(str(uid), 10_000_000)
 
-    # NOTE: the brief used `/v1/chat/completions` but s09 mounts s08 at `/v1`
-    # and s08's chat route is `/v1/chat/completions`, so the external path
-    # through s11 -> s10 -> s09 -> s08 is `/v1/v1/chat/completions`.
+    # The chat endpoint is reachable at /v1/chat/completions via the
+    # s11 -> s10 -> s09 -> s08 mount chain (every chapter mounts at root).
     with TestClient(app) as c:
         r = c.post(
-            "/v1/v1/chat/completions",
+            "/v1/chat/completions",
             headers={"authorization": f"Bearer {api_key}"},
             json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
         )

@@ -32,3 +32,63 @@ def test_full_relay_roundtrip(upstream_openai):
             json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
         )
     assert r.status_code == 200
+
+
+def test_full_relay_uses_provider_api_key(upstream_openai):
+    """Regression: the chat route must inject the per-provider API key into
+    the upstream call. Before the fix, Claude/Gemini always sent an empty
+    key (the upstream would 401 in production)."""
+    from s_full.services.billing import top_up
+    from s_full.models.user import create_user, reset_db
+    from s_full.models.channel import create_channel, reset_channels
+    from s_full.middleware.auth import issue_token
+    import os
+    reset_db(); reset_channels()
+    uid = create_user("u@x.com", "x")
+    top_up("u@x.com", 1_000_000)
+    create_channel("c1", "openai", "https://api.openai.com", weight=100, priority=0)
+    token = issue_token(uid, "u@x.com", is_admin=False)
+    os.environ["UPSTREAM_OPENAI_KEY"] = "sk-test-injected"
+    try:
+        with TestClient(app) as c:
+            r = c.post(
+                "/v1/chat/completions",
+                headers={"authorization": f"Bearer {token}"},
+                json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]},
+            )
+        assert r.status_code == 200
+        # The mock captured the inbound request; assert it carried our key.
+        sent = upstream_openai.calls.last.request
+        assert sent.headers.get("authorization") == "Bearer sk-test-injected"
+    finally:
+        del os.environ["UPSTREAM_OPENAI_KEY"]
+
+
+def test_full_relay_claude_path(upstream_claude):
+    """End-to-end Claude relay. Before the fix, the route always sent an
+    empty x-api-key header, so any real Claude call 401'd. This test fails
+    if the Claude branch is missing or the API key env is mis-routed."""
+    from s_full.services.billing import top_up
+    from s_full.models.user import create_user, reset_db
+    from s_full.models.channel import create_channel, reset_channels
+    from s_full.middleware.auth import issue_token
+    import os
+    reset_db(); reset_channels()
+    uid = create_user("u@x.com", "x")
+    top_up("u@x.com", 1_000_000)
+    create_channel("c2", "claude", "https://api.anthropic.com", weight=100, priority=0)
+    token = issue_token(uid, "u@x.com", is_admin=False)
+    os.environ["UPSTREAM_CLAUDE_KEY"] = "sk-ant-test"
+    try:
+        with TestClient(app) as c:
+            r = c.post(
+                "/v1/chat/completions",
+                headers={"authorization": f"Bearer {token}"},
+                json={"model": "claude-3-5-sonnet-20241022", "messages": [{"role": "user", "content": "hi"}]},
+            )
+        assert r.status_code == 200, r.text
+        assert r.json()["choices"][0]["message"]["content"] == "hi from claude"
+        sent = upstream_claude.calls.last.request
+        assert sent.headers.get("x-api-key") == "sk-ant-test"
+    finally:
+        del os.environ["UPSTREAM_CLAUDE_KEY"]

@@ -65,3 +65,16 @@ def test_upstream_failure_refunds_pre_consume():
             )
     assert r.status_code == 500
     assert get_balance("u1") == before  # fully refunded
+
+
+def test_actual_exceeds_estimate_charges_overage():
+    """When upstream returns more tokens than the pre-consume estimate,
+    settle() charges the overage (real new-api collects this; pre-consume
+    alone would under-charge)."""
+    from s07_pre_consume_settle.quota import settle, set_balance, deduct
+    set_balance("u1", 1_000)
+    # Simulate the caller: pre-consume took 100, then upstream returned a bill of 150.
+    assert deduct("u1", 100) is True
+    settle("u1", pre_deducted=100, actual=150)
+    # Final balance should be 1000 - 100 - 50 (overage) = 850.
+    assert get_balance("u1") == 850

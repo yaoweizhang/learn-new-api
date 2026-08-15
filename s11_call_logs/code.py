@@ -60,8 +60,8 @@ class LogMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         # If this is the chat endpoint, peek at the JSON body to extract model
         # before FastAPI consumes it. We buffer the body bytes and replay them.
-        # NOTE: the actual mounted path is /v1/v1/chat/completions (s09 mounts
-        # s08 at /v1 and s08's route is /v1/chat/completions).
+        # The chat route is reachable at /v1/chat/completions via the s09→s08
+        # mount chain (every chapter mounts at root).
         if request.url.path.endswith("/v1/chat/completions") and request.method == "POST":
             body_bytes = await request.body()
             request.state.model = "?"

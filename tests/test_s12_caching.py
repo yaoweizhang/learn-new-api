@@ -3,11 +3,8 @@
 After the second identical request, the upstream OpenAI mock should be
 hit exactly once (the first call) and the second one served from cache.
 
-NOTE on path: the brief used `/v1/chat/completions` but s09 mounts s08
-at `/v1` and s08's route is `/v1/chat/completions`. The full external
-path through s12 -> s11 -> s10 -> s09 -> s08 is therefore
-`/v1/v1/chat/completions`. The middleware in `code.py` was updated to
-match that path.
+The chat endpoint is reachable at `/v1/chat/completions` via the
+s12 -> s11 -> s10 -> s09 -> s08 mount chain (every chapter mounts at root).
 """
 import sys
 from pathlib import Path
@@ -71,12 +68,12 @@ def test_identical_request_hits_cache(upstream_openai):
     body = {"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]}
     with TestClient(app) as c:
         r1 = c.post(
-            "/v1/v1/chat/completions",
+            "/v1/chat/completions",
             headers={"authorization": f"Bearer {api_key}"},
             json=body,
         )
         r2 = c.post(
-            "/v1/v1/chat/completions",
+            "/v1/chat/completions",
             headers={"authorization": f"Bearer {api_key}"},
             json=body,
         )

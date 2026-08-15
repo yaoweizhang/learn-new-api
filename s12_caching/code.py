@@ -8,9 +8,9 @@ mounted s11 app. We do NOT define our own `/v1/chat/completions` route —
 FastAPI would shadow the mounted one and break everything (see s11 README).
 
 The middleware checks the as-called path. Through the chapter chain
-s12 -> s11 -> s10 -> s09 -> s08, s08's chat route (`/v1/chat/completions`)
-is reached at the external path `/v1/v1/chat/completions` (s09 mounts
-s08 at `/v1`). We match that path here.
+s12 -> s11 -> s10 -> s09 -> s08, every chapter mounts at root, so
+s08's chat route (`/v1/chat/completions`) is reached at the natural
+external path `/v1/chat/completions`. We match that path here.
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ app.mount("/", s11_app)
 
 class CacheMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.method == "POST" and request.url.path == "/v1/v1/chat/completions":
+        if request.method == "POST" and request.url.path == "/v1/chat/completions":
             body_bytes = await request.body()
             try:
                 payload = json.loads(body_bytes)

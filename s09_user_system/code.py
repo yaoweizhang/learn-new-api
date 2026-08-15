@@ -19,7 +19,6 @@ from s09_user_system import jwt_util, users
 from s08_rate_limiting.code import app as s08_app  # reuse whole s08 app
 
 app = FastAPI(title="learn-new-api s09")
-app.mount("/v1", s08_app)
 
 
 class Credentials(BaseModel):
@@ -61,6 +60,12 @@ def _current_user(request: Request) -> dict:
 @app.get("/me")
 def me(claims: dict = Depends(_current_user)):
     return {"id": int(claims["sub"]), "email": claims["email"], "is_admin": claims.get("is_admin", False)}
+
+
+# Mount s08 LAST so our local /auth/* and /me routes match first.
+# Starlette iterates routes in registration order; a Mount("/") registered
+# earlier would absorb everything.
+app.mount("/", s08_app)
 
 
 if __name__ == "__main__":

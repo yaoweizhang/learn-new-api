@@ -34,6 +34,15 @@ _PROVIDERS = {
     "gemini": GeminiProvider(),
 }
 
+# Per-provider env var for the upstream API key. Real new-api stores this
+# on the Channel row (multi-key rotation); s_full keeps the simpler env
+# lookup that matches the rest of the tutorial.
+_API_KEY_ENV = {
+    "openai": "UPSTREAM_OPENAI_KEY",
+    "claude": "UPSTREAM_CLAUDE_KEY",
+    "gemini": "UPSTREAM_GEMINI_KEY",
+}
+
 
 def _pick(model: str):
     if model.startswith(("gpt-", "o")):
@@ -77,7 +86,7 @@ async def chat_completions(
         raise HTTPException(400, str(exc))
 
     payload = req.model_dump(exclude_none=True)
-    payload["_api_key"] = os.getenv("UPSTREAM_OPENAI_KEY", "") if provider.name == "openai" else ""
+    payload["_api_key"] = os.getenv(_API_KEY_ENV.get(provider.name, ""), "")
     url, headers, upstream_body = provider.to_upstream(payload)
     body_bytes = marshal(upstream_body)
     async with httpx.AsyncClient(timeout=30.0) as client:

@@ -27,4 +27,6 @@ def test_chat_request_increments_counter():
         c.post("/v1/chat/completions", json={"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "hi"}]})
         r = c.get("/metrics")
     assert "learn_new_api_requests_total" in r.text
-    assert 'model="unknown"' in r.text  # default label since we don't plumb request.state.model
+    # The middleware now reads `model` from the JSON body, so the label
+    # carries the actual model name (was previously pinned to "unknown").
+    assert 'model="gpt-4o-mini"' in r.text
