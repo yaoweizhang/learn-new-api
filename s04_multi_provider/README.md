@@ -27,10 +27,14 @@ OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`
 
 路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
 
+下面这张 ASCII 流程图把分派路径压成一行——图里有 `Client`、本章要写的 `Relay(按模型名前缀选)`、以及根据前缀派生的 `Provider` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块就是本章要写的 Relay——按模型名挑 adapter。
+
 ```
 Client ──POST /v1/chat/completions──▶  Relay(按模型名前缀选)  ──POST upstream──▶  Provider
         ◀────── OpenAI JSON ─────────                                    ◀──── JSON ────
 ```
+
+下面这张架构图给读者一幅全局鸟瞰：图里有 `Client`、`Relay`、以及根据模型名前缀动态选出的 `Provider` 三个角色，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是 JSON 响应），中间那一块就是本章要写的 Relay——按模型名挑 adapter。
 
 ![architecture](images/architecture.svg)
 
