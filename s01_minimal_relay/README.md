@@ -20,7 +20,7 @@
 
 一个进程:接住请求、转发出去、再把答复送回来。说白了就是一个针对入站 HTTP 请求的 `while True` 循环,循环体里只做一件事——转发。
 
-下图给读者一幅全局鸟瞰：图里有 `Client`、本章将要写的 `Relay` 进程、以及远处的 `Upstream` 上游三个角色。左半边的请求箭头从 `Client` 指向 `Relay`，右半边的请求箭头从 `Relay` 指向 `Upstream`，响应箭头则反向走两条路回来；中间那一块 `Relay` 是本章要写的进程。
+下图给出一幅全局鸟瞰：图里有 `Client`、本章要写的 `Relay` 进程、以及远处的 `Upstream` 三个角色。请求箭头从 `Client` 走到 `Relay` 再走到 `Upstream`，响应则反向沿两条路回来；中间那一块 `Relay` 是本章要写的进程。
 
 ![architecture](images/architecture.svg)
 
