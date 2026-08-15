@@ -30,7 +30,9 @@ chapters (s_full onward) reuse the same shape.
 引入两个最小部件：
 
 - **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore`
-  默认实现。`LogStore` 是个 `typing.Protocol`，只有 `enqueue` / `list`
+  默认实现。`LogStore` 是个 `typing.Protocol`(Python 的结构性子
+  类型/鸭子类型 + 类型注解,实现类只要方法签名对得上就算满足,不
+  必显式继承),只有 `enqueue` / `list`
   / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。
   实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表：`enqueue`
   把一行塞进缓冲，后台 `flush_loop` 每 100ms 把整段搬到 `list`。
