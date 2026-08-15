@@ -26,7 +26,7 @@
 
 ## 工作原理
 
-下面这张 ASCII 时序图把"一次请求穿过中间件"画出来——图里有 `client`、本章要写的 `TraceAndMetricsMiddleware`、以及下游挂载链（s15 → s14 → ...）三个角色，纵向是时间、横向是消息流向，箭头方向 = 请求/响应走向（`▶` 是请求，`◀` 是响应），中间那一块就是本章要写的中间件——读 trace_id、计时、写日志、回写 trace_id 头。
+下面这张 ASCII 时序图画一次请求穿过中间件——图里有 `client`、`TraceAndMetricsMiddleware`、下游挂载链三个角色，纵向时间、横向消息流向，中间那一块就是本章要写的中间件——读 trace_id、计时、写日志、回写 trace_id 头。
 
 ```
 client ──GET /healthz  x-trace-id: abc-123──▶
