@@ -1,4 +1,4 @@
-# s05: API Key 鉴权
+# s05: API Key 鉴权 — 一道 Bearer 守门,401 把匿名打掉
 
 > Previous: [s04](../s04_multi_provider/) · Next: [s06](../s06_token_counting/)
 
@@ -6,9 +6,17 @@
 
 > **Layer**：L2 鉴权与身份
 
-**本章新增**:每次访问 `/v1/chat/completions` 都必须带上合法的 API
-key,放在 `Authorization: Bearer <key>` 里。未知、缺失、被封禁的 key
-统统返回 `401`。
+## 本章要做什么
+
+每次访问 `/v1/chat/completions` 都必须带上合法的 API key(`Authorization: Bearer <key>`)。未知、缺失、被封禁的 key 统统返回 `401`,挂到 chat 路由的 `Depends(require_api_key)` 依赖闸门。学完你会拿到一个"守门人"闸门。
+
+## 上一章复盘
+
+s04 之后任何能访问的客户端都能花网关的钱。必须先有"谁在打"的标识。
+
+## 在整体中的位置
+
+守门人——任何后续处理(限速、配额、转发)都假设这步已经放行。
 
 ## 问题
 
@@ -17,17 +25,17 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 ## 方案
 
 引入一个 `Principal`（当前请求代表的用户身份与权限：一个 `user_id` 加一个 `scopes`（权限标签元组，挂在 Principal 上）元组）和一个
-`Depends`（FastAPI 依赖注入：路由前自动跑的函数）`require_api_key` 依赖，它会在 chat-completion 处理器之前运行。这个依赖做这几件事：
+`Depends`（FastAPI 依赖注入：路由前自动跑的函数）`require_api_key` 依赖,它会在 chat-completion 处理器之前运行。这个依赖做这几件事:
 
 1. 从请求里读 `Authorization: Bearer <key>`。
-2. 检查 `storage.is_blocked(key)`（黑名单查询钩子，返回是否被封禁——未来接 Redis；本章永远返 `False`）。
+2. 检查 `storage.is_blocked(key)`(黑名单查询钩子,返回是否被封禁——未来接 Redis;本章永远返 `False`)。
 3. 在 `storage.lookup_key` 里查这个 key,查不到抛 `401`。
 4. 成功的话,把 `Principal` 挂到 `request.state`,供下游中间件使用。
 
 存储层(`storage.py`)本章是进程内的;真实实现会换 Redis + 数据库。
 `storage.py` 和 `code.py` 的这种拆分,正好对齐 new-api 在 `model/`(持久化)和 `middleware/`(HTTP 装配)之间的切分。
 
-下面这张 ASCII 流程图画鉴权边界——图里有 `Client`、`require_api_key` 依赖闸门、转发路由、远端 `Upstream` 四个角色，箭头方向 = 请求/响应走向，中间那一块 `require_api_key` 闸门就是本章要写的。
+下面这张 ASCII 流程图画鉴权边界,和下面那张架构图相对照——上面这张是单跳时序,下面那张是角色拓扑,中间那块都是 `require_api_key` 闸门:
 
 ```
 Client ──POST + Bearer ──▶  require_api_key  ──▶  /v1/chat/completions  ──▶  Upstream
@@ -36,7 +44,7 @@ Client ──POST + Bearer ──▶  require_api_key  ──▶  /v1/chat/compl
                           Principal 挂在 request.state
 ```
 
-下面这张架构图给读者一幅全局鸟瞰：图里有 `Client / require_api_key / 上游` 几个角色，请求自左向右、响应自右向左折返；中间那一块 `require_api_key` 闸门就是本章要写的代码——读 Bearer 头、查 key、挂 Principal。
+下面这张架构图给读者一幅全局鸟瞰——图里有 `Client / require_api_key / 上游` 几个角色,请求自左向右、响应自右向左折返;中间那一块 `require_api_key` 闸门就是本章要写的代码:读 Bearer 头、查 key、挂 Principal:
 
 ![architecture](images/architecture.svg)
 
@@ -59,8 +67,7 @@ def require_api_key(request: Request) -> Principal:
     return principal
 ```
 
-它通过 `dependencies=[Depends(require_api_key)]` 挂到 chat-completion
-路由上——处理器自己不需要关心鉴权。存储层是个非常小的模块:
+它通过 `dependencies=[Depends(require_api_key)]` 挂到 chat-completion 路由上——处理器自己不需要关心鉴权。存储层是个非常小的模块:
 
 ```python
 @dataclass
@@ -149,3 +156,7 @@ new-api 真实实现厚得多:它会加载用户行、解析每个 channel 的 k
 - **没有按路由的 scope 检查**。`scopes` 挂在 `Principal` 上但还没读过。s06+ 会强制。
 - **没有限速 / 配额记账**。那是下一阶段的事。
 - **单一全局 key 空间**。真实系统按租户或按 channel 命名空间切分;new-api 按 `user_id` 区分 key,并通过 `model/Key.go` 解析。
+
+## 下章预告
+
+s05 知道"谁在打"但不知道"打得多贵"。s06 接 tiktoken 和按厂商估算,先汇报 token 数。
