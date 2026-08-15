@@ -1,4 +1,4 @@
-# s_full — 生产形态整合版
+# s_full——生产形态整合版
 
 > Previous: [s16](../s16_observability/) · Next: —
 
@@ -16,7 +16,7 @@
 - 通过 `app.mount("/...", sNN_app)` 串成一条链：`s16 -> s15 -> s14 -> ... -> s02`
 - 每个 chapter 内部都有自己的 routes / services / models，但都塞在 `sNN_topic/` 一个目录下
 
-这适合教学（每个 chapter 独立可读、独立可测），但**不像真实项目**。读者若去看 `new-api` 仓库，看到的是另一种目录风格：
+这适合教学（每个 chapter 独立可读、独立可测），但**不像真实项目**。读者去看 `new-api` 仓库，看到的是另一种目录风格：
 
 ```
 new-api/
@@ -112,7 +112,7 @@ JSONResponse(translated)
 
 ### 为什么不挂载 chapter chain
 
-`s16` 通过 `app.mount("/", s15_app)` 把 16 个 chapter 串起来，让 `s01` 的代码可以**直接被外层 s02-s16 重用**——这是教学方便。但到了 `s_full`：
+`s16` 通过 `app.mount("/", s15_app)` 把 16 个 chapter 串起来，让 `s01` 的代码可以**直接被外层 s02-s16 重用**——这是教学方便。但到了 `s_full`，三件事变了：
 
 1. **每个章节已经有自己独立的 routers**（`routes/auth.py` 等），不需要借 chapter 的实现。
 2. **`app.mount` 会让 mounted 子 app 的 routes 注册到挂载点**——`s_full` 不希望 `/v1/chat/completions` 后面再跟一个 `/v1/chat/completions` 的别名链。
@@ -127,14 +127,14 @@ JSONResponse(translated)
 ```python
 @router.post("/v1/chat/completions", dependencies=[Depends(require_api_key)])
 async def chat_completions(req, request: Request):
-    p: Principal = request.state.principal  # ❌ 永远是 None
+    p: Principal = request.state.principal  # 永远是 None
 ```
 
 `dependencies=[Depends(...)]` **不会**把依赖结果塞到 `request.state`，也不会注入 handler 签名。修正：
 
 ```python
 async def chat_completions(req, p: Principal = Depends(require_api_key)):
-    # ✅ FastAPI 看到签名里有 Principal 参数，自动调用 require_api_key 并传入
+    # FastAPI 看到签名里有 Principal 参数，自动调用 require_api_key 并传入
 ```
 
 s08 的 review 已经切换到 typed-parameter 模式；`s_full` 一开始就采用这个写法。
@@ -249,7 +249,7 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
 
 ### 决策
 
-- **复制而不是 import**：s07/s08/s09/s10/s11/s16 的代码被**逐字复制**到 `s_full/` 下的对应位置。**不** `from s07_pre_consume_settle.quota import deduct` 之类的跨章节导入。原因：
+- **复制而不是 import**：s07/s08/s09/s10/s11/s16 的代码被**逐字复制**到 `s_full/` 下的对应位置。**不** `from s07_pre_consume_settle.quota import deduct` 之类的跨章节导入。三个理由：
   1. tutorial 章节本身要保持自包含可读；
   2. `s_full` 要展示"如果这是一个**独立**项目，目录应该长什么样"——重新组织就意味着不引用。
   3. 跨章节 import 在 pytest collection 时容易触发意料之外的初始化副作用。
@@ -286,8 +286,8 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
 - **`require_api_key` 不查 token 黑名单**：s09 在自己的 `_current_user`
   里加了 token 黑名单（`/auth/logout`），但 s_full 的
   `middleware/auth.py` 走的是 JWT decode-only 路径，不查同一个黑名单。
-  是有意为之：本教程把"撤销 token"作为 s09 这一章单独讲透；跨章共
-  享一份黑名单是合并章节的工作。把 s_full 当独立应用跑时，要撤销
+  这是有意为之：本教程把"撤销 token"作为 s09 这一章单独讲透；跨章
+  共享一份黑名单是合并章节的工作。把 s_full 当独立应用跑时，要撤销
   token 直接换 `JWT_SECRET` 让所有未过期 token 集体失效。
 
 ### 没做的事（YAGNI）
