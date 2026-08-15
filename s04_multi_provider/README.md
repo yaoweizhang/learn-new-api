@@ -8,29 +8,20 @@
 
 ## 问题
 
-`s02` 和 `s03` 把一份 OpenAI 形态的 JSON body 原样转发。只要上游就是
-OpenAI,一切相安无事——但 OpenAI 期望的 body(`model`、`messages`、
-`temperature`、可选的 `stream`)并不是 Anthropic 或 Google 期望的样
-子。Claude 要 `x-api-key`、`anthropic-version` 请求头,以及每个请求
-都要的 `max_tokens` 字段。Gemini 要一个 `contents: [{role, parts:
-[{text}]}]` 数组,以及放在 URL 查询串里的 API key。
+`s02` 和 `s03` 把一份 OpenAI 形态的 JSON body 原样转发。上游就是
+OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`、
+`temperature`、可选的 `stream`)并不是 Anthropic 或 Google 期望的样子。Claude 要 `x-api-key`、`anthropic-version` 请求头,以及每个请求都要的 `max_tokens`。Gemini 要一个 `contents: [{role, parts: [{text}]}]` 数组,以及放在 URL 查询串里的 API key。
 
-如果我们把 OpenAI 的 JSON 透传到 Claude,上游就会回 `400 invalid
-request`;透传到 Gemini 也一样。一个客户端,一套线协议,三个互不兼容
-的上游——这就是 s04 要解决的问题。
+如果把 OpenAI 的 JSON 直接透传到 Claude,上游就回 `400 invalid request`;透传到 Gemini 也一样。一个客户端、一套线协议、三个互不兼容的上游——这就是 s04 要解决的问题。
 
 ## 方案
 
-引入一个 `Provider` 抽象基类,每个上游一个具体实现。每个 provider 只
-做两件事:
+引入一个 `Provider` 抽象基类,每个上游一个具体实现。每个 provider 只做两件事:
 
 1. **把 OpenAI 请求翻译成自家线协议** (`to_upstream`)。
 2. **把自家响应翻回 OpenAI 形态** (`from_upstream`)。
 
-路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器
-(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini),然后
-沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和
-JSON 形态完全一样,无论最后答的是哪家上游。
+路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
 
 ```
 Client ──POST /v1/chat/completions──▶  Relay(按模型名前缀选)  ──POST upstream──▶  Provider
@@ -121,8 +112,7 @@ curl http://localhost:8004/health
 # {"status":"ok"}
 ```
 
-三家厂商,一份请求形态(把对应的 `UPSTREAM_*_KEY` 设上才有真实回复;
-不设的话上游会回 401,我们正好希望中继把它原样透传,这正是想要的行为):
+三家厂商,一份请求形态(把对应的 `UPSTREAM_*_KEY` 设上才有真实回复;不设的话上游会回 401,我们正好希望中继把它原样透传):
 
 ```sh
 # OpenAI
@@ -147,7 +137,7 @@ curl -X POST http://localhost:8004/v1/chat/completions \
 pytest tests/test_s04_multi_provider.py -v
 ```
 
-三家厂商都通过 `respx` 进行 mock(每条测试都拿同一份 `three_upstreams`
+三家厂商都通过 `respx` mock(每条测试都拿同一份 `three_upstreams`
 固定器,它同时挂上三家上游的 mock,所以一次跑就能遍历整张分派表):
 
 - `test_routes_openai` —— `model: gpt-4o-mini` 被路由到 OpenAI,中继
@@ -182,7 +172,7 @@ model)` 元组映射到适配器实例;另外每 channel 都有 `Key` 模式(我
 - **没有流式翻译**。当 `stream: true` 时,我们仍然等整个响应再返
   回 JSON。三家厂商的 SSE 线协议在流中段不同(OpenAI 推 `data:
   {...}\n\n`,Claude 推 `event: …` 行,Gemini 推 `data: [array,…]`),
-  所以真正的流式翻译是另一道独立的设计题。→ s05+。
+  真正的流式翻译是另一道独立的设计题。→ s05+。
 - **OpenAI 路径没有真正的 `system` 翻译**。OpenAI 客户端可以把
   `system` 放在 `messages` 里(`{"role": "system", "content": "…"}`);
   Claude 想要的是顶层 `system` 字段。适配器做了顶层 `system` 的提
