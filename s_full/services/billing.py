@@ -58,8 +58,23 @@ def pre_consume(user_id: int, model: str, messages: list[dict], max_tokens: int 
 
 
 def settle(user_id: int, pre_deducted: int, usage: dict) -> int:
-    """Refund the difference between estimate and actual usage. Returns actual charged."""
-    pt = max(usage.get("prompt_tokens", 0), pre_deducted)
-    ct = usage.get("completion_tokens", 0) or max(1, pre_deducted // 4)
-    actual = (pt + ct) * RATE_PER_TOKEN
+    """Apply the upstream's reported usage to the pre-consume.
+
+    Uses upstream's `prompt_tokens` and `completion_tokens` directly (with a
+    safe fallback to pre_deducted when the upstream omits usage, e.g. SSE
+    streams that never emit a final usage chunk — that's the common case so
+    the bidir path in `quota.settle` only fires when the upstream actually
+    reports).
+
+    Previously this floored `pt` at `pre_deducted`, which coupled badly
+    with one-directional `quota.settle`: users were always charged the full
+    estimate because `actual` was never smaller than `pre_deducted`. That
+    masked the missing overage path.
+    """
+    pt = usage.get("prompt_tokens")
+    ct = usage.get("completion_tokens")
+    if pt is None and ct is None:
+        # Upstream didn't report usage — the pre-consume stays as the bill.
+        return pre_deducted
+    actual = ((pt or 0) + (ct or 0)) * RATE_PER_TOKEN
     return quota.settle(user_id, pre_deducted, actual)

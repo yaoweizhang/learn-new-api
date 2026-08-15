@@ -241,3 +241,34 @@ def test_streaming_gemini_returns_400(respx_mock_gemini):
     # Pre-consume was refunded because the 400 was raised before upstream call.
     balance_after = get_balance(uid)
     assert balance_after == balance_before
+
+
+def test_quota_settle_charges_overage_bidir():
+    """s_full/services/quota.settle must mirror s07: charge the overage
+    when actual > pre_deducted (real new-api collects this). Lock-in
+    for the bidir refactor — without this, the one-dir version silently
+    undercharged users."""
+    from s_full.services import quota
+    quota.reset()
+    quota.set_balance(7, 1_000)
+    assert quota.deduct(7, 100) is True
+    quota.settle(7, pre_deducted=100, actual=150)
+    # 1000 - 100 (pre) - 50 (overage) = 850.
+    assert quota.get_balance(7) == 850
+
+
+def test_billing_settle_uses_upstream_usage_not_pre_consume_floor():
+    """billing.settle must use upstream's reported prompt/completion tokens
+    directly, NOT floor pt at pre_deducted (the old behavior made actual
+    always >= pre_deducted, hiding the overage path)."""
+    from s_full.services import quota, billing
+    quota.reset()
+    quota.set_balance(8, 1_000)
+    # Caller pre-consumes the standard estimate.
+    quota.deduct(8, 261)  # e.g. 5 prompt + 256 expected
+    # Upstream reports a tiny actual usage.
+    actual = billing.settle(8, pre_deducted=261, usage={"prompt_tokens": 5, "completion_tokens": 2})
+    # 1000 - 261 (pre) + 254 (refund) = 993.
+    assert quota.get_balance(8) == 993
+    # The function returned the actual cost (= 5 + 2 = 7).
+    assert actual == 7

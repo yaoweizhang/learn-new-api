@@ -42,8 +42,21 @@ def refund(user_id: int, amount: int) -> None:
 
 
 def settle(user_id: int, pre_deducted: int, actual: int) -> int:
-    """Refund the difference. Returns the actual amount charged."""
-    diff = pre_deducted - actual
+    """Settle the difference between pre-deducted and actual cost.
+
+    If actual < pre_deducted: refund the unused portion.
+    If actual > pre_deducted: charge the overage.
+    Returns the actual amount charged.
+
+    Mirrors s07_pre_consume_settle/quota.py so the production-shape chapter
+    doesn't diverge from the tutorial's quota semantics.
+    """
+    diff = actual - pre_deducted
     if diff > 0:
-        refund(user_id, diff)
+        # Actual exceeded the pre-consume — charge the overage. If the user
+        # has insufficient balance for the overage, deduct silently fails
+        # (the user is now in the red; real impl surfaces a billing exception).
+        deduct(user_id, diff)
+    elif diff < 0:
+        refund(user_id, -diff)
     return actual

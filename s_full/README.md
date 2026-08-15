@@ -97,7 +97,12 @@ chat_completions(req, p=Depends(require_api_key))
     │
     │  ⑦ from_upstream()：把上游响应翻译回 OpenAI wire
     │
-    │  ⑧ 结算：billing.settle() → 退还 (estimate - actual)
+    │  ⑧ 结算：billing.settle() 用上游报的 `prompt/completion_tokens`
+    │     直接算 `actual`，然后调 `quota.settle()`：
+    │       · actual < estimate → 退还差额（estimate - actual）
+    │       · actual > estimate → 补扣超出（actual - estimate）
+    │     其中 `quota.settle` 是双向的（mirror s07）。
+    │     上游未报 usage（SSE 流式常见）→ 把 estimate 当作 actual。
     │
     │  ⑨ 记日志：models/log.enqueue_log()（deque，100ms 异步 flush）
     │
