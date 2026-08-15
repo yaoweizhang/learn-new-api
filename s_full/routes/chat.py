@@ -127,6 +127,12 @@ async def _relay_stream(
             async with client.stream(
                 "POST", url, content=body_bytes, headers=upstream_headers
             ) as upstream:
+                # httpx's stream() does not raise on non-2xx; check status
+                # explicitly so an empty-body error page doesn't get treated
+                # as a successful empty stream. The HTTPException flows back
+                # to the `except BaseException` below, which refunds.
+                if upstream.status_code >= 400:
+                    raise HTTPException(upstream.status_code, "upstream error")
                 async for chunk in upstream.aiter_bytes():
                     full_buf.extend(chunk)
                     yield chunk
