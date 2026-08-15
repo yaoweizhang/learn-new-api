@@ -6,15 +6,22 @@ Composed of: auth → rate → token count → pre-consume → adapter → upstr
 Note: auth uses the typed-parameter pattern (`p: Principal = Depends(...)`)
 not `dependencies=[Depends(...)]`, because the latter does not inject the
 dependency result into the handler signature.
+
+When `stream=true`, the route returns a `StreamingResponse` that relays
+upstream SSE bytes verbatim (no per-provider translation). Quota is
+pre-consumed up front, then settled on stream completion using the LAST
+`data:` chunk's `usage.completion_tokens` when the upstream reports it.
+On transport error mid-stream, the full estimate is refunded.
 """
 from __future__ import annotations
 
 import json
 import os
+from collections.abc import AsyncIterator
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from common.json import marshal
@@ -64,6 +71,78 @@ class ChatCompletionRequest(BaseModel):
     messages: list[ChatMessage] = Field(min_length=1)
     max_tokens: int | None = None
     temperature: float | None = None
+    stream: bool = False
+
+
+def _parse_last_data_chunk(buffer: bytes) -> dict | None:
+    """Best-effort parse of the LAST `data: {...}` SSE line in `buffer`.
+
+    Many upstreams omit per-chunk usage; in that case return None so the
+    caller falls back to settle-to-estimate.
+    """
+    text = buffer.decode("utf-8", errors="replace")
+    last_data = None
+    for line in text.splitlines():
+        line = line.strip()
+        if line.startswith("data:") and line != "data: [DONE]":
+            payload = line[len("data:"):].strip()
+            if not payload:
+                continue
+            try:
+                last_data = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+    return last_data
+
+
+async def _relay_stream(
+    url: str,
+    upstream_headers: dict,
+    body_bytes: bytes,
+    provider,
+    principal: Principal,
+    estimate: int,
+    model: str,
+) -> AsyncIterator[bytes]:
+    """Open an upstream SSE stream and yield bytes verbatim.
+
+    On transport error: refund the full estimate and propagate the
+    exception so the StreamingResponse emits an error to the client.
+    On normal completion: parse the LAST `data:` chunk for usage if
+    available, then call `settle(...)` (which refunds any difference
+    between the pre-consume and actual). Finally enqueue a log entry.
+    """
+    timeout = httpx.Timeout(connect=10.0, read=None, write=10.0, pool=10.0)
+    last_data_payload: dict | None = None
+    full_buf = bytearray()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream(
+                "POST", url, content=body_bytes, headers=upstream_headers
+            ) as upstream:
+                async for chunk in upstream.aiter_bytes():
+                    full_buf.extend(chunk)
+                    yield chunk
+    except Exception:
+        from s_full.services.quota import refund
+        refund(principal.user_id, estimate)
+        raise
+
+    # Stream completed normally — settle and log.
+    last_data_payload = _parse_last_data_chunk(bytes(full_buf))
+    if last_data_payload is not None:
+        usage = last_data_payload.get("usage") or {}
+    else:
+        usage = {}
+    actual = settle(principal.user_id, estimate, usage)
+    enqueue_log({
+        "user_id": principal.user_id,
+        "model": model,
+        "status": 200,
+        "stream": True,
+        "usage": usage,
+        "quota_charged": actual,
+    })
 
 
 @router.post("/v1/chat/completions")
@@ -85,10 +164,22 @@ async def chat_completions(
         refund(p.user_id, estimate)
         raise HTTPException(400, str(exc))
 
+    if req.stream and not provider.supports_streaming:
+        from s_full.services.quota import refund
+        refund(p.user_id, estimate)
+        raise HTTPException(400, "streaming not supported for this provider")
+
     payload = req.model_dump(exclude_none=True)
     payload["_api_key"] = os.getenv(_API_KEY_ENV.get(provider.name, ""), "")
     url, headers, upstream_body = provider.to_upstream(payload)
     body_bytes = marshal(upstream_body)
+
+    if req.stream:
+        return StreamingResponse(
+            _relay_stream(url, headers, body_bytes, provider, p, estimate, req.model),
+            media_type="text/event-stream",
+        )
+
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
             r = await client.post(url, content=body_bytes, headers=headers)

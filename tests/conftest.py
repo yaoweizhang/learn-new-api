@@ -84,3 +84,78 @@ def upstream_gemini():
             )
         )
         yield mock
+
+
+@pytest.fixture
+def upstream_openai_streaming():
+    """Mock OpenAI /v1/chat/completions returning SSE chunks.
+
+    Three `data:` chunks with delta content, then `data: [DONE]`. No
+    per-chunk usage — exercises the settle-to-estimate (no refund) path.
+    """
+    sse_body = (
+        b'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}\n\n'
+        b'data: {"id":"chatcmpl-2","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}]}\n\n'
+        b'data: {"id":"chatcmpl-3","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"!"},"finish_reason":"stop"}]}\n\n'
+        b'data: [DONE]\n\n'
+    )
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(
+                200,
+                content=sse_body,
+                headers={"content-type": "text/event-stream"},
+            )
+        )
+        yield mock
+
+
+@pytest.fixture
+def upstream_openai_streaming_with_usage():
+    """Like upstream_openai_streaming but the LAST data: chunk carries
+    `usage.completion_tokens`, so settle refunds the difference."""
+    sse_body = (
+        b'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"a"},"finish_reason":null}]}\n\n'
+        b'data: {"id":"chatcmpl-2","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"b"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1,"total_tokens":6}}\n\n'
+        b'data: [DONE]\n\n'
+    )
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            return_value=Response(
+                200,
+                content=sse_body,
+                headers={"content-type": "text/event-stream"},
+            )
+        )
+        yield mock
+
+
+@pytest.fixture
+def respx_mock_gemini():
+    """Convenience wrapper used by the streaming Gemini-400 test. The
+    route rejects the request before the upstream is hit, so the route
+    may remain uncalled — we use `assert_all_called=False` to skip
+    respx's assertion-on-teardown."""
+    with respx.mock(
+        base_url="https://generativelanguage.googleapis.com",
+        assert_all_called=False,
+    ) as mock:
+        mock.post(
+            "/v1beta/models/gemini-1.5-flash:generateContent"
+        ).mock(
+            return_value=Response(
+                200,
+                json={
+                    "candidates": [{
+                        "content": {"parts": [{"text": "hi from gemini"}], "role": "model"},
+                        "finishReason": "STOP",
+                    }],
+                    "usageMetadata": {
+                        "promptTokenCount": 6,
+                        "candidatesTokenCount": 4,
+                        "totalTokenCount": 10,
+                    },
+                },
+            )
+        )
+        yield mock

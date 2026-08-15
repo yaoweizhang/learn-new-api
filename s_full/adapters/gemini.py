@@ -6,6 +6,9 @@ from s_full.adapters.base import Provider
 
 class GeminiProvider(Provider):
     name = "gemini"
+    # Gemini's generateContent endpoint does not produce native SSE, and
+    # translating it is out of scope for this refactor.
+    supports_streaming = False
 
     def to_upstream(self, req: dict) -> tuple[str, dict, dict]:
         api_key = req.pop("_api_key", "")
