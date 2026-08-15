@@ -198,7 +198,7 @@ pytest tests/test_s09_user_system.py -v
 `reset_db()` 在 fixture 中先调用、后调用；token 黑名单由平行 fixture
 重置，保证测试之间互不污染。
 
-## new-api 源码
+## → new-api 源码
 
 - `controller/user.go` —— 注册、登录、注销等 HTTP 处理器；新-api 在
   这里把表单/JSON 绑定到 `model.User`，再交给 service。
