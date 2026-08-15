@@ -184,10 +184,32 @@ export JWT_SECRET="..."                 # JWT 签名密钥（默认 "change-me-i
 pytest tests/test_s_full_smoke.py -v
 ```
 
-预期 2 个测试通过：
+预期 10 个测试通过：
+
+**Smoke**：
 
 - `test_health` —— `/health` 返回 200
 - `test_full_relay_roundtrip` —— 注册用户 → 充值 → 创建 channel → 调 `/v1/chat/completions`（mock 上游）→ 200
+
+**Provider key 注入**：
+
+- `test_full_relay_uses_provider_api_key` —— 上游收到的 `Authorization` 是 channel 自己的 key，不是 client 的
+- `test_full_relay_claude_path` —— Anthropic 路径走 `/v1/messages` 而不是 OpenAI
+
+**Log store 注入**：
+
+- `test_injected_log_store_observes_calls` —— 注入的 log store 收到所有 relay 调用记录
+
+**Streaming**：
+
+- `test_streaming_passes_through_chunks` —— SSE chunk 透传给客户端
+- `test_streaming_refunds_when_upstream_reports_usage` —— 上游报 usage 时按真实 usage 扣费
+- `test_streaming_gemini_returns_400` —— Gemini 路径暂不支持 streaming，直接 400
+
+**Quota / Billing 双向结算**：
+
+- `test_quota_settle_charges_overage_bidir` —— 预扣不足时按真实 usage 双向结算超量
+- `test_billing_settle_uses_upstream_usage_not_pre_consume_floor` —— settle 用上游 usage 而非 pre-consume floor
 
 `upstream_openai` fixture（来自 `tests/conftest.py`）用 respx mock 了 `https://api.openai.com/v1/chat/completions`，跟 s01-s13 用的是同一个。
 
