@@ -73,8 +73,9 @@ def settle(user_id: int, pre_deducted: int, usage: dict) -> int:
     """
     pt = usage.get("prompt_tokens")
     ct = usage.get("completion_tokens")
-    if pt is None and ct is None:
-        # Upstream didn't report usage — the pre-consume stays as the bill.
+    if pt is None or ct is None:
+        # If either is missing, treat the usage report as incomplete and
+        # keep the pre-consume as the bill — don't refund the gap.
         return pre_deducted
     actual = ((pt or 0) + (ct or 0)) * RATE_PER_TOKEN
     return quota.settle(user_id, pre_deducted, actual)
