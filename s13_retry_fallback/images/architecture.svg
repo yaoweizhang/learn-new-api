@@ -1,108 +1,137 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 520" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 600" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
     .title      { font-size: 15px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
+    .refsmall   { font-size: 11px; fill: #777; }
     .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
     .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+    .arrowRef   { stroke: #888; stroke-width: 1;   fill: none; marker-end: url(#arrowRef); stroke-dasharray: 3 2; }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
     </marker>
+    <marker id="arrowRef" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+    </marker>
   </defs>
 
-  <text x="460" y="22" text-anchor="middle" class="title">s13: 失败即标,切下一条</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s13: 首选挂了就切下一条, 不让单渠道拖垮全服务</text>
+
+  <!-- ============ TOP-LEFT: s10 channels 参考框 (前置章节, 本章接力) ============ -->
+
+  <rect class="reference" x="20" y="52" width="280" height="100"/>
+  <text x="160" y="74" text-anchor="middle" class="small" fill="#555">s10 channels + mark_unhealthy (前置)</text>
+  <text x="160" y="92" text-anchor="middle" class="refsmall">_channels: dict + Lock · create/list/pick</text>
+  <text x="160" y="108" text-anchor="middle" class="refsmall">ch.healthy 字段 + mark_unhealthy(cid)</text>
+  <text x="160" y="124" text-anchor="middle" class="refsmall">本章不重写, 直接 for ch in candidates 遍历</text>
+  <text x="160" y="140" text-anchor="middle" class="refsmall">对比: 不是 in-request tenacity 重试</text>
+
+  <!-- ============ MAIN FLOW ROW ============ -->
 
   <!-- Client -->
-  <rect class="client" x="20" y="100" width="140" height="64"/>
-  <text x="90" y="124" text-anchor="middle" class="label">Client</text>
-  <text x="90" y="142" text-anchor="middle" class="small">POST /v1/chat/completions</text>
-  <text x="90" y="158" text-anchor="middle" class="small">Bearer</text>
+  <rect class="client" x="20" y="200" width="120" height="80"/>
+  <text x="80" y="226" text-anchor="middle" class="label">Chat Client</text>
+  <text x="80" y="244" text-anchor="middle" class="small">+ Bearer API key</text>
+  <text x="80" y="262" text-anchor="middle" class="small">POST /v1/chat/completions</text>
 
-  <!-- s13 local route (chat_with_retry) -->
-  <rect class="gateway" x="200" y="80" width="220" height="100"/>
-  <text x="310" y="104" text-anchor="middle" class="label">s13 local route</text>
-  <text x="310" y="122" text-anchor="middle" class="small">@app.post("/v1/chat/...")</text>
-  <text x="310" y="138" text-anchor="middle" class="small">chat_with_retry(req)</text>
-  <text x="310" y="154" text-anchor="middle" class="small">本地路由挡 s12 mount</text>
-  <text x="310" y="170" text-anchor="middle" class="small">client.post(url, body) · 无重试</text>
+  <!-- s13 local route -->
+  <rect class="gateway" x="160" y="200" width="160" height="80"/>
+  <text x="240" y="226" text-anchor="middle" class="label">s13 本地路由 (挡 mount)</text>
+  <text x="240" y="244" text-anchor="middle" class="small">@app.post(/v1/chat/completions)</text>
+  <text x="240" y="262" text-anchor="middle" class="small">chat_with_retry(req) · 无重试</text>
 
   <!-- for-loop box -->
-  <rect class="middleware" x="460" y="80" width="180" height="100"/>
-  <text x="550" y="104" text-anchor="middle" class="label">for ch in candidates:</text>
-  <text x="550" y="122" text-anchor="middle" class="small">if !ch.healthy: continue</text>
-  <text x="550" y="138" text-anchor="middle" class="small">try client.post(...)</text>
-  <text x="550" y="154" text-anchor="middle" class="small">on 2xx -&gt; return</text>
-  <text x="550" y="170" text-anchor="middle" class="small">on fail -&gt; mark_unhealthy + next</text>
+  <rect class="middleware" x="340" y="200" width="180" height="80"/>
+  <text x="430" y="226" text-anchor="middle" class="label">for ch in candidates</text>
+  <text x="430" y="244" text-anchor="middle" class="small">if !enabled/healthy: continue</text>
+  <text x="430" y="262" text-anchor="middle" class="small">fail → mark_unhealthy + next</text>
 
-  <!-- channels pool with healthy indicators -->
-  <rect class="storage" x="680" y="60" width="220" height="140"/>
-  <text x="790" y="84" text-anchor="middle" class="label">channels pool</text>
-  <text x="790" y="104" text-anchor="middle" class="small" fill="#228b22">c1 OpenAI-A    priority=0 healthy=True</text>
-  <text x="790" y="124" text-anchor="middle" class="small" fill="#c5221f">c2 OpenAI-B    priority=0 healthy=False (503)</text>
-  <text x="790" y="144" text-anchor="middle" class="small" fill="#228b22">c3 OpenAI-C    priority=1 healthy=True</text>
-  <text x="790" y="164" text-anchor="middle" class="small">list_channels() · mark_unhealthy(cid)</text>
-  <text x="790" y="184" text-anchor="middle" class="small">下一次请求自动 skip c2</text>
+  <!-- channels pool (storage) -->
+  <rect class="storage" x="540" y="180" width="160" height="120"/>
+  <text x="620" y="204" text-anchor="middle" class="label">channels pool</text>
+  <text x="620" y="222" text-anchor="middle" class="small" fill="#228b22">c1 OpenAI-A  pri=0 healthy=T</text>
+  <text x="620" y="240" text-anchor="middle" class="small" fill="#c5221f">c2 OpenAI-B  pri=0 healthy=F (503)</text>
+  <text x="620" y="258" text-anchor="middle" class="small" fill="#228b22">c3 OpenAI-C  pri=1 healthy=T</text>
+  <text x="620" y="276" text-anchor="middle" class="small">mark_unhealthy 即时生效</text>
+  <text x="620" y="292" text-anchor="middle" class="small">下次 for 直接 skip c2</text>
 
-  <!-- arrows client -> s13 -> for-loop -> pool -->
-  <line class="arrow" x1="160" y1="130" x2="198" y2="130"/>
-  <text x="179" y="125" text-anchor="middle" class="small">HTTP</text>
-  <line class="arrow" x1="420" y1="130" x2="458" y2="130"/>
-  <text x="439" y="125" text-anchor="middle" class="small">iterate</text>
-  <line class="arrow" x1="640" y1="130" x2="678" y2="120"/>
-  <text x="659" y="115" text-anchor="middle" class="small">candidates</text>
+  <!-- ============ ARROWS: client → s13 → for-loop → pool ============ -->
 
-  <!-- Upstream column -->
-  <rect class="upstream" x="200" y="240" width="180" height="60"/>
-  <text x="290" y="262" text-anchor="middle" class="label">Upstream c1</text>
-  <text x="290" y="278" text-anchor="middle" class="small">200 OK</text>
-  <text x="290" y="294" text-anchor="middle" class="small" fill="#228b22">success path</text>
+  <line class="arrow" x1="140" y1="240" x2="158" y2="240"/>
+  <text x="149" y="235" text-anchor="middle" class="small">HTTP</text>
 
-  <rect class="upstream" x="420" y="240" width="180" height="60"/>
-  <text x="510" y="262" text-anchor="middle" class="label">Upstream c2</text>
-  <text x="510" y="278" text-anchor="middle" class="small">503 fail</text>
-  <text x="510" y="294" text-anchor="middle" class="small" fill="#c5221f">mark_unhealthy(c2)</text>
+  <line class="arrow" x1="320" y1="240" x2="338" y2="240"/>
+  <text x="329" y="235" text-anchor="middle" class="small">iterate</text>
 
-  <rect class="upstream" x="640" y="240" width="180" height="60"/>
-  <text x="730" y="262" text-anchor="middle" class="label">Upstream c3</text>
-  <text x="730" y="278" text-anchor="middle" class="small">200 OK</text>
-  <text x="730" y="294" text-anchor="middle" class="small" fill="#228b22">fallback</text>
+  <line class="arrow" x1="520" y1="240" x2="538" y2="240"/>
+  <text x="529" y="235" text-anchor="middle" class="small">candidates</text>
 
-  <!-- for-loop arrow to each upstream -->
-  <line class="arrow" x1="290" y1="180" x2="290" y2="238"/>
-  <text x="305" y="215" text-anchor="middle" class="small">try</text>
-  <line class="arrow" x1="510" y1="180" x2="510" y2="238"/>
-  <line class="arrow" x1="730" y1="180" x2="730" y2="238"/>
+  <!-- ============ ATTEMPT FLOW ROW: upstream boxes + arrows ============ -->
 
-  <!-- mark_unhealthy arrow back to pool -->
-  <line class="arrowR" x1="510" y1="300" x2="790" y2="200" stroke="#c5221f"/>
-  <text x="650" y="278" text-anchor="middle" class="small" fill="#c5221f">mark_unhealthy(c2) 即时生效</text>
+  <!-- Attempt 1: c1 (success) — placeholder just to convey the first-try path -->
+  <rect class="upstream" x="20" y="370" width="140" height="60"/>
+  <text x="90" y="392" text-anchor="middle" class="label">首选渠道 c1</text>
+  <text x="90" y="408" text-anchor="middle" class="small">200 OK</text>
+  <text x="90" y="424" text-anchor="middle" class="small" fill="#228b22">success → return</text>
 
-  <!-- success response back to client (from c1 OR c3, show c1 here) -->
-  <line class="arrowR" x1="200" y1="270" x2="162" y2="270" stroke="#228b22"/>
-  <line class="arrowR" x1="162" y1="270" x2="162" y2="146" stroke="#228b22"/>
-  <text x="80" y="248" text-anchor="middle" class="small" fill="#228b22">200 + body</text>
+  <line class="arrow" x1="430" y1="295" x2="90" y2="368"/>
+  <text x="240" y="335" text-anchor="middle" class="small" fill="#228b22">首选渠道</text>
 
-  <!-- final-fail return (dotted) -->
-  <line class="arrowR" x1="640" y1="280" x2="160" y2="280" stroke="#c5221f"/>
-  <text x="380" y="328" text-anchor="middle" class="small" fill="#c5221f">全失败 -&gt; raise HTTPException(502, last_error)</text>
+  <!-- Attempt 2: c2 (fail) — keeps path to mark_unhealthy flow -->
+  <rect class="upstream" x="200" y="370" width="160" height="60"/>
+  <text x="280" y="392" text-anchor="middle" class="label">尝试 c2 (fail)</text>
+  <text x="280" y="408" text-anchor="middle" class="small">503</text>
+  <text x="280" y="424" text-anchor="middle" class="small" fill="#c5221f">失败 → 下一条</text>
 
-  <!-- s12 mount still reachable -->
-  <rect class="gateway" x="200" y="360" width="500" height="50"/>
-  <text x="450" y="382" text-anchor="middle" class="label">app.mount("/", s12_app)</text>
-  <text x="450" y="400" text-anchor="middle" class="small">/admin/cache/stats 仍可达 · /v1 路径已被本地路由遮蔽</text>
+  <line class="arrow" x1="430" y1="305" x2="280" y2="368"/>
+  <text x="380" y="345" text-anchor="middle" class="small" fill="#c5221f">失败 → 下一条</text>
 
-  <line class="arrow" x1="310" y1="180" x2="450" y2="358"/>
-  <text x="370" y="280" text-anchor="middle" class="small">挂载点(本地路由之后)</text>
+  <!-- mark_unhealthy back to pool (vertical arrow into pool) -->
+  <line class="arrowR" x1="280" y1="370" x2="620" y2="300" stroke="#c5221f"/>
+  <text x="450" y="345" text-anchor="middle" class="small" fill="#c5221f">mark_unhealthy(c2) 即时</text>
 
-  <!-- Caption -->
-  <text x="460" y="458" text-anchor="middle" class="small">for ch in candidates:try -&gt; 失败 mark_unhealthy -&gt; 下一条 · 全失败 -&gt; 502</text>
-  <text x="460" y="476" text-anchor="middle" class="small">每条渠道最多被调一次(无 tenacity 退避) · 不做熔断器</text>
+  <!-- Attempt 3: c3 (fallback success) -->
+  <rect class="upstream" x="400" y="370" width="160" height="60"/>
+  <text x="480" y="392" text-anchor="middle" class="label">切到下一条 c3</text>
+  <text x="480" y="408" text-anchor="middle" class="small">200 OK</text>
+  <text x="480" y="424" text-anchor="middle" class="small" fill="#228b22">fallback 成功</text>
+
+  <line class="arrow" x1="430" y1="315" x2="480" y2="368"/>
+  <text x="455" y="345" text-anchor="middle" class="small" fill="#228b22">切到下一条</text>
+
+  <!-- success response back to client (dashed green, routed BELOW row) -->
+  <polyline class="arrowR" points="480,432 480,470 80,470 80,282" stroke="#228b22"/>
+  <text x="260" y="465" text-anchor="middle" class="small" fill="#228b22">200 + body → 客户端</text>
+
+  <!-- ============ s10 参考框 → s13 主路径 的"接力"虚线 ============ -->
+
+  <line class="arrowRef" x1="240" y1="152" x2="240" y2="198"/>
+  <text x="246" y="178" text-anchor="start" class="refsmall">接力</text>
+
+  <!-- ============ FINAL-FAIL FALLBACK (All-channels-failed path) ============ -->
+
+  <rect class="upstream" x="580" y="370" width="120" height="60"/>
+  <text x="640" y="392" text-anchor="middle" class="label">全失败</text>
+  <text x="640" y="408" text-anchor="middle" class="small">→ 502</text>
+  <text x="640" y="424" text-anchor="middle" class="small" fill="#c5221f">refund 整笔</text>
+
+  <line class="arrow" x1="430" y1="325" x2="640" y2="368"/>
+  <text x="555" y="345" text-anchor="middle" class="small" fill="#c5221f">全挂 → 502</text>
+
+  <!-- ============ Caption: WHY → 本章做了啥 → 后续接力 ============ -->
+
+  <text x="360" y="500" text-anchor="middle" class="small">没有 s13: 网关把响应赌在一条渠道上, 上游一次抖动客户端就拿到 502, 客户端全栈重试 = 鉴权/计费/配额/日志全部重跑</text>
+  <text x="360" y="518" text-anchor="middle" class="small">本章做了啥: chat 端点提到本地挡 mount, for ch in candidates 遍历 — 首选 200 即返, 失败 mark_unhealthy 立即切下一条, 全挂 → 502 + refund 整笔</text>
+  <text x="360" y="536" text-anchor="middle" class="small">后续接力: s14 把日志和渠道状态拉到 Jinja2 后台, 真实部署把 mark_unhealthy 改 GORM 写库 + Redis 缓存, 后台健康检查定时 mark_healthy 自动恢复</text>
+  <text x="360" y="554" text-anchor="middle" class="small">注意 s13 是渠道级回落不是 tenacity 退避: 每条渠道最多被调一次 (call_count==2 锁住"立即回落不重试"), 不做熔断器, 不区分 4xx/5xx</text>
+  <text x="360" y="572" text-anchor="middle" class="small">副作用: 本地路由挡 mount → s11 LogMiddleware 这条 chat 调用记不到日志了, s14 要么把日志中间件提上来要么重新设计 (本章故意不动)</text>
 </svg>
