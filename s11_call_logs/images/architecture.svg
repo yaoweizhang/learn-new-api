@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 340" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
@@ -24,82 +24,81 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s11: 调用一行异步落库, 100ms flush + admin 可查</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s11: 中间件一行入队,100ms flush</text>
 
-  <!-- ============ TOP-LEFT: s05 + s10 参考框 (前置章节, 本章接力) ============ -->
-
-  <rect class="reference" x="20" y="50" width="260" height="64"/>
-  <text x="150" y="76" text-anchor="middle" class="small" fill="#555">s05 auth + s10 channels (前置)</text>
-  <text x="150" y="100" text-anchor="middle" class="refsmall">/v1/chat/completions 已能转发</text>
+  <!-- s05 + s10 参考框 (前置章节) -->
+  <rect class="reference" x="20" y="50" width="200" height="50"/>
+  <text x="120" y="76" text-anchor="middle" class="small" fill="#555">s05 auth + s10 channels</text>
+  <text x="120" y="94" text-anchor="middle" class="refsmall">/v1/chat 转发链</text>
 
   <!-- ============ MAIN FLOW ROW (本章主路径) ============ -->
 
   <!-- Client -->
-  <rect class="client" x="20" y="150" width="120" height="60"/>
-  <text x="80" y="178" text-anchor="middle" class="label">Client</text>
-  <text x="80" y="196" text-anchor="middle" class="small">POST · Bearer</text>
+  <rect class="client" x="20" y="130" width="110" height="56"/>
+  <text x="75" y="158" text-anchor="middle" class="label">Client</text>
+  <text x="75" y="176" text-anchor="middle" class="small">POST·Bearer</text>
 
   <!-- LogMiddleware (NEW) -->
-  <rect class="middleware" x="160" y="150" width="160" height="60"/>
-  <text x="240" y="178" text-anchor="middle" class="label">LogMiddleware</text>
-  <text x="240" y="196" text-anchor="middle" class="small">on 200: enqueue 一行</text>
+  <rect class="middleware" x="155" y="130" width="160" height="56"/>
+  <text x="235" y="158" text-anchor="middle" class="label">LogMiddleware</text>
+  <text x="235" y="176" text-anchor="middle" class="small">200 入队一行</text>
 
   <!-- s10 mount -->
-  <rect class="gateway" x="340" y="150" width="160" height="60"/>
-  <text x="420" y="178" text-anchor="middle" class="label">s10 mount</text>
-  <text x="420" y="196" text-anchor="middle" class="small">s09 → ... → 上游</text>
+  <rect class="gateway" x="340" y="130" width="160" height="56"/>
+  <text x="420" y="158" text-anchor="middle" class="label">s10 mount</text>
+  <text x="420" y="176" text-anchor="middle" class="small">→ 上游链</text>
 
   <!-- Upstream -->
-  <rect class="upstream" x="520" y="150" width="100" height="60"/>
-  <text x="570" y="178" text-anchor="middle" class="label">Upstream</text>
-  <text x="570" y="196" text-anchor="middle" class="small">200 JSON</text>
+  <rect class="upstream" x="525" y="130" width="100" height="56"/>
+  <text x="575" y="158" text-anchor="middle" class="label">Upstream</text>
+  <text x="575" y="176" text-anchor="middle" class="small">200 JSON</text>
 
   <!-- chain arrows -->
-  <line class="arrow" x1="140" y1="180" x2="158" y2="180"/>
-  <text x="149" y="175" text-anchor="middle" class="small">JSON</text>
+  <line class="arrow" x1="130" y1="158" x2="153" y2="158"/>
+  <text x="141" y="153" text-anchor="middle" class="small">JSON</text>
 
-  <line class="arrow" x1="320" y1="180" x2="338" y2="180"/>
-  <text x="329" y="175" text-anchor="middle" class="small">next</text>
+  <line class="arrow" x1="315" y1="158" x2="338" y2="158"/>
+  <text x="326" y="153" text-anchor="middle" class="small">next</text>
 
-  <line class="arrow" x1="500" y1="180" x2="518" y2="180"/>
-  <text x="509" y="175" text-anchor="middle" class="small">HTTP</text>
+  <line class="arrow" x1="500" y1="158" x2="523" y2="158"/>
+  <text x="511" y="153" text-anchor="middle" class="small">HTTP</text>
 
   <!-- 200 response back -->
-  <line class="arrowR" x1="518" y1="200" x2="502" y2="200"/>
-  <line class="arrowR" x1="338" y1="200" x2="322" y2="200"/>
-  <line class="arrowR" x1="158" y1="200" x2="142" y2="200"/>
-  <text x="320" y="195" text-anchor="middle" class="small">200</text>
+  <line class="arrowR" x1="523" y1="178" x2="505" y2="178"/>
+  <line class="arrowR" x1="338" y1="178" x2="322" y2="178"/>
+  <line class="arrowR" x1="153" y1="178" x2="135" y2="178"/>
+  <text x="320" y="173" text-anchor="middle" class="small">200</text>
 
   <!-- ============ LOG STORE PIPELINE (下面一排) ============ -->
 
   <!-- _buffer -->
-  <rect class="storage" x="60" y="250" width="160" height="60"/>
-  <text x="140" y="278" text-anchor="middle" class="label">_buffer</text>
-  <text x="140" y="296" text-anchor="middle" class="small">deque · 写入端</text>
+  <rect class="storage" x="60" y="220" width="160" height="50"/>
+  <text x="140" y="244" text-anchor="middle" class="label">_buffer</text>
+  <text x="140" y="262" text-anchor="middle" class="small">deque·写端</text>
 
   <!-- flush_loop -->
-  <rect class="middleware" x="240" y="250" width="200" height="60"/>
-  <text x="340" y="278" text-anchor="middle" class="label">flush_loop</text>
-  <text x="340" y="296" text-anchor="middle" class="small">sleep 0.1 · 整段搬</text>
+  <rect class="middleware" x="240" y="220" width="200" height="50"/>
+  <text x="340" y="244" text-anchor="middle" class="label">flush_loop</text>
+  <text x="340" y="262" text-anchor="middle" class="small">sleep 0.1</text>
 
   <!-- _flushed -->
-  <rect class="storage" x="460" y="250" width="160" height="60"/>
-  <text x="540" y="278" text-anchor="middle" class="label">_flushed</text>
-  <text x="540" y="296" text-anchor="middle" class="small">list · 读取端</text>
+  <rect class="storage" x="460" y="220" width="160" height="50"/>
+  <text x="540" y="244" text-anchor="middle" class="label">_flushed</text>
+  <text x="540" y="262" text-anchor="middle" class="small">list·读端</text>
 
   <!-- arrows pipeline -->
-  <line class="arrow" x1="220" y1="280" x2="238" y2="280"/>
-  <text x="229" y="275" text-anchor="middle" class="small">进</text>
+  <line class="arrow" x1="220" y1="245" x2="238" y2="245"/>
+  <text x="229" y="240" text-anchor="middle" class="small">进</text>
 
-  <line class="arrow" x1="440" y1="280" x2="458" y2="280"/>
-  <text x="449" y="275" text-anchor="middle" class="small">出</text>
+  <line class="arrow" x1="440" y1="245" x2="458" y2="245"/>
+  <text x="449" y="240" text-anchor="middle" class="small">出</text>
 
   <!-- middleware -> _buffer (left side enqueue) -->
-  <polyline class="arrow" points="200,210 200,240 140,240 140,248" stroke="#228b22"/>
-  <text x="170" y="234" text-anchor="middle" class="small" fill="#228b22">入队</text>
+  <polyline class="arrow" points="195,186 195,210 140,210 140,218" stroke="#228b22"/>
+  <text x="167" y="205" text-anchor="middle" class="small" fill="#228b22">入队</text>
 
   <!-- ============ s05 + s10 参考框 → s11 主路径 的"接力"虚线 ============ -->
 
-  <line class="arrowRef" x1="240" y1="116" x2="240" y2="148"/>
-  <text x="246" y="138" text-anchor="start" class="refsmall">接力</text>
+  <line class="arrowRef" x1="240" y1="100" x2="240" y2="128"/>
+  <text x="246" y="118" text-anchor="start" class="refsmall">接力</text>
 </svg>
