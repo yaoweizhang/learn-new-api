@@ -80,6 +80,4 @@
 
   <!-- ============ BOTTOM HINT: 给后续章节 ============ -->
 
-  <rect class="storage" x="170" y="260" width="380" height="40"/>
-  <text x="360" y="284" text-anchor="middle" class="small">数出来的两个数字 → s07 预扣 + 结算, s08 按用户限速</text>
 </svg>

@@ -171,7 +171,7 @@ export UPSTREAM_OPENAI_KEY=sk-...
 python s09_user_system/code.py        # PORT 默认 8009
 ```
 
-确认注册 + 登录 + `/me` + logout 流程能跑通?打这套 curl——注册返回 `201 + access_token`、登录返回 `200 + access_token`、`/me` 返回 `{id,email,is_admin}`、注销后 `/me` 再访问返 `401 token revoked`,四步都正常就说明 users.db + bcrypt + JWT + token_blacklist 整套用户系统都活着:
+确认注册 + 登录 + `/me` + logout 流程能跑通?打这套 curl——注册返回 `201 + access_token`、登录返回 `200 + access_token`、`/me` 返回 `{id,email,is_admin}`、注销后 `/me` 再访问返 `401 token revoked`,四步都正常就说明 users.db + bcrypt + JWT + token_blacklist 注册-登录-查询-注销四步都跑通了:
 
 ```bash
 # 注册

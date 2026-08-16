@@ -201,7 +201,7 @@ curl -s -X POST http://localhost:8010/admin/channels \
 curl -s http://localhost:8010/admin/channels -H "authorization: Bearer $ADMIN"
 ```
 
-确认 channels CRUD 接口都能跑?打上面这套 curl——`POST /admin/channels` 回 `201 + {id, name}` 说明 `_require_admin` 闸门、`channels.create_channel` 写入、`_next_id` 自增 + `_channels` dict 都活了;`GET /admin/channels` 列出两条说明 `channels.list_channels` 也活了;**注意 Bearer 用的是 s10 手工签发的 admin JWT**,s09 的 `/auth/signup` 默认 `is_admin=False`,管理员权限要单独获取:
+确认 channels CRUD 接口都能跑?打上面这套 curl——`POST /admin/channels` 回 `201 + {id, name}` 说明 `_require_admin` 闸门、`channels.create_channel` 写入、`_next_id` 自增 + `_channels` dict 在响应;`GET /admin/channels` 列出两条说明 `channels.list_channels` 也在响应;**注意 Bearer 用的是 s10 手工签发的 admin JWT**,s09 的 `/auth/signup` 默认 `is_admin=False`,管理员权限要单独获取:
 
 1. 直接调 `users.create_user(email, hash, is_admin=True)`——给运维用。
 2. 用 `s09_user_system.jwt_util.issue(user_id, email, is_admin=True)` 手工签一个——和测试用例 `_admin_token()` 同源,仅适合开发。

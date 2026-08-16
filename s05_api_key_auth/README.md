@@ -131,7 +131,7 @@ curl -i -X POST http://localhost:8005/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-确认 401 闸门能挡匿名(curl 没 Bearer 头)?打上面这条 curl——回 `HTTP/1.1 401 missing bearer token` 说明 `Depends(require_api_key)` 已在 chat 处理器之前拦下了匿名请求,本章那道闸门活着:
+确认 401 闸门能挡匿名(curl 没 Bearer 头)?打上面这条 curl——回 `HTTP/1.1 401 missing bearer token` 说明 `Depends(require_api_key)` 已在 chat 处理器之前拦下了匿名请求,本章那道闸门已部署:
 
 注册 key 最偷懒的办法是把 helper 塞到一个一次性 REPL 调用里:
 
