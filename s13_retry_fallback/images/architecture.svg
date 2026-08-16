@@ -24,14 +24,14 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s13: 渠道失败 → mark_unhealthy → 切下一条</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s13: 失败换下一条</text>
 
   <!-- ============ TOP-LEFT: s10 channels 参考框 (前置, 本章接力) ============ -->
 
   <rect class="reference" x="20" y="50" width="260" height="80"/>
   <text x="150" y="78" text-anchor="middle" class="small" fill="#555">s10 channels (前置)</text>
-  <text x="150" y="100" text-anchor="middle" class="refsmall">_channels dict + Lock · mark_unhealthy</text>
-  <text x="150" y="118" text-anchor="middle" class="refsmall">不重写, for ch in candidates 遍历</text>
+  <text x="150" y="100" text-anchor="middle" class="refsmall">_channels · mark</text>
+  <text x="150" y="118" text-anchor="middle" class="refsmall">不重写 for 遍历</text>
 
   <!-- ============ MAIN FLOW ROW ============ -->
 
@@ -53,7 +53,7 @@
   <!-- channels pool (storage) -->
   <rect class="storage" x="570" y="160" width="130" height="64"/>
   <text x="635" y="186" text-anchor="middle" class="label">channels pool</text>
-  <text x="635" y="206" text-anchor="middle" class="small">c1 c2 c3 · mark_unhealthy 即时</text>
+  <text x="635" y="206" text-anchor="middle" class="small">c1 c2 c3 · 即时</text>
 
   <!-- ============ ARROWS: client → s13 → for-loop → pool ============ -->
 
@@ -86,7 +86,7 @@
 
   <!-- mark_unhealthy back to pool — Round-8 fix preserved: polyline up c2 column -->
   <polyline class="arrowR" points="300,340 300,260 635,224" stroke="#c5221f"/>
-  <text x="310" y="280" text-anchor="start" class="small" fill="#c5221f">mark_unhealthy(c2) 即时</text>
+  <text x="310" y="280" text-anchor="start" class="small" fill="#c5221f">mark 即时</text>
 
   <!-- Attempt 3: c3 (fallback success) -->
   <rect class="upstream" x="400" y="290" width="160" height="50"/>
