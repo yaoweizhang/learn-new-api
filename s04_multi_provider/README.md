@@ -8,7 +8,15 @@
 
 ## 本章要做什么
 
-引入 `Provider` 抽象基类,按模型名前缀(`gpt-`/`o` → OpenAI,`claude-` → Claude,`gemini-` → Gemini)挑适配器。每个 provider 把 OpenAI 请求翻译成自家线协议（线协议：网关与客户端约定的 JSON / HTTP 形态）,再把响应翻回 OpenAI 形态。学完你能用一个客户端对接三家上游。
+s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。把 OpenAI 写死在上游,任何一家挂了整条服务就 502。
+
+要解决这个,把"按前缀挑适配器"这层抽象插在 s02 转发循环前面:客户端始终说 OpenAI 形态,网关按 `model` 前缀分给三家上游,响应再翻回 OpenAI 形态,客户端不需要知道答的是哪家。本章就做这一件事:
+
+1. **定义 `Provider` 抽象基类 —— 为什么必须有这个抽象**:每家厂商 URL/auth/响应 schema 都不一样,**为什么不直接三个 if-else 写死在路由里**:加新厂商等于改路由;**为什么方法签名是 `(req) → (url, headers, body)` + `(payload) → dict`**:这样 `chat_completions` 路由只看到"出站 + 回包翻成 OpenAI 形态",不知道厂商是谁;翻牌写到 `from_upstream` 一个方法里,后续 s05/s07 加鉴权、配额只动路由这一层,不动适配器。
+2. **`pick_provider(model)` 按前缀分派 —— 为什么靠前缀而不是配置文件**:客户端发请求时 `model` 已经在 body 里了,运维不用另维护一份"哪个 model 走哪家"的配置,**为什么不靠 `(channel, model)` 元组**:`pick_provider` 按字符串前缀一行就能搞定,new-api 的 channel 表是另一种思路(s04 取舍节会展开)。
+3. **每个 provider 只翻译"真正不一致的部分" —— 为什么不全量重写**:`model` / `messages` 这种共有字段原样透传,只构造厂商专属的 `system` 字段、`max_tokens` 默认值、`contents[]` 数组形态;**为什么响应也翻**:客户端只认 OpenAI 形态,Claude 响应里的 `content[].text` 必须翻成 `choices[0].message.content`、Gemini 的 `candidates[].content.parts[].text` 也是;否则 s02 的客户端代码就破。
+
+成品:一份 OpenAI 形态客户端代码能同时调 OpenAI / Anthropic / Gemini,客户端零修改,单家挂不影响另外两家。后续 s05 在这一章分派表外面加 API key 鉴权,s07 加按用户配额,s11 把每个 provider 的调用日志分别落表。
 
 ## 上一章复盘
 
@@ -146,25 +154,6 @@ curl -X POST http://localhost:8004/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{"model":"gemini-1.5-flash","messages":[{"role":"user","content":"hi"}]}'
 ```
-
-## 测试
-
-```sh
-pytest tests/test_s04_multi_provider.py -v
-```
-
-三家厂商都通过 `respx` mock(每条测试都拿同一份 `three_upstreams`
-固定器,它同时挂上三家上游的 mock,所以一次跑就能遍历整张分派表):
-
-- `test_routes_openai` —— `model: gpt-4o-mini` 被路由到 OpenAI,中继
-  返回 `openai-ok`。
-- `test_routes_claude` —— `model: claude-3-5-sonnet-20241022` 被路由
-  到 Anthropic,响应被翻回 OpenAI 形态,`choices[0].message.content`
-  里是 `claude-ok`。
-- `test_routes_gemini` —— `model: gemini-1.5-flash` 被路由到 Google
-  端点,返回 `gemini-ok`。
-- `test_unknown_model_rejected` —— `model: mystery-7` 在
-  `pick_provider` 阶段失败,返回 `400`。
 
 ## → new-api 源码
 
