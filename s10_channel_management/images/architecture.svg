@@ -1,108 +1,107 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 460" font-family="monospace">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 480" font-family="monospace">
+  <style>
+    .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
+    .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
+    .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
+    .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
+    .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .title      { font-size: 15px; font-weight: bold; fill: #222; }
+    .label      { font-size: 13px; fill: #222; }
+    .small      { font-size: 11px; fill: #555; }
+    .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+  </style>
   <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
-    </marker>
-    <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#37c"/>
-    </marker>
-    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
-    </marker>
-    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
     </marker>
   </defs>
 
-  <!-- Admin client -->
-  <rect x="10" y="200" width="90" height="60" fill="#eee" stroke="#333"/>
-  <text x="55" y="225" text-anchor="middle">Admin</text>
-  <text x="55" y="240" text-anchor="middle" font-size="9">curl / TestClient</text>
+  <text x="460" y="22" text-anchor="middle" class="title">s10: admin 渠道 CRUD + 选路</text>
 
-  <!-- FastAPI app (s10) -->
-  <rect x="140" y="40" width="240" height="380" fill="#eef" stroke="#37c" stroke-width="2"/>
-  <text x="260" y="60" text-anchor="middle" font-size="13" fill="#37c">s10 code.py</text>
+  <!-- Admin client -->
+  <rect class="client" x="20" y="80" width="140" height="64"/>
+  <text x="90" y="104" text-anchor="middle" class="label">Admin</text>
+  <text x="90" y="122" text-anchor="middle" class="small">+ Bearer &lt;admin jwt&gt;</text>
+  <text x="90" y="138" text-anchor="middle" class="small">POST/GET /admin/channels</text>
+
+  <!-- _require_admin gate -->
+  <rect class="middleware" x="200" y="80" width="160" height="64"/>
+  <text x="280" y="104" text-anchor="middle" class="label">_require_admin</text>
+  <text x="280" y="122" text-anchor="middle" class="small">decode Bearer &lt;jwt&gt;</text>
+  <text x="280" y="138" text-anchor="middle" class="small">403 admin only</text>
 
   <!-- /admin/channels handlers -->
-  <rect x="160" y="80" width="200" height="100" fill="#dde" stroke="#37c"/>
-  <text x="260" y="100" text-anchor="middle" font-size="11">POST /admin/channels</text>
-  <text x="260" y="118" text-anchor="middle" font-size="9">GET /admin/channels</text>
-  <text x="260" y="138" text-anchor="middle" font-size="9" fill="#37c">Depends(_require_admin)</text>
-  <text x="260" y="155" text-anchor="middle" font-size="9" fill="#a33">403 admin only</text>
+  <rect class="gateway" x="400" y="80" width="200" height="64"/>
+  <text x="500" y="104" text-anchor="middle" class="label">/admin/channels</text>
+  <text x="500" y="122" text-anchor="middle" class="small">POST create · GET list</text>
+  <text x="500" y="138" text-anchor="middle" class="small">dependencies=[Depends(_require_admin)]</text>
 
-  <!-- _require_admin -->
-  <rect x="160" y="200" width="200" height="60" fill="#fee" stroke="#a33"/>
-  <text x="260" y="220" text-anchor="middle" font-size="11">_require_admin</text>
-  <text x="260" y="238" text-anchor="middle" font-size="9">decode Bearer JWT</text>
-  <text x="260" y="253" text-anchor="middle" font-size="9" fill="#a33">check claims.is_admin</text>
+  <!-- channels storage (the pool) -->
+  <rect class="storage" x="640" y="80" width="240" height="120"/>
+  <text x="760" y="104" text-anchor="middle" class="label">channels pool (s10 channels.py)</text>
+  <text x="760" y="122" text-anchor="middle" class="small">id:1 openai-primary  weight=100 pri=0  healthy=True</text>
+  <text x="760" y="138" text-anchor="middle" class="small">id:2 openai-backup   weight=50  pri=1  healthy=True</text>
+  <text x="760" y="154" text-anchor="middle" class="small">id:3 claude          weight=100 pri=0  healthy=False</text>
+  <text x="760" y="172" text-anchor="middle" class="small">_channels: dict[int, Channel] + Lock</text>
+  <text x="760" y="188" text-anchor="middle" class="small">create / list / get / mark_unhealthy</text>
 
-  <!-- jwt_util -->
-  <rect x="160" y="280" width="200" height="50" fill="#ffe" stroke="#c80"/>
-  <text x="260" y="300" text-anchor="middle" font-size="11">s09 jwt_util.py</text>
-  <text x="260" y="318" text-anchor="middle" font-size="9">issue / decode</text>
+  <!-- Request flow: admin -> gate -> handlers -> store -->
+  <line class="arrow" x1="160" y1="100" x2="198" y2="100"/>
+  <text x="179" y="95" text-anchor="middle" class="small">jwt</text>
+  <line class="arrow" x1="360" y1="100" x2="398" y2="100"/>
+  <text x="379" y="95" text-anchor="middle" class="small">OK</text>
+  <line class="arrow" x1="600" y1="100" x2="638" y2="120"/>
+  <text x="619" y="95" text-anchor="middle" class="small">create_channel()</text>
 
-  <!-- channels store -->
-  <rect x="160" y="350" width="200" height="60" fill="#efe" stroke="#282"/>
-  <text x="260" y="370" text-anchor="middle" font-size="11">s10 channels.py</text>
-  <text x="260" y="388" text-anchor="middle" font-size="9">create/list/get/mark_unhealthy</text>
-  <text x="260" y="403" text-anchor="middle" font-size="9" fill="#282">pick_channel_for()</text>
+  <!-- 201 back to admin -->
+  <line class="arrowR" x1="398" y1="120" x2="362" y2="120"/>
+  <line class="arrowR" x1="198" y1="120" x2="162" y2="120"/>
+  <text x="280" y="135" text-anchor="middle" class="small">201 + {id, name}</text>
 
-  <!-- Mounted s09 -->
-  <rect x="440" y="120" width="200" height="180" fill="#fed" stroke="#333"/>
-  <text x="540" y="140" text-anchor="middle" font-size="12">/ mount (s09 app)</text>
-  <text x="540" y="160" text-anchor="middle" font-size="10">/auth/signup, /auth/login</text>
-  <text x="540" y="180" text-anchor="middle" font-size="10">/me (Depends _current_user)</text>
-  <text x="540" y="200" text-anchor="middle" font-size="10">/v1/chat/completions</text>
-  <text x="540" y="220" text-anchor="middle" font-size="10">(s08 auth/rate/quota)</text>
-  <text x="540" y="285" text-anchor="middle" font-size="9" fill="#666">mounted LAST so admin routes</text>
-  <text x="540" y="298" text-anchor="middle" font-size="9" fill="#666">match first in Starlette</text>
+  <!-- ============ Lower path: pick_channel_for ============ -->
 
-  <!-- channels data box -->
-  <rect x="700" y="120" width="160" height="180" fill="#efe" stroke="#282"/>
-  <text x="780" y="140" text-anchor="middle" font-size="11" fill="#282">channels table</text>
-  <text x="780" y="165" text-anchor="middle" font-size="9">id:1  openai-primary</text>
-  <text x="780" y="180" text-anchor="middle" font-size="9">  weight=100 priority=0</text>
-  <text x="780" y="200" text-anchor="middle" font-size="9">id:2  openai-backup</text>
-  <text x="780" y="215" text-anchor="middle" font-size="9">  weight=50  priority=1</text>
-  <text x="780" y="240" text-anchor="middle" font-size="9" fill="#282">healthy = True/False</text>
-  <text x="780" y="260" text-anchor="middle" font-size="9" fill="#282">enabled = True/False</text>
-  <text x="780" y="285" text-anchor="middle" font-size="9" fill="#2a7">pick_channel_for(provider)</text>
+  <!-- pick_channel_for box -->
+  <rect class="middleware" x="200" y="240" width="240" height="84"/>
+  <text x="320" y="264" text-anchor="middle" class="label">pick_channel_for(model_name)</text>
+  <text x="320" y="282" text-anchor="middle" class="small">1) filter: enabled &amp;&amp; healthy &amp;&amp; provider</text>
+  <text x="320" y="298" text-anchor="middle" class="small">2) tier: min priority asc</text>
+  <text x="320" y="314" text-anchor="middle" class="small">3) inside tier: random.choices(weights) | round-robin fallback</text>
 
-  <!-- Arrows -->
-  <!-- Admin -> POST /admin/channels -->
-  <line x1="100" y1="210" x2="160" y2="120" stroke="#333" marker-end="url(#a)"/>
-  <text x="115" y="155" font-size="9">Bearer jwt</text>
+  <!-- Picked channel returns -->
+  <rect class="storage" x="480" y="240" width="180" height="84"/>
+  <text x="570" y="264" text-anchor="middle" class="label">selected Channel</text>
+  <text x="570" y="282" text-anchor="middle" class="small">e.g. id:1 openai-primary</text>
+  <text x="570" y="298" text-anchor="middle" class="small">weight=100 priority=0 healthy=True</text>
+  <text x="570" y="314" text-anchor="middle" class="small">mark_unhealthy(cid) 即时生效</text>
 
-  <!-- Admin -> GET /admin/channels -->
-  <line x1="100" y1="240" x2="160" y2="155" stroke="#333" marker-end="url(#a)"/>
+  <!-- upstream -->
+  <rect class="upstream" x="700" y="240" width="180" height="84"/>
+  <text x="790" y="264" text-anchor="middle" class="label">Upstream</text>
+  <text x="790" y="282" text-anchor="middle" class="small">OpenAI / Claude / Gemini</text>
+  <text x="790" y="298" text-anchor="middle" class="small">POST {base_url}/v1/chat/...</text>
+  <text x="790" y="314" text-anchor="middle" class="small">per-channel key from base_url</text>
 
-  <!-- handlers -> _require_admin -->
-  <line x1="260" y1="180" x2="260" y2="200" stroke="#a33" stroke-width="1.2"/>
+  <!-- arrows: storage -> pick -> selected -> upstream -->
+  <line class="arrow" x1="640" y1="200" x2="320" y2="238"/>
+  <text x="430" y="225" text-anchor="middle" class="small">list_channels() 读池</text>
+  <line class="arrow" x1="440" y1="280" x2="478" y2="280"/>
+  <text x="459" y="275" text-anchor="middle" class="small">Channel</text>
+  <line class="arrow" x1="660" y1="280" x2="698" y2="280"/>
+  <text x="679" y="275" text-anchor="middle" class="small">HTTP</text>
 
-  <!-- _require_admin -> jwt_util -->
-  <line x1="260" y1="260" x2="260" y2="280" stroke="#c80" stroke-width="1.2"/>
-  <text x="270" y="273" font-size="9" fill="#c80">decode()</text>
+  <!-- Response back dashed -->
+  <line class="arrowR" x1="698" y1="298" x2="662" y2="298"/>
+  <line class="arrowR" x1="478" y1="298" x2="442" y2="298"/>
+  <line class="arrowR" x1="318" y1="298" x2="162" y2="298"/>
+  <text x="240" y="293" text-anchor="middle" class="small">200 + 响应</text>
 
-  <!-- handlers -> channels store -->
-  <line x1="260" y1="160" x2="260" y2="350" stroke="#282" marker-end="url(#a)" stroke-width="1.2"/>
-  <text x="270" y="240" font-size="9" fill="#282">create_channel()</text>
+  <!-- Annotation: mark_unhealthy -->
+  <line class="arrowR" x1="478" y1="320" x2="640" y2="195"/>
+  <text x="540" y="368" text-anchor="middle" class="small" fill="#b58900">on fail: mark_unhealthy(cid) -&gt; 下次直接 skip</text>
 
-  <!-- handlers -> Client (201) -->
-  <path d="M160,110 Q90,40 55,200" fill="none" stroke="#37c" stroke-width="1.2" marker-end="url(#b)"/>
-  <text x="80" y="80" font-size="9" fill="#37c">201 + {id,name}</text>
-
-  <!-- channels -> channels data box -->
-  <line x1="360" y1="380" x2="700" y2="240" stroke="#282" marker-end="url(#a)" stroke-width="1.2"/>
-  <text x="430" y="320" font-size="9" fill="#282">dict[id] -&gt; Channel</text>
-
-  <!-- channels -> Client (list) -->
-  <path d="M360,395 Q500,440 55,250" fill="none" stroke="#2a7" stroke-width="1.2" marker-end="url(#g)"/>
-  <text x="180" y="445" font-size="9" fill="#2a7">200 + [Channel...]</text>
-
-  <!-- Admin -> s09 mount (signup/login) -->
-  <path d="M55,260 Q400,400 440,180" fill="none" stroke="#333" stroke-dasharray="3 3" marker-end="url(#a)"/>
-  <text x="100" y="425" font-size="9" fill="#666">signup/login (still works)</text>
-
-  <!-- Footer -->
-  <text x="440" y="450" text-anchor="middle" font-size="9" fill="#666">s10: admin-only channel registry  |  pick = (priority asc, weight desc, healthy=True)  |  s13 adds health loop + retry</text>
+  <!-- Caption -->
+  <text x="460" y="438" text-anchor="middle" class="small">admin CRUD 渠道表 · request 时 pick_channel_for 按 priority/weight 选一条 · mark_unhealthy 立即生效</text>
+  <text x="460" y="456" text-anchor="middle" class="small">同 weight=0 时回退 round-robin · 池为空或 provider 不匹配 -&gt; None</text>
 </svg>

@@ -1,72 +1,102 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" font-family="sans-serif">
-  <title>s12: exact-match response cache</title>
-
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" font-family="monospace">
+  <style>
+    .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
+    .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
+    .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
+    .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
+    .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .title      { font-size: 15px; font-weight: bold; fill: #222; }
+    .label      { font-size: 13px; fill: #222; }
+    .small      { font-size: 11px; fill: #555; }
+    .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+  </style>
   <defs>
-    <style>
-      .box { fill: #ffffff; stroke: #333; stroke-width: 1.5; }
-      .label { font-size: 14px; fill: #222; }
-      .sub { font-size: 11px; fill: #666; }
-      .arrow { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#a); }
-      .hit { stroke: #2a9d4a; stroke-width: 2; fill: none; marker-end: url(#ah); }
-      .miss { stroke: #c0392b; stroke-width: 2; fill: none; marker-end: url(#am); }
-    </style>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
-    </marker>
-    <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2a9d4a"/>
-    </marker>
-    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#c0392b"/>
     </marker>
   </defs>
 
-  <text x="360" y="28" text-anchor="middle" font-size="18" font-weight="bold">s12: exact-match response cache</text>
+  <text x="400" y="22" text-anchor="middle" class="title">s12: 规范化 JSON 命中即返</text>
 
   <!-- Client -->
-  <rect class="box" x="40" y="70" width="100" height="40" rx="4"/>
-  <text class="label" x="90" y="95" text-anchor="middle">Client</text>
+  <rect class="client" x="20" y="80" width="140" height="64"/>
+  <text x="90" y="104" text-anchor="middle" class="label">Client</text>
+  <text x="90" y="122" text-anchor="middle" class="small">+ Bearer</text>
+  <text x="90" y="138" text-anchor="middle" class="small">POST /v1/chat/completions</text>
 
-  <!-- s12 app boundary -->
-  <rect class="box" x="180" y="60" width="500" height="240" rx="6" stroke-dasharray="4 3"/>
-  <text class="label" x="200" y="80">s12_caching (app)</text>
-
-  <!-- CacheMiddleware -->
-  <rect class="box" x="200" y="100" width="160" height="60" rx="4"/>
-  <text class="label" x="280" y="125" text-anchor="middle">CacheMiddleware</text>
-  <text class="sub" x="280" y="145" text-anchor="middle">sha256(canonical JSON)</text>
+  <!-- CacheMiddleware (NEW) -->
+  <rect class="middleware" x="200" y="60" width="220" height="100"/>
+  <text x="310" y="84" text-anchor="middle" class="label">CacheMiddleware (s12 NEW)</text>
+  <text x="310" y="102" text-anchor="middle" class="small">key = sha256(</text>
+  <text x="310" y="118" text-anchor="middle" class="small">  json.dumps(payload, sort_keys,</text>
+  <text x="310" y="134" text-anchor="middle" class="small">  separators=(",", ":")))</text>
+  <text x="310" y="150" text-anchor="middle" class="small">stream=true 跳过</text>
 
   <!-- s11 mount -->
-  <rect class="box" x="400" y="100" width="260" height="60" rx="4"/>
-  <text class="label" x="530" y="125" text-anchor="middle">s11 (mounted at /)</text>
-  <text class="sub" x="530" y="145" text-anchor="middle">LogMiddleware + s10 → s09 → s08</text>
+  <rect class="gateway" x="460" y="60" width="160" height="100"/>
+  <text x="540" y="84" text-anchor="middle" class="label">s11 mount</text>
+  <text x="540" y="102" text-anchor="middle" class="small">LogMiddleware</text>
+  <text x="540" y="118" text-anchor="middle" class="small">+ s10 -&gt; s09 -&gt; s08</text>
+  <text x="540" y="134" text-anchor="middle" class="small">call_next on miss</text>
 
-  <!-- cache store -->
-  <rect class="box" x="200" y="220" width="160" height="60" rx="4"/>
-  <text class="label" x="280" y="245" text-anchor="middle">cache.py</text>
-  <text class="sub" x="280" y="265" text-anchor="middle">dict[key, (exp, val)] + Lock</text>
+  <!-- Upstream -->
+  <rect class="upstream" x="660" y="60" width="120" height="100"/>
+  <text x="720" y="84" text-anchor="middle" class="label">Upstream</text>
+  <text x="720" y="118" text-anchor="middle" class="small">OpenAI / ...</text>
+  <text x="720" y="134" text-anchor="middle" class="small">httpx post</text>
 
-  <!-- /admin/cache/stats -->
-  <rect class="box" x="400" y="220" width="260" height="60" rx="4"/>
-  <text class="label" x="530" y="245" text-anchor="middle">GET /admin/cache/stats</text>
-  <text class="sub" x="530" y="265" text-anchor="middle">{size, live}</text>
+  <!-- request flow -->
+  <line class="arrow" x1="160" y1="100" x2="198" y2="100"/>
+  <text x="179" y="95" text-anchor="middle" class="small">JSON body</text>
+  <line class="arrow" x1="420" y1="100" x2="458" y2="100"/>
+  <text x="439" y="95" text-anchor="middle" class="small">miss</text>
+  <line class="arrow" x1="620" y1="100" x2="658" y2="100"/>
+  <text x="639" y="95" text-anchor="middle" class="small">HTTP</text>
 
-  <!-- arrows -->
-  <line class="arrow" x1="140" y1="90" x2="200" y2="125"/>
-  <line class="arrow" x1="360" y1="125" x2="400" y2="125"/>
-  <line class="arrow" x1="280" y1="160" x2="280" y2="220"/>
+  <!-- ============ cache store ============ -->
 
-  <!-- HIT path: cache → client -->
-  <path class="hit" d="M280,220 Q100,330 90,110" />
-  <text class="label" x="120" y="340" fill="#2a9d4a">cache hit (short-circuit)</text>
+  <!-- cache dict -->
+  <rect class="storage" x="60" y="240" width="220" height="100"/>
+  <text x="170" y="264" text-anchor="middle" class="label">cache.py</text>
+  <text x="170" y="282" text-anchor="middle" class="small">_store: dict[key, (exp, val)]</text>
+  <text x="170" y="298" text-anchor="middle" class="small">get(payload) -&gt; bytes | None</text>
+  <text x="170" y="314" text-anchor="middle" class="small">set(payload, body, ttl=300s)</text>
+  <text x="170" y="330" text-anchor="middle" class="small">threading.Lock</text>
 
-  <!-- MISS path: s11 → upstream -->
-  <rect class="box" x="430" y="350" width="220" height="40" rx="4"/>
-  <text class="label" x="540" y="375" text-anchor="middle">Upstream (mock OpenAI)</text>
-  <line class="arrow" x1="530" y1="160" x2="530" y2="350"/>
-  <path class="miss" d="M430,370 Q150,420 90,110" />
-  <text class="label" x="200" y="420" fill="#c0392b">cache miss → store on 200</text>
+  <!-- cache stats -->
+  <rect class="gateway" x="320" y="240" width="200" height="100"/>
+  <text x="420" y="264" text-anchor="middle" class="label">GET /admin/cache/stats</text>
+  <text x="420" y="282" text-anchor="middle" class="small">{size: int, live: int}</text>
+  <text x="420" y="298" text-anchor="middle" class="small">总条目数 / 未过期条目数</text>
 
-  <text class="sub" x="360" y="465" text-anchor="middle">stream=true bypasses cache; key = sha256(model, messages, temperature)</text>
+  <!-- HIT path (short-circuit back to client) -->
+  <!-- cache -> middleware (hit) -->
+  <line class="arrow" x1="170" y1="238" x2="240" y2="160"/>
+  <text x="160" y="200" text-anchor="middle" class="small" fill="#228b22">hit -&gt; bytes</text>
+
+  <!-- HIT response (skipping upstream) -->
+  <line class="arrowR" x1="198" y1="120" x2="162" y2="120"/>
+  <line class="arrowR" x1="170" y1="340" x2="170" y2="380"/>
+  <line class="arrowR" x1="170" y1="380" x2="90" y2="380"/>
+  <line class="arrowR" x1="90" y1="380" x2="90" y2="146" stroke="#228b22"/>
+  <text x="160" y="396" text-anchor="middle" class="small" fill="#228b22">cache hit (短路径,不上游)</text>
+
+  <!-- MISS path: response from upstream -> cache.set -->
+  <line class="arrowR" x1="658" y1="120" x2="722" y2="120"/>
+  <line class="arrowR" x1="722" y1="120" x2="722" y2="200"/>
+  <line class="arrowR" x1="722" y1="200" x2="282" y2="280" stroke="#c5221f"/>
+  <text x="600" y="195" text-anchor="middle" class="small" fill="#c5221f">200 body 写入 cache</text>
+
+  <!-- Miss path response back to client -->
+  <line class="arrowR" x1="458" y1="120" x2="422" y2="120"/>
+  <line class="arrowR" x1="310" y1="162" x2="310" y2="200"/>
+  <line class="arrowR" x1="310" y1="200" x2="90" y2="200" stroke="#c5221f"/>
+  <line class="arrowR" x1="90" y1="200" x2="90" y2="146" stroke="#c5221f"/>
+  <text x="200" y="190" text-anchor="middle" class="small" fill="#c5221f">miss → 转发 → cache.set(payload, body)</text>
+
+  <!-- Caption -->
+  <text x="400" y="438" text-anchor="middle" class="small">sha256(canonical JSON) 做 key · 命中 -&gt; 直接返 · miss -&gt; 转发 + 写入 cache(300s TTL)</text>
+  <text x="400" y="456" text-anchor="middle" class="small">stream=true 跳过缓存 · sort_keys + separators 让 key 与字段顺序无关</text>
 </svg>

@@ -1,102 +1,108 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 520" font-family="sans-serif">
-  <title>s13: immediate channel escalation (no in-request retry)</title>
-
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 520" font-family="monospace">
+  <style>
+    .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
+    .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
+    .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
+    .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
+    .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .title      { font-size: 15px; font-weight: bold; fill: #222; }
+    .label      { font-size: 13px; fill: #222; }
+    .small      { font-size: 11px; fill: #555; }
+    .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+  </style>
   <defs>
-    <style>
-      .box { fill: #ffffff; stroke: #333; stroke-width: 1.5; }
-      .accent { fill: #fdf6e3; stroke: #cb4b16; stroke-width: 1.5; }
-      .label { font-size: 14px; fill: #222; }
-      .sub { font-size: 11px; fill: #666; }
-      .arrow { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#a); }
-      .fallback { stroke: #cb4b16; stroke-width: 2; fill: none; marker-end: url(#af); }
-      .ok { stroke: #2a9d4a; stroke-width: 2; fill: none; marker-end: url(#ao); }
-    </style>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
-    </marker>
-    <marker id="af" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#cb4b16"/>
-    </marker>
-    <marker id="ao" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2a9d4a"/>
     </marker>
   </defs>
 
-  <text x="400" y="28" text-anchor="middle" font-size="18" font-weight="bold">s13: immediate channel escalation</text>
+  <text x="460" y="22" text-anchor="middle" class="title">s13: 失败即标,切下一条</text>
 
   <!-- Client -->
-  <rect class="box" x="40" y="70" width="100" height="40" rx="4"/>
-  <text class="label" x="90" y="95" text-anchor="middle">Client</text>
+  <rect class="client" x="20" y="100" width="140" height="64"/>
+  <text x="90" y="124" text-anchor="middle" class="label">Client</text>
+  <text x="90" y="142" text-anchor="middle" class="small">POST /v1/chat/completions</text>
+  <text x="90" y="158" text-anchor="middle" class="small">Bearer</text>
 
-  <!-- s13 app boundary -->
-  <rect class="box" x="180" y="60" width="580" height="380" rx="6" stroke-dasharray="4 3"/>
-  <text class="label" x="200" y="80">s13_retry_fallback (app)</text>
+  <!-- s13 local route (chat_with_retry) -->
+  <rect class="gateway" x="200" y="80" width="220" height="100"/>
+  <text x="310" y="104" text-anchor="middle" class="label">s13 local route</text>
+  <text x="310" y="122" text-anchor="middle" class="small">@app.post("/v1/chat/...")</text>
+  <text x="310" y="138" text-anchor="middle" class="small">chat_with_retry(req)</text>
+  <text x="310" y="154" text-anchor="middle" class="small">本地路由挡 s12 mount</text>
+  <text x="310" y="170" text-anchor="middle" class="small">client.post(url, body) · 无重试</text>
 
-  <!-- Local route (registered first) -->
-  <rect class="accent" x="200" y="100" width="240" height="80" rx="4"/>
-  <text class="label" x="320" y="125" text-anchor="middle">@app.post("/v1/chat/completions")</text>
-  <text class="sub" x="320" y="145" text-anchor="middle">chat_with_retry(req)</text>
-  <text class="sub" x="320" y="160" text-anchor="middle">local route shadows mount</text>
+  <!-- for-loop box -->
+  <rect class="middleware" x="460" y="80" width="180" height="100"/>
+  <text x="550" y="104" text-anchor="middle" class="label">for ch in candidates:</text>
+  <text x="550" y="122" text-anchor="middle" class="small">if !ch.healthy: continue</text>
+  <text x="550" y="138" text-anchor="middle" class="small">try client.post(...)</text>
+  <text x="550" y="154" text-anchor="middle" class="small">on 2xx -&gt; return</text>
+  <text x="550" y="170" text-anchor="middle" class="small">on fail -&gt; mark_unhealthy + next</text>
 
-  <!-- direct client.post -->
-  <rect class="accent" x="200" y="210" width="240" height="70" rx="4"/>
-  <text class="label" x="320" y="235" text-anchor="middle">client.post(url, body)</text>
-  <text class="sub" x="320" y="252" text-anchor="middle">no retry, no tenacity</text>
-  <text class="sub" x="320" y="268" text-anchor="middle">on transport err or ≥400: escalate</text>
+  <!-- channels pool with healthy indicators -->
+  <rect class="storage" x="680" y="60" width="220" height="140"/>
+  <text x="790" y="84" text-anchor="middle" class="label">channels pool</text>
+  <text x="790" y="104" text-anchor="middle" class="small" fill="#228b22">c1 OpenAI-A    priority=0 healthy=True</text>
+  <text x="790" y="124" text-anchor="middle" class="small" fill="#c5221f">c2 OpenAI-B    priority=0 healthy=False (503)</text>
+  <text x="790" y="144" text-anchor="middle" class="small" fill="#228b22">c3 OpenAI-C    priority=1 healthy=True</text>
+  <text x="790" y="164" text-anchor="middle" class="small">list_channels() · mark_unhealthy(cid)</text>
+  <text x="790" y="184" text-anchor="middle" class="small">下一次请求自动 skip c2</text>
 
-  <!-- channel loop -->
-  <rect class="accent" x="200" y="310" width="240" height="60" rx="4"/>
-  <text class="label" x="320" y="335" text-anchor="middle">for ch in candidates:</text>
-  <text class="sub" x="320" y="352" text-anchor="middle">if not healthy: continue</text>
+  <!-- arrows client -> s13 -> for-loop -> pool -->
+  <line class="arrow" x1="160" y1="130" x2="198" y2="130"/>
+  <text x="179" y="125" text-anchor="middle" class="small">HTTP</text>
+  <line class="arrow" x1="420" y1="130" x2="458" y2="130"/>
+  <text x="439" y="125" text-anchor="middle" class="small">iterate</text>
+  <line class="arrow" x1="640" y1="130" x2="678" y2="120"/>
+  <text x="659" y="115" text-anchor="middle" class="small">candidates</text>
 
-  <!-- channels list -->
-  <rect class="box" x="500" y="100" width="240" height="270" rx="4"/>
-  <text class="label" x="620" y="125" text-anchor="middle">s10 channels</text>
-  <text class="sub" x="620" y="142" text-anchor="middle">list_channels()</text>
+  <!-- Upstream column -->
+  <rect class="upstream" x="200" y="240" width="180" height="60"/>
+  <text x="290" y="262" text-anchor="middle" class="label">Upstream c1</text>
+  <text x="290" y="278" text-anchor="middle" class="small">200 OK</text>
+  <text x="290" y="294" text-anchor="middle" class="small" fill="#228b22">success path</text>
 
-  <!-- channel rows -->
-  <rect class="box" x="520" y="155" width="200" height="40" rx="4"/>
-  <text class="label" x="620" y="180" text-anchor="middle">c1 (priority=0, healthy)</text>
+  <rect class="upstream" x="420" y="240" width="180" height="60"/>
+  <text x="510" y="262" text-anchor="middle" class="label">Upstream c2</text>
+  <text x="510" y="278" text-anchor="middle" class="small">503 fail</text>
+  <text x="510" y="294" text-anchor="middle" class="small" fill="#c5221f">mark_unhealthy(c2)</text>
 
-  <rect class="box" x="520" y="205" width="200" height="40" rx="4"/>
-  <text class="label" x="620" y="230" text-anchor="middle">c2 (priority=1, healthy)</text>
+  <rect class="upstream" x="640" y="240" width="180" height="60"/>
+  <text x="730" y="262" text-anchor="middle" class="label">Upstream c3</text>
+  <text x="730" y="278" text-anchor="middle" class="small">200 OK</text>
+  <text x="730" y="294" text-anchor="middle" class="small" fill="#228b22">fallback</text>
 
-  <rect class="box" x="520" y="255" width="200" height="40" rx="4"/>
-  <text class="label" x="620" y="280" text-anchor="middle">c3 (priority=2, healthy)</text>
+  <!-- for-loop arrow to each upstream -->
+  <line class="arrow" x1="290" y1="180" x2="290" y2="238"/>
+  <text x="305" y="215" text-anchor="middle" class="small">try</text>
+  <line class="arrow" x1="510" y1="180" x2="510" y2="238"/>
+  <line class="arrow" x1="730" y1="180" x2="730" y2="238"/>
 
-  <!-- mark_unhealthy note -->
-  <text class="sub" x="620" y="320" text-anchor="middle">failed ch → mark_unhealthy(id)</text>
-  <text class="sub" x="620" y="338" text-anchor="middle">→ next priority ch</text>
+  <!-- mark_unhealthy arrow back to pool -->
+  <line class="arrowR" x1="510" y1="300" x2="790" y2="200" stroke="#c5221f"/>
+  <text x="650" y="278" text-anchor="middle" class="small" fill="#c5221f">mark_unhealthy(c2) 即时生效</text>
 
-  <!-- s12 mount -->
-  <rect class="box" x="200" y="400" width="540" height="40" rx="4"/>
-  <text class="label" x="470" y="425" text-anchor="middle">app.mount("/", s12_app)  —  /admin/cache/stats still reachable</text>
+  <!-- success response back to client (from c1 OR c3, show c1 here) -->
+  <line class="arrowR" x1="200" y1="270" x2="162" y2="270" stroke="#228b22"/>
+  <line class="arrowR" x1="162" y1="270" x2="162" y2="146" stroke="#228b22"/>
+  <text x="80" y="248" text-anchor="middle" class="small" fill="#228b22">200 + body</text>
 
-  <!-- Upstream (mock OpenAI) -->
-  <rect class="box" x="500" y="400" width="220" height="40" rx="4"/>
-  <text class="label" x="610" y="425" text-anchor="middle">Upstream (mock OpenAI)</text>
+  <!-- final-fail return (dotted) -->
+  <line class="arrowR" x1="640" y1="280" x2="160" y2="280" stroke="#c5221f"/>
+  <text x="380" y="328" text-anchor="middle" class="small" fill="#c5221f">全失败 -&gt; raise HTTPException(502, last_error)</text>
 
-  <!-- arrows: client -> local route -->
-  <line class="arrow" x1="140" y1="90" x2="200" y2="125"/>
+  <!-- s12 mount still reachable -->
+  <rect class="gateway" x="200" y="360" width="500" height="50"/>
+  <text x="450" y="382" text-anchor="middle" class="label">app.mount("/", s12_app)</text>
+  <text x="450" y="400" text-anchor="middle" class="small">/admin/cache/stats 仍可达 · /v1 路径已被本地路由遮蔽</text>
 
-  <!-- local route -> client.post -->
-  <line class="arrow" x1="320" y1="180" x2="320" y2="210"/>
+  <line class="arrow" x1="310" y1="180" x2="450" y2="358"/>
+  <text x="370" y="280" text-anchor="middle" class="small">挂载点(本地路由之后)</text>
 
-  <!-- client.post -> channel loop -->
-  <line class="arrow" x1="320" y1="280" x2="320" y2="310"/>
-
-  <!-- channel loop -> channels list -->
-  <line class="arrow" x1="440" y1="340" x2="520" y2="180"/>
-
-  <!-- 200 ok: c1 -> client -->
-  <path class="ok" d="M610,200 Q220,460 90,110" />
-  <text class="label" x="200" y="475" fill="#2a9d4a">200 → return</text>
-
-  <!-- escalation: c1 fails -> c2 -->
-  <path class="fallback" d="M620,200 Q620,240 620,250" />
-  <text class="sub" x="640" y="240" fill="#cb4b16">503 → mark_unhealthy(c1)</text>
-  <path class="fallback" d="M620,260 Q620,290 620,300" />
-
-  <text class="sub" x="400" y="510" text-anchor="middle">each channel tried once; transport err or non-2xx → mark unhealthy + next channel</text>
+  <!-- Caption -->
+  <text x="460" y="458" text-anchor="middle" class="small">for ch in candidates:try -&gt; 失败 mark_unhealthy -&gt; 下一条 · 全失败 -&gt; 502</text>
+  <text x="460" y="476" text-anchor="middle" class="small">每条渠道最多被调一次(无 tenacity 退避) · 不做熔断器</text>
 </svg>
