@@ -44,6 +44,12 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 存储层(`storage.py`)本章是进程内的;真实实现会换 Redis + 数据库。
 `storage.py` 和 `code.py` 的这种拆分,正好对齐 new-api 在 `model/`(持久化)和 `middleware/`(HTTP 装配)之间的切分。
 
+`## 问题` 提了一件痛:任何能摸到端口的人都能花你的上游 key、按用户限速 / 计费 / scope 全挂不上去——因为连"谁在调"这件事都不知道。这件事**没法靠"客户端自觉"或"运维拉名单"能解决**——必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401。下面这幅图把闸门放到三个角色里:
+
+- **`Client` (调用方)** —— 在装闸门之前,这是干"谁都能打"这件事的角色;装上之后,这事被闸门解了——Client 只剩"我必须带 `Authorization: Bearer sk-...` 才能过"。
+- **`Relay` (本章要写的闸门 + 转发)** —— 把痛点的解决动作集中放在这里:`Depends(require_api_key)` 在 chat 处理器之前跑,读 `Authorization` 头、查 key 表、不认识返 401,通过则挂 `Principal` 到 `request.state` 再进入原有转发循环(s04 那条)。Client 看不见 key 字符串后面是谁,Upstream 看不见 Client 持了哪把 key。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。它仍然只见中继、不见 Client;中继带不带 key、挂不挂 `Principal`,对上游透明。
+
 下面这张 ASCII 流程图画鉴权边界,和下面那张架构图相对照——上面这张是单跳时序,下面那张是角色拓扑,中间那块都是 `require_api_key` 闸门:
 
 ```
@@ -58,6 +64,14 @@ Client ──POST + Bearer ──▶  require_api_key  ──▶  /v1/chat/compl
 ![architecture](images/architecture.svg)
 
 ## 工作原理
+
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 在 handler 之前 `Depends(require_api_key)` 自动跑 → 闸门读 `Authorization` 头剥出 Bearer 字符串 → 先查 `is_blocked` 黑名单再查 `lookup_key` 白名单 → 不通过抛 `HTTPException(401)` 在 handler 之前就拦掉 → 通过则把 `Principal` 挂到 `request.state` 再进原 chat 处理器 → 处理器做 s04 的 `pick_provider` + 转发。整章所有部件都为这条主线服务。
+
+**1. 一个 auth dependency (`require_api_key`,挂在 `dependencies=[Depends(...)]`)** —— FastAPI 在 chat handler 之前自动调它,从 `request.headers` 抽 `Authorization: Bearer <key>`,剥前缀、去空白。`Depends` (FastAPI 依赖注入:路由处理器之前自动跑的函数) 是 FastAPI 官方推荐的注入点:可单元测试、新加路由默认是开放的(不会偷偷被闸上)。`dependencies=[Depends(require_api_key)]` 让每个 handler 自己声明"我要这道闸门",全局栈不被偷偷改动。
+
+**2. 一个 API key storage (`storage.py` 进程内 dict + `_keys`)** —— `register_key(user_id, key, scopes)` / `lookup_key(key) → Principal | None` / `is_blocked(key) → bool` 三个函数组成的最小存-查-禁 接缝。`Principal` (当前请求代表的用户身份与权限) 只装 `user_id` + `scopes` 元组——够轻,够挂到 `request.state` 供下游中间件用。`is_blocked` 永远返 `False`,是留给未来接 Redis `banned:` 集合的接缝。
+
+**3. 一个 chat route handler (`POST /v1/chat/completions`,带 `dependencies=[Depends(require_api_key)]`)** —— 实际跑"原理"那条主线的下半段。它不需要任何鉴权代码——闸门已在 handler 之前把 `Principal` 挂到 `request.state`,handler 只调 `pick_provider` + 转发(s04 那条逻辑逐行保留)。
 
 依赖本身就是一个函数:
 
@@ -117,6 +131,8 @@ curl -i -X POST http://localhost:8005/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
 
+确认 401 闸门能挡匿名(curl 没 Bearer 头)?打上面这条 curl——回 `HTTP/1.1 401 missing bearer token` 说明 `Depends(require_api_key)` 已在 chat 处理器之前拦下了匿名请求,本章那道闸门活着:
+
 注册 key 最偷懒的办法是把 helper 塞到一个一次性 REPL 调用里:
 
 ```sh
@@ -144,17 +160,24 @@ curl -X POST http://localhost:8005/v1/chat/completions \
 
 new-api 真实实现厚得多:它会加载用户行、解析每个 channel 的 key、检查配额(`model/user.go` 里的 user 表 + quota 字段),再把 `Principal` 写入请求 context,让 relay 层能把 usage 落到具体用户身上。这里展示的接缝(`storage.is_blocked`)就是能让后续章节把这些片段接上、而不必改写 `code.py` 的最小切面。
 
-## 取舍
+## 本章不做什么
 
-明确**没有**做的事:
+- **没有用户注册 / 找回密码** (用户自己没法创建账号)——key 由管理员手工 `register_key(...)` 塞进内存表;用户不能注册、不能改密、不能找回。→ s09 用 SQLite + bcrypt 邮箱注册把"用户"立起来。
+- **没有真正的多租户 scope 检查** (按 scope 路由到不同端点 / 资源)——`scopes` 字段挂在 `Principal` 上,但目前代码里还没读过它,任何持 key 用户都能打所有 chat。→ s10 之后按 `Principal.scopes` 强制路由级校验。
+- **没有限速 / 配额记账** (按用户计费 / 调用次数限额)——闸门只验"是谁",不验"能调几次"。→ s07 配额、s08 限速。
 
-- **进程内存储**。教程用没问题,进程一重启所有 key 都没了。真实存储是 Redis + SQL(`model/Key.go` + `model/User.go`)。
-- **不做哈希**。`register_key("demo","sk-demo")` 把明文存下来。生产存哈希再比对(Go 端 `crypto.CompareHashAndPassword`,Python 端 `hmac.compare_digest`)。
-- **没有过期 / 轮换**。真实 key 有 `expired_time` 和轮换流程。
-- **`is_blocked` 是桩**。永远返回 `False`。生产里它对 `banned: <key>` 集合做 Redis `EXISTS`,就是封禁接口写入的位置。
-- **没有按路由的 scope 检查**。`scopes` 挂在 `Principal` 上但还没读过。s06+ 会强制。
-- **没有限速 / 配额记账**。那是下一阶段的事。
-- **单一全局 key 空间**。真实系统按租户或按 channel 命名空间切分;new-api 按 `user_id` 区分 key,并通过 `model/Key.go` 解析。
+## 已知限制
+
+- **进程内存储,重启即丢** (`_keys` 是 `dict[str, Principal]`,内存对象)——教程用没问题,真实存储是 Redis + SQL(`model/Key.go` + `model/User.go`);进程一重启所有 key 都没了。
+- **key 明文存** (数据库里直接是 `sk-xxx` 字符串,没哈希)——`register_key("demo","sk-demo")` 把明文存下来。生产存哈希再比对(Go 端 `crypto.CompareHashAndPassword`,Python 端 `hmac.compare_digest`)。
+- **`is_blocked` 是桩** ——永远返回 `False`。生产里它对 `banned: <key>` 集合做 Redis `EXISTS`,就是封禁接口写入的位置。
+- **没有过期 / 轮换** ——key 没有 `expired_time`、没有轮换流程;泄漏后只能 `register_key` 覆盖或等运维手动撤。
+- **单一全局 key 空间** (所有用户共用一张 key 表,无租户隔离)——真实系统按租户或按 channel 命名空间切分;new-api 按 `user_id` 区分 key,并通过 `model/Key.go` 解析。
+
+## 设计选择
+
+- **`Depends` 而不是 ASGI 中间件** (FastAPI 依赖注入:路由处理器之前自动跑的函数 / vs 中间件拦截)——`Depends` 可单元测试、可在路由级声明;ASGI 中间件测不动、且会偷偷罩住所有路由(包括本不需要闸的健康检查)。代价是每个需要闸的路由都要写一遍 `dependencies=[Depends(...)]`,但这正是"显式优于隐式"。
+- **`dependencies=[Depends(...)]` 在 router 层而不是 app 层** ——chat 路由要闸,`/health` 不要;在 router 粒度声明保证新加路由默认是开放的(不会偷偷被闸上),加闸是显式动作。
 
 ## 下章预告
 
