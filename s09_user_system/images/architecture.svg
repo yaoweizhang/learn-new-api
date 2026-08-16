@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 520" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 380" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
-    .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
     .title      { font-size: 15px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
@@ -18,113 +17,83 @@
     </marker>
   </defs>
 
-  <text x="460" y="22" text-anchor="middle" class="title">s09: 双轨鉴权 — JWT 与 Bearer 共存</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s09: 邮箱注册换真用户,密码哈希 + 签 JWT</text>
 
-  <!-- ============ TOP TRACK: chat path (s05 Bearer API key) ============ -->
+  <!-- ============ TOP ROW: signup/login flow ============ -->
 
-  <!-- Chat client -->
-  <rect class="client" x="20" y="60" width="140" height="64"/>
-  <text x="90" y="84" text-anchor="middle" class="label">Chat Client</text>
-  <text x="90" y="102" text-anchor="middle" class="small">+ Bearer &lt;api_key&gt;</text>
-  <text x="90" y="118" text-anchor="middle" class="small">POST /v1/chat/completions</text>
+  <!-- Client -->
+  <rect class="client" x="40" y="64" width="160" height="96"/>
+  <text x="120" y="90" text-anchor="middle" class="label">Dashboard / Admin</text>
+  <text x="120" y="110" text-anchor="middle" class="small">浏览器 / curl</text>
+  <text x="120" y="126" text-anchor="middle" class="small">POST /auth/signup</text>
+  <text x="120" y="142" text-anchor="middle" class="small">POST /auth/login</text>
 
-  <!-- s05 require_api_key -->
-  <rect class="middleware" x="200" y="60" width="160" height="64"/>
-  <text x="280" y="84" text-anchor="middle" class="label">s05</text>
-  <text x="280" y="102" text-anchor="middle" class="small">require_api_key</text>
-  <text x="280" y="118" text-anchor="middle" class="small">-&gt; Principal (uid)</text>
+  <!-- /auth/signup · /auth/login -->
+  <rect class="gateway" x="240" y="60" width="180" height="104"/>
+  <text x="330" y="84" text-anchor="middle" class="label">/auth/signup · /auth/login</text>
+  <text x="330" y="104" text-anchor="middle" class="small">bcrypt.hashpw 存密码</text>
+  <text x="330" y="120" text-anchor="middle" class="small">bcrypt.checkpw 验密码</text>
+  <text x="330" y="136" text-anchor="middle" class="small">issue(uid, email, is_admin)</text>
+  <text x="330" y="152" text-anchor="middle" class="small">HS256 签名, payload 带上 exp</text>
 
-  <!-- Relay (gateway) -->
-  <rect class="gateway" x="400" y="60" width="200" height="64"/>
-  <text x="500" y="84" text-anchor="middle" class="label">Relay</text>
-  <text x="500" y="102" text-anchor="middle" class="small">/v1/chat/completions</text>
-  <text x="500" y="118" text-anchor="middle" class="small">chat (s05 鉴权链路保留)</text>
+  <!-- JWT verify dependency -->
+  <rect class="middleware" x="460" y="60" width="220" height="104"/>
+  <text x="570" y="84" text-anchor="middle" class="label">_current_user 依赖</text>
+  <text x="570" y="104" text-anchor="middle" class="small">decode Bearer &lt;jwt&gt;</text>
+  <text x="570" y="120" text-anchor="middle" class="small">先查 is_revoked(SHA-256)</text>
+  <text x="570" y="136" text-anchor="middle" class="small">再验签名 + exp</text>
+  <text x="570" y="152" text-anchor="middle" class="small">/me 拿 claims {id, email, is_admin}</text>
 
-  <!-- Upstream -->
-  <rect class="upstream" x="640" y="60" width="140" height="64"/>
-  <text x="710" y="84" text-anchor="middle" class="label">Upstream</text>
-  <text x="710" y="102" text-anchor="middle" class="small">OpenAI / Claude / Gemini</text>
-  <text x="710" y="118" text-anchor="middle" class="small">httpx post forward</text>
+  <!-- Client -> /auth (signup) -->
+  <line class="arrow" x1="200" y1="90" x2="238" y2="90"/>
+  <text x="219" y="85" text-anchor="middle" class="small">email + pwd</text>
 
-  <!-- chat track arrows -->
-  <line class="arrow" x1="160" y1="92" x2="198" y2="92"/>
-  <text x="179" y="87" text-anchor="middle" class="small">Bearer</text>
-  <line class="arrow" x1="360" y1="92" x2="398" y2="92"/>
-  <text x="379" y="87" text-anchor="middle" class="small">uid</text>
-  <line class="arrow" x1="600" y1="92" x2="638" y2="92"/>
-  <text x="619" y="87" text-anchor="middle" class="small">HTTP</text>
-  <line class="arrowR" x1="638" y1="110" x2="602" y2="110"/>
-  <line class="arrowR" x1="398" y1="110" x2="362" y2="110"/>
-  <text x="509" y="105" text-anchor="middle" class="small">200 + JSON</text>
+  <!-- /auth -> client (token) dashed return -->
+  <line class="arrowR" x1="238" y1="110" x2="202" y2="110"/>
+  <text x="220" y="105" text-anchor="middle" class="small">JWT</text>
 
-  <!-- chat track label -->
-  <text x="460" y="48" text-anchor="middle" class="small" fill="#1a73e8">chat 路径 — 沿用 s05 Bearer API key (不替换)</text>
+  <!-- /auth <-> users.db (storage) -->
+  <line class="arrow" x1="420" y1="112" x2="458" y2="112"/>
+  <text x="439" y="107" text-anchor="middle" class="small">查表</text>
 
-  <!-- ============ BOTTOM TRACK: dashboard/admin path (JWT) ============ -->
+  <!-- /me arrow client -> _current_user with JWT (top track) -->
+  <line class="arrow" x1="200" y1="148" x2="458" y2="148"/>
+  <text x="320" y="143" text-anchor="middle" class="small">Bearer &lt;jwt&gt;</text>
 
-  <!-- Dashboard client -->
-  <rect class="client" x="20" y="280" width="140" height="64"/>
-  <text x="90" y="304" text-anchor="middle" class="label">Dashboard / Admin</text>
-  <text x="90" y="322" text-anchor="middle" class="small">browser / curl + JWT</text>
-  <text x="90" y="338" text-anchor="middle" class="small">{email, password}</text>
+  <!-- /me return -->
+  <line class="arrowR" x1="460" y1="158" x2="202" y2="158"/>
+  <text x="330" y="153" text-anchor="middle" class="small">200 {id, email, is_admin}</text>
 
-  <!-- Auth routes (signup/login/logout/me) -->
-  <rect class="gateway" x="200" y="280" width="220" height="64"/>
-  <text x="310" y="304" text-anchor="middle" class="label">/auth/signup · /auth/login</text>
-  <text x="310" y="322" text-anchor="middle" class="small">bcrypt.hashpw / checkpw</text>
-  <text x="310" y="338" text-anchor="middle" class="small">POST -&gt; issue(uid, email, is_admin)</text>
+  <!-- ============ BOTTOM ROW: logout flow ============ -->
 
-  <!-- _current_user dependency (the JWT verify layer) -->
-  <rect class="middleware" x="460" y="280" width="180" height="64"/>
-  <text x="550" y="304" text-anchor="middle" class="label">_current_user</text>
-  <text x="550" y="322" text-anchor="middle" class="small">decode Bearer &lt;jwt&gt;</text>
-  <text x="550" y="338" text-anchor="middle" class="small">claims -&gt; {id, email, is_admin}</text>
+  <!-- /auth/logout -->
+  <rect class="middleware" x="240" y="208" width="180" height="96"/>
+  <text x="330" y="232" text-anchor="middle" class="label">/auth/logout</text>
+  <text x="330" y="252" text-anchor="middle" class="small">revoke()</text>
+  <text x="330" y="268" text-anchor="middle" class="small">SHA-256(token) 进黑名单</text>
+  <text x="330" y="284" text-anchor="middle" class="small">204 No Content</text>
 
-  <!-- users.db storage -->
-  <rect class="storage" x="680" y="280" width="200" height="64"/>
-  <text x="780" y="304" text-anchor="middle" class="label">users.db</text>
-  <text x="780" y="322" text-anchor="middle" class="small">SQLite · id/email/hash/is_admin</text>
-  <text x="780" y="338" text-anchor="middle" class="small">create_user / find_by_email</text>
+  <!-- users.db -->
+  <rect class="storage" x="460" y="208" width="220" height="96"/>
+  <text x="570" y="232" text-anchor="middle" class="label">users.db (SQLite)</text>
+  <text x="570" y="252" text-anchor="middle" class="small">id / email / password_hash</text>
+  <text x="570" y="268" text-anchor="middle" class="small">is_admin / created_at</text>
+  <text x="570" y="284" text-anchor="middle" class="small">create_user / find_by_email</text>
 
-  <!-- /me & /auth/logout row -->
-  <rect class="gateway" x="460" y="380" width="180" height="56"/>
-  <text x="550" y="402" text-anchor="middle" class="label">GET /me</text>
-  <text x="550" y="420" text-anchor="middle" class="small">Depends(_current_user) -&gt; claims</text>
+  <!-- Client -> /auth/logout -->
+  <line class="arrow" x1="200" y1="240" x2="238" y2="240"/>
+  <text x="219" y="235" text-anchor="middle" class="small">Bearer &lt;jwt&gt;</text>
 
-  <!-- logout -->
-  <rect class="middleware" x="200" y="380" width="220" height="56"/>
-  <text x="310" y="402" text-anchor="middle" class="label">POST /auth/logout</text>
-  <text x="310" y="420" text-anchor="middle" class="small">revoke: SHA256(token) -&gt; deny-list</text>
+  <!-- /auth/logout -> users.db (deny-list lives alongside storage) -->
+  <line class="arrow" x1="420" y1="240" x2="458" y2="240"/>
+  <text x="439" y="235" text-anchor="middle" class="small">deny-list</text>
 
-  <!-- bottom track arrows: signup -> issue token -> /me + login -->
-  <line class="arrow" x1="160" y1="300" x2="198" y2="300"/>
-  <text x="179" y="295" text-anchor="middle" class="small">form</text>
+  <!-- /auth/logout -> client (204) dashed -->
+  <line class="arrowR" x1="238" y1="260" x2="202" y2="260"/>
+  <text x="220" y="255" text-anchor="middle" class="small">204</text>
 
-  <!-- auth routes <-> users.db -->
-  <line class="arrow" x1="420" y1="320" x2="678" y2="312"/>
-  <text x="545" y="276" text-anchor="middle" class="small">create_user / find_by_email</text>
-
-  <!-- /auth/signup -> client (token) -->
-  <line class="arrowR" x1="200" y1="290" x2="162" y2="290"/>
-
-  <!-- client -> /me with JWT -->
-  <line class="arrow" x1="90" y1="344" x2="460" y2="395"/>
-  <text x="220" y="375" text-anchor="middle" class="small">Bearer &lt;jwt&gt;</text>
-
-  <!-- _current_user -> users.db (lookup) -->
-  <line class="arrowR" x1="640" y1="320" x2="678" y2="320"/>
-
-  <!-- /me -> client (200) -->
-  <line class="arrowR" x1="460" y1="395" x2="162" y2="335"/>
-
-  <!-- /auth/logout arrow to deny-list (lives in token_blacklist, treated as part of storage row) -->
-  <line class="arrowR" x1="420" y1="395" x2="678" y2="335"/>
-  <text x="500" y="385" text-anchor="middle" class="small">revoke()</text>
-
-  <!-- bottom track label -->
-  <text x="460" y="270" text-anchor="middle" class="small" fill="#1a73e8">dashboard / admin 路径 — JWT + signup/login,挂 users.db</text>
-
-  <!-- Caption -->
-  <text x="460" y="478" text-anchor="middle" class="small">双轨鉴权:chat 路径仍走 s05 Bearer · dashboard / admin 路径用 JWT + signup/login</text>
-  <text x="460" y="496" text-anchor="middle" class="small">注销走 SHA256(token) deny-list,/me 再访问 -&gt; 401 token revoked</text>
+  <!-- Caption: WHY this chapter exists -->
+  <text x="360" y="318" text-anchor="middle" class="small">s05 用 API key 字符串代替用户: 不能注册 / 找回 / 改密, 明文存等数据库一漏全员完蛋</text>
+  <text x="360" y="336" text-anchor="middle" class="small">本章只做一件事: 邮箱注册 + bcrypt 哈希 + HS256 JWT, JWT 走 SHA-256 黑名单支持注销</text>
+  <text x="360" y="354" text-anchor="middle" class="small">chat 路径保留 s05 (不替换), dashboard / admin 给运营一套真身份钥匙, s10 用 is_admin 给管理员加渠道</text>
 </svg>

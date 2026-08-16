@@ -8,9 +8,16 @@
 
 ## 本章要做什么
 
-引入 SQLite 用户表 + bcrypt 密码哈希 + HS256 JWT 签发,提供 `/auth/signup` `/auth/login` `/auth/logout` `/me` 四条路由。学完你能用真实"用户"概念代替匿名 key 持有者。
+s05 的"API key → 用户"是一张进程内内存表,key 是明文存的。这套在演示阶段没问题,但一旦系统对外公开就立刻撞墙:用户不能自己注册、不能改密码、不能找回;key 当密码用 = 数据库一旦泄露全员完蛋;进程一重启所有人一起蒸发。
 
-> **术语速读**:本章用 `bcrypt`（专为密码哈希设计的慢哈希算法）做密码存储,登录成功后用 `HS256`（JWT 的一种签名算法，对称密钥）签发 `JWT`（JSON Web Token：把用户信息签名后塞进字符串）—— 三者后续章节直接复用,不再重复解释。
+要解决这个,把"匿名 key 持有者"升级成"真用户":邮箱 + 密码注册、用 `bcrypt`（专为密码哈希设计的慢哈希算法,反向暴力破解的成本极高）存密码哈希、用 `HS256` JWT（JSON Web Token：把用户身份信息签名后塞进字符串）发"通行证"、再用这个通行证去访问 dashboard / admin。本章就做这一套:
+
+1. **写 SQLite 用户表 —— 为什么不用 ORM**:SQLite 没有服务端,标准库 `sqlite3` 已经够用,**为什么 ORM 反而是负担**:加 SQLAlchemy 后第一次接触要在 `declarative_base` / `session` / `engine` 三处切换,演示阶段反而挡住"表里到底放了啥"这件事;**为什么 email 加 UNIQUE 约束**:重复注册必须服务端拒掉,不能让两个用户共用一个邮箱;**为什么 sqlite 默认写本地文件**:进程内、零依赖,tutorial 完美。
+2. **存密码用 `bcrypt.hashpw` —— 为什么不用 sha256**:`sha256` 是快哈希——攻击者拿到哈希表后能用显卡每秒跑几十亿次;`bcrypt` 故意慢(默认 cost=12,单次约 250 ms),**为什么慢是特性不是 bug**:让"大批量爆破"的成本涨到不可承受;**为什么 `gensalt()` 不传 cost**:用 bcrypt 默认 cost,生产再显式调高;**为什么 login 用 `bcrypt.checkpw`(恒定时间)**:防时序攻击——攻击者通过比对响应时间猜对错,常时间比较把它抹平。
+3. **登录成功签 HS256 JWT —— 为什么 JWT 而不是再发一个 API key**:JWT 是无状态的——服务端不用查表就能验签,**为什么不再次发明 API key**:那只是把 s05 的"内存 key 表 + Bearer 头"换个标签,真用户登录后客户端拿的是带签名的"票据",过期前一直可用;**为什么 payload 是 `{sub, email, is_admin, iat, exp}`**:`sub` 是用户 id(industry convention)、`exp` 用来过期、`is_admin` 给后续 dashboard 分角色用;**为什么 secret 走环境变量 `JWT_SECRET`**:`change-me-in-production` 是 tutorial 兜底,默认密钥泄漏后所有人能伪造 token。
+4. **挂 `_current_user` 依赖 + SHA-256 黑名单 —— 为什么需要 deny-list**:JWT 一旦签发无法收回——攻击者截获一个还没到期的 token 在过期前都有效,**为什么不靠 token 过期自动作废**:线上常见 24h-7d TTL,出问题不能等那么久;**为什么用 SHA-256(token) 做黑名单 key**:进程转储 / 误日志一行都不会泄露原 token;**为什么是 `is_revoked` 在解码前查**:先黑名单再验签,被撤销的 token 不会再浪费一次验签 CPU。
+
+成品:`curl -X POST .../auth/signup -d '{"email":"a@b.com","password":"secret123"}'` 回 `201 {id, email, access_token}`;`/auth/login` 同邮箱密码回 `200 {access_token, token_type:"bearer"}`;`/me` 带 JWT 头回 `{id, email, is_admin}`;`/auth/logout` 把 token 加进 SHA-256 黑名单后再访问 `/me` 回 `401 token revoked`。后续 s10 用 `is_admin` 给管理员加渠道,s14 在 dashboard 上看调用日志,s16 把 user 写到 trace。
 
 ## 上一章复盘
 
@@ -169,26 +176,6 @@ curl -i http://localhost:8009/me -H "authorization: Bearer $TOKEN"
 ```
 
 `JWT_SECRET` 强烈建议设置;不设置的话所有进程重启后旧 token 仍能用默认 `"change-me-in-production"` 验签——只是别把它带到线上。
-
-## 测试
-
-```bash
-pytest tests/test_s09_user_system.py -v
-```
-
-七个测试覆盖主要契约:
-
-| 测试 | 断言 |
-| --- | --- |
-| `test_signup_and_login_roundtrip` | 注册返回 201,登录返回 200,token 是合法 JWT(两点三段)。 |
-| `test_login_with_wrong_password_fails` | 错误密码返回 401。 |
-| `test_me_requires_token` | 没有 `Authorization` 头时 `/me` 返回 401。 |
-| `test_me_returns_user_with_token` | 带合法 token 调用 `/me` 返回对应 email。 |
-| `test_logout_revokes_token` | `/auth/logout` 后同一个 token 再访问 `/me` 返回 401 `token revoked`。 |
-| `test_logout_without_token_returns_401` | 不带 Bearer 调用 `/auth/logout` 返回 401。 |
-| `test_blacklist_check_isolated_per_token` | 撤销 token-A 不影响 token-B——验证 SHA-256 键隔离。 |
-
-`reset_db()` 在 fixture 中先调用、后调用;token 黑名单由平行 fixture 重置,保证测试之间互不污染。
 
 ## → new-api 源码
 
