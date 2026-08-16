@@ -95,9 +95,9 @@
   <line class="arrow" x1="430" y1="305" x2="280" y2="368"/>
   <text x="380" y="345" text-anchor="middle" class="small" fill="#c5221f">失败 → 下一条</text>
 
-  <!-- mark_unhealthy back to pool (vertical arrow into pool) -->
-  <line class="arrowR" x1="280" y1="370" x2="620" y2="300" stroke="#c5221f"/>
-  <text x="450" y="345" text-anchor="middle" class="small" fill="#c5221f">mark_unhealthy(c2) 即时</text>
+  <!-- mark_unhealthy back to pool (vertical arrow up c2 column to pool bottom-center) -->
+  <polyline class="arrowR" points="300,430 300,340 620,300" stroke="#c5221f"/>
+  <text x="310" y="380" text-anchor="start" class="small" fill="#c5221f">mark_unhealthy(c2) 即时</text>
 
   <!-- Attempt 3: c3 (fallback success) -->
   <rect class="upstream" x="400" y="370" width="160" height="60"/>
@@ -108,9 +108,9 @@
   <line class="arrow" x1="430" y1="315" x2="480" y2="368"/>
   <text x="455" y="345" text-anchor="middle" class="small" fill="#228b22">切到下一条</text>
 
-  <!-- success response back to client (dashed green, routed BELOW row) -->
-  <polyline class="arrowR" points="480,432 480,470 80,470 80,282" stroke="#228b22"/>
-  <text x="260" y="465" text-anchor="middle" class="small" fill="#228b22">200 + body → 客户端</text>
+  <!-- success response back to client (dashed green, routed below row, up at x=10 outside c1) -->
+  <polyline class="arrowR" points="480,432 480,470 10,470 10,282" stroke="#228b22"/>
+  <text x="245" y="465" text-anchor="middle" class="small" fill="#228b22">200 + body → 客户端</text>
 
   <!-- ============ s10 参考框 → s13 主路径 的"接力"虚线 ============ -->
 
