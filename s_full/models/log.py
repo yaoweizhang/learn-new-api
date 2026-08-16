@@ -92,7 +92,11 @@ def _drain_now() -> None:
 
 async def flush_loop(stop_event: asyncio.Event) -> None:
     """Backwards-compatible wrapper that runs flush on the default store until
-    `stop_event` is set. Tests and `code.py` can keep calling this directly."""
+    `stop_event` is set. Tests and `code.py` can keep calling this directly.
+
+    Module-level wrapper hardcodes 100ms flush interval.
+    For custom intervals, instantiate InMemoryLogStore(flush_interval=...) and
+    call its flush_loop method directly."""
     while not stop_event.is_set():
         await asyncio.sleep(0.1)
         _default.drain_now()

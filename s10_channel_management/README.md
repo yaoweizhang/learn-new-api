@@ -226,7 +226,7 @@ pytest tests/test_s10_channel_management.py -v
 - **没有持久化** —— 进程一重启渠道表清零;和 s09 的 users 表不同,本章不引入 SQLite。生产里渠道是低频变更的运营数据,本来就该走数据库;s12 切 Postgres 时一并接上。
 - **没有 `/admin/channels/{id}` 删除/更新接口** —— brief 只要求 POST + GET。新-api 那边有完整的 update/delete,但管理员工具的最低闭环(创建 + 列出)已经够演示"动态配置"的意义。
 - **`pick_channel_for` 实现是教学最小集** —— 实际是 priority asc + 档内 weighted random（`random.choices` 选一条），`weight=0` 时回退 round-robin。new-api 的完整 `GetRandomSatisfiedChannel` 还做按 model 名分桶、按 group 分组、按 status 屏蔽等更细的事；本章只演示"档内加权分发"这一核心思想。
-- **`Mount("/")` 注册顺序** —— 见上文"工作原理"第 1 步,本地路由先于 `app.mount("/", s08_app)` 注册。读者如果自己照着改代码、把 mount 挪到前面,会立刻撞到 404。这一点在 code.py 注释里已标注;在 README 里保留是为了让"修改顺序前先想清楚"成为可见的工程实践。
+- **`Mount("/")` 注册顺序** —— 见上文"工作原理"第 1 步,本地路由先于 `app.mount("/", s09_app)` 注册。读者如果自己照着改代码、把 mount 挪到前面,会立刻撞到 404。这一点在 code.py 注释里已标注;在 README 里保留是为了让"修改顺序前先想清楚"成为可见的工程实践。
 - **`is_admin` 检查放在 `_require_admin` 里而非 typed parameter** —— 因为 typed parameter 在 FastAPI 里对"非平凡读"的依赖注入不友好;`dependencies=[Depends(_require_admin)]` 是闸门用法,更合适,也跟 s08 之前的 `request.state.principal` 模式保持分离。
 
 ## 下章预告

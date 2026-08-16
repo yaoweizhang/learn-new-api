@@ -1,7 +1,6 @@
 .PHONY: test test-s% run-s% all clean
 
 CHAPTERS := $(wildcard s*_*)
-PORTS    := $(shell seq 8001 8017)
 
 test:
 	pytest tests/ -v

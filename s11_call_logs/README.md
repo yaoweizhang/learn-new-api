@@ -142,7 +142,7 @@ class LogMiddleware(BaseHTTPMiddleware):
 三个关键点:
 
 1. **`request.state.model` 把 model 从 body 传到中间件**。Brief 原本用 `request.query_params.get("model", "?")`——这是 bug,因为 model 在请求体里,不在查询串里。我们先 `await request.body()` 读出原始 bytes,`json.loads` 解出 `model`,写到 `request.state.model`;然后用一个新的 `receive()` 函数把同样的 bytes 重新喂回去,下游 FastAPI 看到的就是"这次请求没动过"。这是 Starlette 里读取并回放 body 的标准手法。
-2. **`body_iterator` 替换**(Starlette/FastAPI 响应体的异步字节迭代器)。下游已经把响应体包成异步迭代器,我们要读出全部 bytes 用 `enqueue` 入队,就要把迭代器换成我们自己生成同一份 bytes 的版本。对非流式响应(`JSONResponse`)完全没问题;流式响应会被这条捷径打乱,所以对 SSE 我们不替换——见取舍。
+2. **`body_iterator` 替换**(Starlette/FastAPI 响应体的异步字节迭代器)。下游已经把响应体包成异步迭代器,我们要读出全部 bytes 用 `enqueue` 入队,就要把迭代器换成我们自己生成同一份 bytes 的版本。**本章测试只覆盖非流式路径(流式下 body_iterator 替换会破坏流,我们没有特殊处理)**——见取舍。
 3. **挂载顺序**:`app.mount("/", s10_app)` 放在最后。Starlette 按注册顺序匹配路由;先 mount 会让 `Mount("/")` 吸收掉 `/admin/logs`、`/admin/stats`。
 
 后台任务:
@@ -233,7 +233,7 @@ pytest tests/test_s11_call_logs.py -v
 ## 取舍
 
 - **纯内存存储,进程一重启日志全丢** —— YAGNI。生产里调用日志是高频写入 + 需要长期查询的数据,必须走数据库;v2 切 Postgres 时把 `enqueue` 改成 `INSERT ... RETURNING id`,`list_logs` 改成带分页的 `SELECT`。教学版先保证"看得见、能聚合"。
-- **没有流式(SSE)调用的日志** —— 中间件里 `body_iterator` 替换对流式响应会破坏流(迭代器只能读一次,我们读完后塞回的那份已经丢失了"分块"语义)。本章测试只覆盖非流式路径,**SSE 流式调用不会进日志**——这是已知缺口,README 和测试都标了出来。v2 要么用 FastAPI 的 `add_event_handler` 在流式响应结束时钩一次,要么干脆放弃中间件、改在 s08 的 `chat_completions` 函数体里直接 `enqueue`。
+- **没有流式(SSE)调用的日志** —— 中间件里 `body_iterator` 替换对流式响应会破坏流(迭代器只能读一次,我们读完后塞回的那份已经丢失了"分块"语义)。本章测试只覆盖非流式路径,**SSE 流式调用不会进日志**——这是已知缺口,README 和测试都标了出来。v2 要么用 FastAPI 的 `add_event_handler` 在流式响应结束时钩一次,要么干脆放弃中间件、改在 chat_completions 函数体里直接 `enqueue`——当前 s11 链上 s08 是这条 handler 的最终注册点,以后的章节里(s13 等)如果把 chat 路由提到本地,就在本地那个 chat_with_retry 里 enqueue。
 - **`model` 通过 `request.state.model` 传递** —— Brief 原本写的是 `request.query_params.get("model", "?")`,永远是 `"?"` 因为 model 在 body 里。本章的修正手法是:中间件先 `await request.body()` 读出原始 bytes、解出 model 写到 `request.state.model`,再用一个新的 `receive()` 把同一份 bytes 喂回去给下游 FastAPI。这是 Starlette 标准做法;副作用是 body 会被读两次(小开销,kilobytes 级),换来干净的"中间件读 model"语义。
 - **没有 `_require_admin` 闸门** —— `/admin/logs`、`/admin/stats` 当前对所有能访问的人开放。生产里必须收紧,但"管理员能看自己的调用日志"和"调用方能看到自己的用量"是两个不同的产品决策(前者运维、后者用户控制台),先分开再讨论统一鉴权。
 - **`time.sleep(0.2)` 是已知的时序依赖** —— 见"测试"一节。Brief 原本就是这么设计的;这是"异步 + 周期 flush"的固有特性。v2 改成事件驱动后就消除。

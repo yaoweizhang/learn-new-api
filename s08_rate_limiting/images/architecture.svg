@@ -44,7 +44,7 @@
   <rect class="gateway" x="280" y="170" width="160" height="80"/>
   <text x="360" y="194" text-anchor="middle" class="label">Relay</text>
   <text x="360" y="212" text-anchor="middle" class="small">if !take(uid): 429</text>
-  <text x="360" y="230" text-anchor="middle" class="small">+ Retry-After header</text>
+  <text x="360" y="230" text-anchor="middle" class="small">(no Retry-After — README §取舍)</text>
 
   <!-- Upstream -->
   <rect class="upstream" x="480" y="170" width="160" height="80"/>
@@ -78,7 +78,7 @@
   <!-- 429 reject path (dashed amber) from handler back to client -->
   <line class="arrowR" x1="280" y1="210" x2="100" y2="80" stroke="#b58900"/>
   <line class="arrowR" x1="100" y1="80" x2="80" y2="118" stroke="#b58900"/>
-  <text x="190" y="85" text-anchor="middle" class="small" fill="#b58900">exhausted -&gt; 429 + Retry-After</text>
+  <text x="190" y="85" text-anchor="middle" class="small" fill="#b58900">exhausted -&gt; 429 (no Retry-After)</text>
 
   <!-- Handler -> Upstream -->
   <line class="arrow" x1="440" y1="200" x2="478" y2="200"/>
@@ -88,5 +88,5 @@
   <line class="arrowR" x1="640" y1="210" x2="658" y2="210"/>
 
   <!-- Caption -->
-  <text x="400" y="304" text-anchor="middle" class="small">60 tokens burst,refill 1/s · 拒第 61 个请求 -&gt; 429 + Retry-After · 同一用户并发原子</text>
+  <text x="400" y="304" text-anchor="middle" class="small">60 tokens burst,refill 1/s · 拒第 61 个请求 -&gt; 429 (no Retry-After) · 同一用户并发原子</text>
 </svg>

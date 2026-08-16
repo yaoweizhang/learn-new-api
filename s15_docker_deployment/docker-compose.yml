@@ -3,7 +3,7 @@ services:
     build: .
     ports:
       - "8015:8015"
-    env_file: .env
+    env_file: ../.env
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; print(httpx.get('http://localhost:8015/healthz').status_code)"]
       interval: 30s

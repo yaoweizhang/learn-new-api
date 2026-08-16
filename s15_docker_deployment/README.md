@@ -76,6 +76,10 @@ CMD [...]            # 容器启动命令
 # 1. 构建并启动(后台)
 docker compose -f s15_docker_deployment/docker-compose.yml up -d --build
 
+# 注:docker-compose 的 env_file 解析以 compose 文件所在目录为相对基准,
+#   本章 compose 用 `env_file: ../.env`,所以需要先把 `.env.example` 复制到仓库根的 `.env`。
+cp .env.example .env  # 仅首次需要;之后改 .env 不用再 cp
+
 # 2. 查健康状态(Docker 视角)
 docker compose -f s15_docker_deployment/docker-compose.yml ps
 # 预期:gateway 状态是 "Up (healthy)" —— /healthz 在 30s 内返回 200 之后才是 healthy

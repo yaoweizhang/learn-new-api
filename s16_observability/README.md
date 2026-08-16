@@ -128,7 +128,7 @@ python -m pytest tests/test_s16_observability.py -v
 | 分布式追踪导出(OpenTelemetry / OTLP) | **不做** | YAGNI。教程只演示"传 trace_id",不演示"把它送到 Tempo / Jaeger"。要加就是 `opentelemetry-instrumentation-fastapi` + OTLP exporter,工作量 +1 天。 |
 | 日志聚合(Loki / ELK 客户端) | **不做** | 同上。结构化 JSON 已经够 `docker logs \| jq` 用了,真正接入 Loki 是部署侧的事。 |
 | 告警规则(Prometheus alerting rules) | **不做** | 告警是 SRE 域,不是代码域。 |
-| `model` 标签 | **从 JSON body 读** | 中间件用 `await request.body()` 把 chat body 读出来、`json.loads` 解出 `model` 写到 `request.state.model`,再用 `receive()` 把同一份 bytes 喂回给下游(Starlette 标准做法)。label 真正携带模型名而不是 "unknown"。生产里 `model` label 高基数会爆 Prometheus,需要采样。 |
+| `model` 标签 | **从 JSON body 读** | 中间件用 `await request.body()` 把 chat body 读出来、`json.loads` 解出 `model` 写到 `request.state.model`,**依赖 Starlette 在 `BaseHTTPMiddleware` 内部把 bytes 缓存到 `request._body` 的事实**——下游 handler 重读 body 拿到的是同一份 bytes。这比 s11 显式安装 `receive()` 更简洁,因为 Starlette 已经做了重放。label 真正携带模型名而不是 "unknown"。生产里 `model` label 高基数会爆 Prometheus,需要采样。 |
 | `/v1/chat/completions` 路径匹配 | **只匹配 `/v1/chat/completions`** | chat 端点的真实入口是 `/v1/chat/completions`(挂载链里其它层不再独立注册此路径)。中间件只在这条路径打点,避免 `/healthz`、`/metrics` 把基数撑爆。 |
 | `/metrics` 与 mount 顺序 | **`/metrics` 在 mount 之前注册** | Starlette 路由顺序坑。 |
 | 中间件 vs 装饰器 | **中间件** | 一处定义全局生效;装饰器需要给每个 handler 加 `@track_metrics`,易漏。 |

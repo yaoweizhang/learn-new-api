@@ -44,9 +44,6 @@ class ClaudeProvider(Provider):
             "content-type": "application/json",
         }
         model = req["model"]
-        # strip the "claude-" routing prefix if present
-        if model.startswith("claude-"):
-            model = model
         body = {
             "model": model,
             "max_tokens": req.get("max_tokens", 1024),

@@ -39,8 +39,12 @@ def require_api_key(request: Request) -> Principal:
     if "sub" not in claims:
         # PyJWT doesn't enforce "sub"; reject early.
         raise HTTPException(status_code=401, detail="invalid token")
+    try:
+        user_id = int(claims["sub"])
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="invalid sub claim")
     return Principal(
-        user_id=int(claims["sub"]),
+        user_id=user_id,
         email=claims.get("email", ""),
         is_admin=bool(claims.get("is_admin", False)),
     )
