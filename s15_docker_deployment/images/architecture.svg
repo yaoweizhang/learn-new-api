@@ -24,7 +24,7 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s15: Compose + healthcheck, 一行起, 自动探活</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s15: compose 起 · 自动探</text>
 
   <rect class="reference" x="20" y="50" width="260" height="64"/>
   <text x="150" y="76" text-anchor="middle" class="small" fill="#555">s01-s14 链路 (前置)</text>
