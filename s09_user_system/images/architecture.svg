@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
-    .title      { font-size: 15px; font-weight: bold; fill: #222; }
+    .title      { font-size: 14px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
     .refsmall   { font-size: 11px; fill: #777; }
@@ -23,114 +23,89 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s09: 邮箱注册换真用户,密码哈希 + 签 JWT (双轨鉴权其二)</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s09: 邮箱注册换真用户,bcrypt 存哈希 + 签 JWT (双轨鉴权其二)</text>
 
-  <!-- ============ TOP-LEFT: s05 chat 路径 参考框 (上一章, 本章不变) ============ -->
+  <!-- ============ TOP-LEFT: s05 chat 路径 参考框 (上一章, 本章不变, 双轨对照) ============ -->
 
-  <rect class="reference" x="20" y="52" width="210" height="140"/>
-  <text x="125" y="74" text-anchor="middle" class="small" fill="#555">s05 chat 路径 (复习)</text>
-  <text x="125" y="94" text-anchor="middle" class="refsmall">Chat Client</text>
-  <text x="125" y="112" text-anchor="middle" class="refsmall">→ require_api_key 闸门</text>
-  <text x="125" y="130" text-anchor="middle" class="refsmall">Bearer &lt;api_key&gt;</text>
-  <text x="125" y="148" text-anchor="middle" class="refsmall">→ Principal (内存 key 表)</text>
-  <text x="125" y="166" text-anchor="middle" class="refsmall">本章不动, 继续走 chat 端点</text>
-  <text x="125" y="184" text-anchor="middle" class="refsmall">(对照: 双轨其一)</text>
+  <rect class="reference" x="20" y="50" width="210" height="92"/>
+  <text x="125" y="70" text-anchor="middle" class="small" fill="#555">s05 chat 路径 (复习)</text>
+  <text x="125" y="90" text-anchor="middle" class="refsmall">require_api_key 闸门 + chat 路由</text>
+  <text x="125" y="108" text-anchor="middle" class="refsmall">Bearer sk-... → Principal</text>
+  <text x="125" y="126" text-anchor="middle" class="refsmall">本章不动, 双轨其一</text>
 
-  <!-- ============ TOP-RIGHT: signup/login flow (s09 主路径) ============ -->
+  <!-- ============ TOP-RIGHT: signup/login + /me (s09 主路径) ============ -->
 
   <!-- Client -->
-  <rect class="client" x="250" y="60" width="130" height="100"/>
-  <text x="315" y="84" text-anchor="middle" class="label">Dashboard / Admin</text>
-  <text x="315" y="104" text-anchor="middle" class="small">浏览器 / curl</text>
-  <text x="315" y="124" text-anchor="middle" class="small">POST /auth/signup</text>
-  <text x="315" y="140" text-anchor="middle" class="small">POST /auth/login</text>
+  <rect class="client" x="250" y="56" width="130" height="80"/>
+  <text x="315" y="81" text-anchor="middle" class="label">Client</text>
+  <text x="315" y="101" text-anchor="middle" class="small">浏览器 / curl</text>
+  <text x="315" y="121" text-anchor="middle" class="small">email + pwd → JWT</text>
 
   <!-- /auth/signup · /auth/login -->
-  <rect class="gateway" x="410" y="56" width="160" height="108"/>
-  <text x="490" y="80" text-anchor="middle" class="label">/auth/signup · /auth/login</text>
-  <text x="490" y="100" text-anchor="middle" class="small">bcrypt.hashpw 存密码</text>
-  <text x="490" y="116" text-anchor="middle" class="small">bcrypt.checkpw 验密码</text>
-  <text x="490" y="132" text-anchor="middle" class="small">issue(uid, email, is_admin)</text>
-  <text x="490" y="148" text-anchor="middle" class="small">HS256 签名, payload 带 exp</text>
+  <rect class="gateway" x="410" y="52" width="160" height="96"/>
+  <text x="490" y="77" text-anchor="middle" class="label">/auth/signup · /login</text>
+  <text x="490" y="97" text-anchor="middle" class="small">本章要写 · bcrypt 哈希 + HS256 签 JWT</text>
 
   <!-- /me 路由 + _current_user 依赖 -->
-  <rect class="middleware" x="600" y="56" width="110" height="108"/>
-  <text x="655" y="80" text-anchor="middle" class="label">GET /me</text>
-  <text x="655" y="100" text-anchor="middle" class="small">_current_user 依赖</text>
-  <text x="655" y="116" text-anchor="middle" class="small">先 is_revoked(SHA-256)</text>
-  <text x="655" y="132" text-anchor="middle" class="small">后 decode + verify sig/exp</text>
-  <text x="655" y="148" text-anchor="middle" class="small">→ claims {id,email,is_admin}</text>
+  <rect class="middleware" x="600" y="52" width="110" height="96"/>
+  <text x="655" y="77" text-anchor="middle" class="label">GET /me</text>
+  <text x="655" y="97" text-anchor="middle" class="small">_current_user 依赖</text>
+  <text x="655" y="117" text-anchor="middle" class="small">SHA-256 黑名单 + 验签</text>
 
-  <!-- Client -> /auth/signup (email + pwd) -->
-  <line class="arrow" x1="380" y1="92" x2="408" y2="92"/>
-  <text x="394" y="87" text-anchor="middle" class="small">email+pwd</text>
+  <!-- Client -> /auth (email + pwd) -->
+  <line class="arrow" x1="380" y1="80" x2="408" y2="80"/>
+  <text x="394" y="75" text-anchor="middle" class="small">email+pwd</text>
 
   <!-- /auth -> client (JWT) dashed -->
-  <line class="arrowR" x1="408" y1="120" x2="382" y2="120"/>
-  <text x="395" y="115" text-anchor="middle" class="small">JWT</text>
-
-  <!-- /auth -> /me (register /me after auth, no arrow drawn — JWT is the link) -->
+  <line class="arrowR" x1="408" y1="110" x2="382" y2="110"/>
+  <text x="395" y="105" text-anchor="middle" class="small">JWT</text>
 
   <!-- Client -> /me (Bearer <jwt>) — drawn below the boxes to avoid overlap -->
-  <line class="arrow" x1="315" y1="160" x2="315" y2="190"/>
-  <line class="arrow" x1="315" y1="190" x2="655" y2="190"/>
-  <text x="485" y="185" text-anchor="middle" class="small">Bearer &lt;jwt&gt;</text>
+  <line class="arrow" x1="315" y1="140" x2="315" y2="180"/>
+  <line class="arrow" x1="315" y1="180" x2="655" y2="180"/>
+  <text x="485" y="175" text-anchor="middle" class="small">Bearer JWT</text>
 
   <!-- /me -> client (claims) -->
-  <line class="arrowR" x1="655" y1="200" x2="315" y2="200"/>
-  <text x="485" y="195" text-anchor="middle" class="small">200 {id, email, is_admin}</text>
+  <line class="arrowR" x1="655" y1="190" x2="315" y2="190"/>
+  <text x="485" y="185" text-anchor="middle" class="small">{id, email, is_admin}</text>
 
   <!-- ============ BOTTOM ROW: logout flow + 双存储 ============ -->
 
   <!-- /auth/logout -->
-  <rect class="middleware" x="250" y="230" width="170" height="108"/>
-  <text x="335" y="254" text-anchor="middle" class="label">/auth/logout</text>
-  <text x="335" y="274" text-anchor="middle" class="small">revoke()</text>
-  <text x="335" y="290" text-anchor="middle" class="small">SHA-256(token) 进黑名单</text>
-  <text x="335" y="306" text-anchor="middle" class="small">先 is_revoked → 后 decode</text>
-  <text x="335" y="322" text-anchor="middle" class="small">204 No Content</text>
+  <rect class="middleware" x="250" y="220" width="170" height="80"/>
+  <text x="335" y="245" text-anchor="middle" class="label">/auth/logout</text>
+  <text x="335" y="265" text-anchor="middle" class="small">sha256(token) 进黑名单</text>
+  <text x="335" y="285" text-anchor="middle" class="small">204 No Content</text>
 
   <!-- users.db (SQLite) -->
-  <rect class="storage" x="450" y="230" width="150" height="108"/>
-  <text x="525" y="254" text-anchor="middle" class="label">users.db (SQLite)</text>
-  <text x="525" y="274" text-anchor="middle" class="small">id / email</text>
-  <text x="525" y="290" text-anchor="middle" class="small">password_hash</text>
-  <text x="525" y="306" text-anchor="middle" class="small">is_admin / created_at</text>
-  <text x="525" y="322" text-anchor="middle" class="small">create_user / find_by_email</text>
+  <rect class="storage" x="450" y="220" width="150" height="80"/>
+  <text x="525" y="245" text-anchor="middle" class="label">users.db (SQLite)</text>
+  <text x="525" y="265" text-anchor="middle" class="small">id / email / password_hash</text>
+  <text x="525" y="285" text-anchor="middle" class="small">is_admin / created_at</text>
 
   <!-- token_blacklist (内存) — separate box -->
-  <rect class="middleware" x="630" y="230" width="80" height="108"/>
-  <text x="670" y="252" text-anchor="middle" class="small">token</text>
-  <text x="670" y="266" text-anchor="middle" class="small">_blacklist</text>
-  <text x="670" y="284" text-anchor="middle" class="small">(内存)</text>
-  <text x="670" y="302" text-anchor="middle" class="small">_revoked:</text>
-  <text x="670" y="316" text-anchor="middle" class="small">set[str]</text>
-  <text x="670" y="332" text-anchor="middle" class="small">SHA-256</text>
+  <rect class="middleware" x="630" y="220" width="80" height="80"/>
+  <text x="670" y="245" text-anchor="middle" class="label">blacklist</text>
+  <text x="670" y="265" text-anchor="middle" class="small">set[str]</text>
+  <text x="670" y="285" text-anchor="middle" class="small">SHA-256</text>
 
   <!-- Client -> /auth/logout (Bearer <jwt>) — vertical from above -->
-  <line class="arrow" x1="335" y1="160" x2="335" y2="228"/>
-  <text x="345" y="200" text-anchor="start" class="small">Bearer &lt;jwt&gt;</text>
+  <line class="arrow" x1="335" y1="140" x2="335" y2="218"/>
+  <text x="345" y="200" text-anchor="start" class="small">Bearer JWT</text>
 
   <!-- /auth/logout -> users.db (查表确认 user 存在) -->
-  <line class="arrow" x1="420" y1="266" x2="448" y2="266"/>
-  <text x="434" y="261" text-anchor="middle" class="small">查表</text>
+  <line class="arrow" x1="420" y1="244" x2="448" y2="244"/>
+  <text x="434" y="239" text-anchor="middle" class="small">查表</text>
 
   <!-- /auth/logout -> token_blacklist (内存, SHA-256) -->
-  <line class="arrow" x1="420" y1="304" x2="628" y2="304"/>
-  <text x="524" y="299" text-anchor="middle" class="small">deny-list (SHA-256 → 内存 set)</text>
+  <line class="arrow" x1="420" y1="278" x2="628" y2="278"/>
+  <text x="524" y="273" text-anchor="middle" class="small">deny-list</text>
 
   <!-- /auth/logout -> client (204) — arrow goes left from logout to client edge, then up -->
-  <line class="arrowR" x1="250" y1="266" x2="200" y2="266"/>
-  <text x="225" y="261" text-anchor="middle" class="small">204</text>
+  <line class="arrowR" x1="250" y1="244" x2="200" y2="244"/>
+  <text x="225" y="239" text-anchor="middle" class="small">204</text>
 
   <!-- s05 参考框 → s09 主路径 的"对照"虚线 (说明双轨并存, 虚线灰) -->
-  <line class="arrowRef" x1="230" y1="122" x2="248" y2="110"/>
-  <text x="244" y="118" text-anchor="middle" class="refsmall">并存</text>
-
-  <!-- Caption: WHY this chapter exists -->
-  <text x="360" y="372" text-anchor="middle" class="small">s05 用 API key 字符串代替用户: 不能注册 / 找回 / 改密, 明文存等数据库一漏全员完蛋</text>
-  <text x="360" y="390" text-anchor="middle" class="small">本章只做一件事: 邮箱注册 + bcrypt 哈希 + HS256 JWT, JWT 走 SHA-256 黑名单支持注销</text>
-  <text x="360" y="408" text-anchor="middle" class="small">双轨鉴权: chat 路径走 s05 (Bearer &lt;api_key&gt; → Principal), 本路径走 Bearer &lt;jwt&gt; → _current_user — 闸门名不同、验证表不同, 但闸门形态一样</text>
-  <text x="360" y="426" text-anchor="middle" class="small">Token 黑名单走的是内存集合 (token_blacklist.py 进程内 set[str]), 不是 SQLite — 进程一重启黑名单清空, 已签发的 token 仍由 exp 兜底</text>
-  <text x="360" y="444" text-anchor="middle" class="small">chat 路径保留 s05 (不替换), dashboard / admin 给运营一套真身份钥匙, s10 用 is_admin 给管理员加渠道</text>
+  <line class="arrowRef" x1="230" y1="92" x2="248" y2="80"/>
+  <text x="244" y="88" text-anchor="middle" class="refsmall">并存</text>
 </svg>
