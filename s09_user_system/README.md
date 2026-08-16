@@ -6,27 +6,6 @@
 
 > **Layer**：L2 鉴权与身份
 
-## 本章要做什么
-
-s05 的"API key → 用户"是一张进程内内存表,key 是明文存的。这套在演示阶段没问题,但一旦系统对外公开就立刻撞墙:用户不能自己注册、不能改密码、不能找回;key 当密码用 = 数据库一旦泄露全员完蛋;进程一重启所有人一起蒸发。
-
-要解决这个,把"匿名 key 持有者"升级成"真用户":邮箱 + 密码注册、用 `bcrypt`（专为密码哈希设计的慢哈希算法,反向暴力破解的成本极高）存密码哈希、用 `HS256` JWT（JSON Web Token：把用户身份信息签名后塞进字符串）发"通行证"、再用这个通行证去访问 dashboard / admin。本章就做这一套:
-
-1. **写 SQLite 用户表 —— 为什么不用 ORM**:SQLite 没有服务端,标准库 `sqlite3` 已经够用,**为什么 ORM 反而是负担**:加 SQLAlchemy 后第一次接触要在 `declarative_base` / `session` / `engine` 三处切换,演示阶段反而挡住"表里到底放了啥"这件事;**为什么 email 加 UNIQUE 约束**:重复注册必须服务端拒掉,不能让两个用户共用一个邮箱;**为什么 sqlite 默认写本地文件**:进程内、零依赖,tutorial 完美。
-2. **存密码用 `bcrypt.hashpw` —— 为什么不用 sha256**:`sha256` 是快哈希——攻击者拿到哈希表后能用显卡每秒跑几十亿次;`bcrypt` 故意慢(默认 cost=12,单次约 250 ms),**为什么慢是特性不是 bug**:让"大批量爆破"的成本涨到不可承受;**为什么 `gensalt()` 不传 cost**:用 bcrypt 默认 cost,生产再显式调高;**为什么 login 用 `bcrypt.checkpw`(恒定时间)**:防时序攻击——攻击者通过比对响应时间猜对错,常时间比较把它抹平。
-3. **登录成功签 HS256 JWT —— 为什么 JWT 而不是再发一个 API key**:JWT 是无状态的——服务端不用查表就能验签,**为什么不再次发明 API key**:那只是把 s05 的"内存 key 表 + Bearer 头"换个标签,真用户登录后客户端拿的是带签名的"票据",过期前一直可用;**为什么 payload 是 `{sub, email, is_admin, iat, exp}`**:`sub` 是用户 id(industry convention)、`exp` 用来过期、`is_admin` 给后续 dashboard 分角色用;**为什么 secret 走环境变量 `JWT_SECRET`**:`change-me-in-production` 是 tutorial 兜底,默认密钥泄漏后所有人能伪造 token。
-4. **挂 `_current_user` 依赖 + SHA-256 黑名单 —— 为什么需要 deny-list**:JWT 一旦签发无法收回——攻击者截获一个还没到期的 token 在过期前都有效,**为什么不靠 token 过期自动作废**:线上常见 24h-7d TTL,出问题不能等那么久;**为什么用 SHA-256(token) 做黑名单 key**:进程转储 / 误日志一行都不会泄露原 token;**为什么是 `is_revoked` 在解码前查**:先黑名单再验签,被撤销的 token 不会再浪费一次验签 CPU。
-
-成品:`curl -X POST .../auth/signup -d '{"email":"a@b.com","password":"secret123"}'` 回 `201 {id, email, access_token}`;`/auth/login` 同邮箱密码回 `200 {access_token, token_type:"bearer"}`;`/me` 带 JWT 头回 `{id, email, is_admin}`;`/auth/logout` 把 token 加进 SHA-256 黑名单后再访问 `/me` 回 `401 token revoked`。后续 s10 用 `is_admin` 给管理员加渠道,s14 在 dashboard 上看调用日志,s16 把 user 写到 trace。
-
-## 上一章复盘
-
-s08 之前所有用户都是匿名的"key 持有者"。没有 `/auth/signup` 这套,就没有"用户"概念。
-
-## 在整体中的位置
-
-鉴权的"用户维度"——s05 用 key 实现粗粒度身份,s09 用 JWT + 注册/登录实现真用户身份。**双轨鉴权其二**：s09 的 JWT 守 dashboard / admin 路径(`/auth/signup`、`/auth/login`、`/auth/logout`、`/me`、admin 路由);chat 路径仍走 s05 的 Bearer API key。两条并存、不替代：s09 不是为了替换 s05，而是给运营/管理面发了"真身份"钥匙,chat 端点继续用 API key 这把"调用钥匙"。
-
 ## 问题
 
 s05 之前我们用一张"API key → 用户"的内存表来做鉴权。这种做法在演示阶段没问题,但只要系统对外公开就立刻遇到三个痛点:
@@ -36,6 +15,17 @@ s05 之前我们用一张"API key → 用户"的内存表来做鉴权。这种�
 3. **状态是临时的**。进程一重启,所有用户和配额一起蒸发。
 
 说白了,我们现在缺的不是一个新的鉴权机制,而是一张真正的"用户表"——邮箱注册、密码哈希、签发令牌,再用这个令牌代替原来的明文 key 去访问 `/v1/chat/completions`。
+
+## 本章要做什么
+
+要解决这个,把"匿名 key 持有者"升级成"真用户":邮箱 + 密码注册、用 `bcrypt`（专为密码哈希设计的慢哈希算法,反向暴力破解的成本极高）存密码哈希、用 `HS256` JWT（JSON Web Token：把用户身份信息签名后塞进字符串）发"通行证"、再用这个通行证去访问 dashboard / admin。本章就做这一套:
+
+1. **写 SQLite 用户表 —— 为什么不用 ORM**:SQLite 没有服务端,标准库 `sqlite3` 已经够用,**为什么 ORM 反而是负担**:加 SQLAlchemy 后第一次接触要在 `declarative_base` / `session` / `engine` 三处切换,演示阶段反而挡住"表里到底放了啥"这件事;**为什么 email 加 UNIQUE 约束**:重复注册必须服务端拒掉,不能让两个用户共用一个邮箱;**为什么 sqlite 默认写本地文件**:进程内、零依赖,tutorial 完美。
+2. **存密码用 `bcrypt.hashpw` —— 为什么不用 sha256**:`sha256` 是快哈希——攻击者拿到哈希表后能用显卡每秒跑几十亿次;`bcrypt` 故意慢(默认 cost=12,单次约 250 ms),**为什么慢是特性不是 bug**:让"大批量爆破"的成本涨到不可承受;**为什么 `gensalt()` 不传 cost**:用 bcrypt 默认 cost,生产再显式调高;**为什么 login 用 `bcrypt.checkpw`(恒定时间)**:防时序攻击——攻击者通过比对响应时间猜对错,常时间比较把它抹平。
+3. **登录成功签 HS256 JWT —— 为什么 JWT 而不是再发一个 API key**:JWT 是无状态的——服务端不用查表就能验签,**为什么不再次发明 API key**:那只是把 s05 的"内存 key 表 + Bearer 头"换个标签,真用户登录后客户端拿的是带签名的"票据",过期前一直可用;**为什么 payload 是 `{sub, email, is_admin, iat, exp}`**:`sub` 是用户 id(industry convention)、`exp` 用来过期、`is_admin` 给后续 dashboard 分角色用;**为什么 secret 走环境变量 `JWT_SECRET`**:`change-me-in-production` 是 tutorial 兜底,默认密钥泄漏后所有人能伪造 token。
+4. **挂 `_current_user` 依赖 + SHA-256 黑名单 —— 为什么需要 deny-list**:JWT 一旦签发无法收回——攻击者截获一个还没到期的 token 在过期前都有效,**为什么不靠 token 过期自动作废**:线上常见 24h-7d TTL,出问题不能等那么久;**为什么用 SHA-256(token) 做黑名单 key**:进程转储 / 误日志一行都不会泄露原 token;**为什么是 `is_revoked` 在解码前查**:先黑名单再验签,被撤销的 token 不会再浪费一次验签 CPU。
+
+成品:`curl -X POST .../auth/signup -d '{"email":"a@b.com","password":"secret123"}'` 回 `201 {id, email, access_token}`;`/auth/login` 同邮箱密码回 `200 {access_token, token_type:"bearer"}`;`/me` 带 JWT 头回 `{id, email, is_admin}`;`/auth/logout` 把 token 加进 SHA-256 黑名单后再访问 `/me` 回 `401 token revoked`。后续 s10 用 `is_admin` 给管理员加渠道,s14 在 dashboard 上看调用日志,s16 把 user 写到 trace。**双轨鉴权其二**：s09 的 JWT 守 dashboard / admin 路径(`/auth/signup`、`/auth/login`、`/auth/logout`、`/me`、admin 路由);chat 路径仍走 s05 的 Bearer API key。两条并存、不替代：s09 不是为了替换 s05，而是给运营/管理面发了"真身份"钥匙,chat 端点继续用 API key 这把"调用钥匙"。
 
 ## 方案
 

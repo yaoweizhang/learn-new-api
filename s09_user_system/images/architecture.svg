@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
@@ -23,86 +23,77 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s09: 邮箱注册换真用户,bcrypt 存哈希 + 签 JWT (双轨鉴权其二)</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s09: 注册换真用户,JWT+黑名单(双轨之二)</text>
 
-  <!-- ============ TOP-LEFT: s05 chat 路径 参考框 (上一章, 本章不变, 双轨对照) ============ -->
-
-  <rect class="reference" x="20" y="50" width="210" height="92"/>
-  <text x="125" y="80" text-anchor="middle" class="small" fill="#555">s05 chat 路径 (复习)</text>
-  <text x="125" y="105" text-anchor="middle" class="refsmall">require_api_key + Bearer → Principal</text>
-
-  <!-- ============ TOP-RIGHT: signup/login + /me (s09 主路径) ============ -->
+  <!-- s05 chat 路径 参考框 (双轨其一) -->
+  <rect class="reference" x="20" y="50" width="200" height="60"/>
+  <text x="120" y="78" text-anchor="middle" class="small" fill="#555">s05 chat 路径</text>
+  <text x="120" y="98" text-anchor="middle" class="refsmall">Bearer sk-… 闸门</text>
 
   <!-- Client -->
-  <rect class="client" x="250" y="56" width="130" height="80"/>
-  <text x="315" y="86" text-anchor="middle" class="label">Client</text>
-  <text x="315" y="111" text-anchor="middle" class="small">浏览器 / curl · email + pwd → JWT</text>
+  <rect class="client" x="250" y="50" width="130" height="60"/>
+  <text x="315" y="78" text-anchor="middle" class="label">Client</text>
+  <text x="315" y="98" text-anchor="middle" class="small">邮箱+密码 表单</text>
 
   <!-- /auth/signup · /auth/login -->
-  <rect class="gateway" x="410" y="52" width="160" height="96"/>
-  <text x="490" y="77" text-anchor="middle" class="label">/auth/signup · /login</text>
-  <text x="490" y="97" text-anchor="middle" class="small">本章要写 · bcrypt 哈希 + HS256 签 JWT</text>
+  <rect class="gateway" x="410" y="50" width="160" height="60"/>
+  <text x="490" y="78" text-anchor="middle" class="label">signup · login</text>
+  <text x="490" y="98" text-anchor="middle" class="small">bcrypt + 签 JWT</text>
 
   <!-- /me 路由 + _current_user 依赖 -->
-  <rect class="middleware" x="600" y="52" width="110" height="96"/>
-  <text x="655" y="77" text-anchor="middle" class="label">GET /me</text>
-  <text x="655" y="97" text-anchor="middle" class="small">_current_user 依赖</text>
-  <text x="655" y="117" text-anchor="middle" class="small">SHA-256 黑名单 + 验签</text>
+  <rect class="middleware" x="600" y="50" width="110" height="60"/>
+  <text x="655" y="78" text-anchor="middle" class="label">GET /me</text>
+  <text x="655" y="98" text-anchor="middle" class="small">验签+查黑名单</text>
 
-  <!-- Client -> /auth (email + pwd) -->
-  <line class="arrow" x1="380" y1="80" x2="408" y2="80"/>
-  <text x="394" y="75" text-anchor="middle" class="small">email+pwd</text>
+  <!-- Client -> /auth -->
+  <line class="arrow" x1="380" y1="75" x2="408" y2="75"/>
+  <text x="394" y="70" text-anchor="middle" class="small">凭据</text>
 
-  <!-- /auth -> client (JWT) dashed -->
-  <line class="arrowR" x1="408" y1="110" x2="382" y2="110"/>
-  <text x="395" y="105" text-anchor="middle" class="small">JWT</text>
+  <!-- /auth -> client (JWT) -->
+  <line class="arrowR" x1="408" y1="95" x2="382" y2="95"/>
+  <text x="395" y="90" text-anchor="middle" class="small">JWT</text>
 
-  <!-- Client -> /me (Bearer <jwt>) — drawn below the boxes to avoid overlap -->
-  <line class="arrow" x1="315" y1="140" x2="315" y2="180"/>
-  <line class="arrow" x1="315" y1="180" x2="655" y2="180"/>
-  <text x="485" y="175" text-anchor="middle" class="small">Bearer JWT</text>
+  <!-- Client -> /me -->
+  <line class="arrow" x1="315" y1="110" x2="315" y2="150"/>
+  <line class="arrow" x1="315" y1="150" x2="655" y2="150"/>
+  <text x="485" y="145" text-anchor="middle" class="small">Bearer</text>
 
-  <!-- /me -> client (claims) -->
-  <line class="arrowR" x1="655" y1="190" x2="315" y2="190"/>
-  <text x="485" y="185" text-anchor="middle" class="small">{id, email, is_admin}</text>
-
-  <!-- ============ BOTTOM ROW: logout flow + 双存储 ============ -->
+  <!-- /me -> client -->
+  <line class="arrowR" x1="655" y1="160" x2="315" y2="160"/>
+  <text x="485" y="155" text-anchor="middle" class="small">claims</text>
 
   <!-- /auth/logout -->
-  <rect class="middleware" x="250" y="220" width="170" height="80"/>
-  <text x="335" y="245" text-anchor="middle" class="label">/auth/logout</text>
-  <text x="335" y="265" text-anchor="middle" class="small">sha256(token) 进黑名单</text>
-  <text x="335" y="285" text-anchor="middle" class="small">204 No Content</text>
+  <rect class="middleware" x="250" y="190" width="170" height="60"/>
+  <text x="335" y="218" text-anchor="middle" class="label">/auth/logout</text>
+  <text x="335" y="238" text-anchor="middle" class="small">撤销 JWT</text>
 
   <!-- users.db (SQLite) -->
-  <rect class="storage" x="450" y="220" width="150" height="80"/>
-  <text x="525" y="245" text-anchor="middle" class="label">users.db (SQLite)</text>
-  <text x="525" y="265" text-anchor="middle" class="small">id / email / password_hash</text>
-  <text x="525" y="285" text-anchor="middle" class="small">is_admin / created_at</text>
+  <rect class="storage" x="450" y="190" width="150" height="60"/>
+  <text x="525" y="218" text-anchor="middle" class="label">users.db</text>
+  <text x="525" y="238" text-anchor="middle" class="small">SQLite 表</text>
 
-  <!-- token_blacklist (内存) — separate box -->
-  <rect class="middleware" x="630" y="220" width="80" height="80"/>
-  <text x="670" y="245" text-anchor="middle" class="label">blacklist</text>
-  <text x="670" y="265" text-anchor="middle" class="small">set[str]</text>
-  <text x="670" y="285" text-anchor="middle" class="small">SHA-256</text>
+  <!-- token_blacklist (内存 box — Round-9 fix 保留) -->
+  <rect class="middleware" x="630" y="190" width="80" height="60"/>
+  <text x="670" y="218" text-anchor="middle" class="label">blacklist</text>
+  <text x="670" y="238" text-anchor="middle" class="small">内存 set</text>
 
-  <!-- Client -> /auth/logout (Bearer <jwt>) — vertical from above -->
-  <line class="arrow" x1="335" y1="140" x2="335" y2="218"/>
-  <text x="345" y="200" text-anchor="start" class="small">Bearer JWT</text>
+  <!-- Client -> /auth/logout -->
+  <line class="arrow" x1="335" y1="110" x2="335" y2="188"/>
+  <text x="345" y="160" text-anchor="start" class="small">Bearer</text>
 
-  <!-- /auth/logout -> users.db (查表确认 user 存在) -->
-  <line class="arrow" x1="420" y1="244" x2="448" y2="244"/>
-  <text x="434" y="239" text-anchor="middle" class="small">查表</text>
+  <!-- /auth/logout -> users.db -->
+  <line class="arrow" x1="420" y1="210" x2="448" y2="210"/>
+  <text x="434" y="205" text-anchor="middle" class="small">查</text>
 
-  <!-- /auth/logout -> token_blacklist (内存, SHA-256) -->
-  <line class="arrow" x1="420" y1="278" x2="628" y2="278"/>
-  <text x="524" y="273" text-anchor="middle" class="small">deny-list</text>
+  <!-- /auth/logout -> token_blacklist -->
+  <line class="arrow" x1="420" y1="240" x2="628" y2="240"/>
+  <text x="524" y="235" text-anchor="middle" class="small">撤</text>
 
-  <!-- /auth/logout -> client (204) — arrow goes left from logout to client edge, then up -->
-  <line class="arrowR" x1="250" y1="244" x2="200" y2="244"/>
-  <text x="225" y="239" text-anchor="middle" class="small">204</text>
+  <!-- /auth/logout -> client -->
+  <line class="arrowR" x1="250" y1="210" x2="200" y2="210"/>
+  <text x="225" y="205" text-anchor="middle" class="small">204</text>
 
-  <!-- s05 参考框 → s09 主路径 的"对照"虚线 (说明双轨并存, 虚线灰) -->
-  <line class="arrowRef" x1="230" y1="92" x2="248" y2="80"/>
-  <text x="244" y="88" text-anchor="middle" class="refsmall">并存</text>
+  <!-- s05 参考 → s09 主路径 的"对照"虚线 (双轨并存) -->
+  <line class="arrowRef" x1="220" y1="80" x2="248" y2="68"/>
+  <text x="240" y="68" text-anchor="middle" class="refsmall">并存</text>
 </svg>
