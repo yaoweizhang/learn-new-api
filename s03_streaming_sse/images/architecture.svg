@@ -16,26 +16,26 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s03: stream=true 时,转发第一个字节就开始推</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s03: 流式逐字节推</text>
 
   <rect class="client" x="40" y="80" width="160" height="80"/>
   <text x="120" y="105" text-anchor="middle" class="label">Client</text>
-  <text x="120" y="125" text-anchor="middle" class="small">流式调用方 · 读一个 chunk 渲一个</text>
+  <text x="120" y="125" text-anchor="middle" class="small">逐 chunk 渲染</text>
 
   <rect class="gateway" x="260" y="72" width="200" height="96"/>
   <text x="360" y="97" text-anchor="middle" class="label">Relay</text>
-  <text x="360" y="117" text-anchor="middle" class="small">本章要写 · 拿到字节就 yield</text>
+  <text x="360" y="117" text-anchor="middle" class="small">拿字节即 yield</text>
 
   <rect class="upstream" x="520" y="80" width="160" height="80"/>
   <text x="600" y="105" text-anchor="middle" class="label">Upstream</text>
-  <text x="600" y="125" text-anchor="middle" class="small">SSE · data:... 一帧接一帧</text>
+  <text x="600" y="125" text-anchor="middle" class="small">SSE 帧接帧</text>
 
   <line class="arrow" x1="200" y1="116" x2="258" y2="116"/>
-  <text x="229" y="111" text-anchor="middle" class="small">stream:true</text>
+  <text x="229" y="111" text-anchor="middle" class="small">流</text>
   <line class="arrow" x1="460" y1="116" x2="518" y2="116"/>
-  <text x="489" y="111" text-anchor="middle" class="small">开长连接</text>
+  <text x="489" y="111" text-anchor="middle" class="small">长连</text>
 
   <line class="arrowR" x1="518" y1="146" x2="462" y2="146"/>
   <line class="arrowR" x1="258" y1="146" x2="202" y2="146"/>
-  <text x="360" y="141" text-anchor="middle" class="small">首个 chunk 立刻吐</text>
+  <text x="360" y="141" text-anchor="middle" class="small">逐字吐</text>
 </svg>

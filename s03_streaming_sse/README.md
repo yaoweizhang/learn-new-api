@@ -6,24 +6,6 @@
 
 > **Layer**：L1 协议与转发
 
-## 本章要做什么
-
-s02 把整个 JSON body 攒齐再回吐——200 个 token、按 30 tok/s 的回复,客户端将近 7 秒只能盯空白屏。生产聊天的 UX 不能接受这个延迟,逐 token 推送是让聊天"看起来活"的唯一办法。本章就在 s02 那条路径上把流式打开:
-
-1. **按 `req.stream` 分两条路 —— 为什么必须分支**:非流式请求(s02 已实现)是"攒齐再回 JSON",流式请求是"转发第一个字节就开始推"。**为什么不能两路合并**:流式路径用的是 `httpx.AsyncClient.stream(...)` + `StreamingResponse` 的异步生成器,非流式用的是 `await client.post(...)` + `r.json()`,前者不缓存上游 body、后者必须等到上游关闭连接,合并就是同时要两条矛盾策略。
-2. **流式走 `httpx.AsyncClient.stream(...)` + `aiter_bytes()` —— 为什么是这套 API**:SSE 是 HTTP 长连接 + 文本帧,**为什么必须用 httpx.stream 的 context manager**:`aiter_bytes()` 只能在 `stream(...)` 返回的响应对象上调,普通 `client.post()` 等到 body 完整才返回对象、等于把流式退化成 s02;**为什么是 `aiter_bytes()` 而不是 `aiter_text()`**:我们不解析、不重塑帧,逐字节原样转出,字节边界错了才会把 `data: {...}\n\n` 撕成两半。
-3. **响应头加 `cache-control: no-cache` 和 `x-accel-buffering: no` —— 为什么两都要写**:前者禁止中间节点缓存一份开放式流,**为什么这个头不能省**:中间代理看到长连接默认按"可缓存资源"处理,会一口气攒到阈值再放行;**为什么还要 `x-accel-buffering: no`**:这是 nginx 的专属指令(`x-accel-buffering` 是 nginx 的反向代理缓冲开关),关掉 `proxy_buffering`,nginx 就不会卡住 SSE body,客户端才看得到逐字。
-
-成品:`curl -N -X POST .../v1/chat/completions -d '...,"stream":true}'` 看到一字一字往出冒,首字延迟几百毫秒;不带 `stream` 时仍走 s02 的 JSON 路径。后续 s04 在这条流式通道下挂 Claude/Gemini 适配器,逐厂商的 SSE 帧形态差异由那一章解决。
-
-## 上一章复盘
-
-s02 客户端拿到完整 JSON 才开始渲染,7 秒延迟。生产聊天 UX 接受不了。
-
-## 在整体中的位置
-
-客户端 → 网关 → 上游这条链上的"实时带"——同一进程里其他代码路径都假设请求可一次性返回。s03 是这条路径上的唯一非阻塞出口。
-
 ## 问题
 
 `s02` 用 `r = await client.post(...)` 等整个响应,然后 `r.json()`。对
@@ -34,6 +16,16 @@ s02 客户端拿到完整 JSON 才开始渲染,7 秒延迟。生产聊天 UX 接
 上游本身说的就是 Server-Sent Events(SSE)——`Content-Type: text/
 event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n`。
 中继不能缓存、解析、重塑这些字节;必须把它们一路端出去。
+
+## 本章要做什么
+
+s02 把整个 JSON body 攒齐再回吐——200 个 token、按 30 tok/s 的回复,客户端将近 7 秒只能盯空白屏。生产聊天的 UX 不能接受这个延迟,逐 token 推送是让聊天"看起来活"的唯一办法。本章就在 s02 那条路径上把流式打开:
+
+1. **按 `req.stream` 分两条路 —— 为什么必须分支**:非流式请求(s02 已实现)是"攒齐再回 JSON",流式请求是"转发第一个字节就开始推"。**为什么不能两路合并**:流式路径用的是 `httpx.AsyncClient.stream(...)` + `StreamingResponse` 的异步生成器,非流式用的是 `await client.post(...)` + `r.json()`,前者不缓存上游 body、后者必须等到上游关闭连接,合并就是同时要两条矛盾策略。
+2. **流式走 `httpx.AsyncClient.stream(...)` + `aiter_bytes()` —— 为什么是这套 API**:SSE 是 HTTP 长连接 + 文本帧,**为什么必须用 httpx.stream 的 context manager**:`aiter_bytes()` 只能在 `stream(...)` 返回的响应对象上调,普通 `client.post()` 等到 body 完整才返回对象、等于把流式退化成 s02;**为什么是 `aiter_bytes()` 而不是 `aiter_text()`**:我们不解析、不重塑帧,逐字节原样转出,字节边界错了才会把 `data: {...}\n\n` 撕成两半。
+3. **响应头加 `cache-control: no-cache` 和 `x-accel-buffering: no` —— 为什么两都要写**:前者禁止中间节点缓存一份开放式流,**为什么这个头不能省**:中间代理看到长连接默认按"可缓存资源"处理,会一口气攒到阈值再放行;**为什么还要 `x-accel-buffering: no`**:这是 nginx 的专属指令(`x-accel-buffering` 是 nginx 的反向代理缓冲开关),关掉 `proxy_buffering`,nginx 就不会卡住 SSE body,客户端才看得到逐字。
+
+成品:`curl -N -X POST .../v1/chat/completions -d '...,"stream":true}'` 看到一字一字往出冒,首字延迟几百毫秒;不带 `stream` 时仍走 s02 的 JSON 路径。后续 s04 在这条流式通道下挂 Claude/Gemini 适配器,逐厂商的 SSE 帧形态差异由那一章解决。
 
 ## 方案
 
