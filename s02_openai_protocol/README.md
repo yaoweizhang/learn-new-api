@@ -8,9 +8,16 @@
 
 ## 本章要做什么
 
-入站面采用 OpenAI 的 `/v1/chat/completions` 路径和 JSON schema（schema：请求/响应的字段定义）。任何 OpenAI 客户端(官方 SDK、LangChain、LlamaIndex、终端里的 `curl`)都能原样对我们发起调用。学完你会拿到一个"客户端零修改"的网关。
+s01 留了条自创的 `/relay` 路径给自创的 JSON 形态。问题是 LLM 生态没人讲这套方言——每个客户端(官方 SDK、LangChain、LlamaIndex)都得学一遍我们,起不来。
 
-> **wire format**（线协议：网关与客户端约定的 JSON / HTTP 形态）—— 后续章节直接复用，不再重复解释。
+要解决这个,把入站面改成 OpenAI 已经统一的 `/v1/chat/completions` 路径和 JSON schema(线协议:网关与客户端约定的 JSON / HTTP 形态,**为什么改的是"外头叫什么"而不是"里头怎么转"**:网关的转发逻辑没动,动的是对外暴露的契约,生态早已统一)。本章就做这一件事:
+
+1. **路由改名 `/relay` → `/v1/chat/completions` —— 为什么换路径**:OpenAI 生态统一讲这条路径,所有 SDK 默认就朝这里发。**为什么不留个 `/relay` 兼容旧调用方**:留两条路径等于让中继长期维护两套契约,SDK 默认配置过来还是撞到 OpenAI 形态;统一走一条,所有客户端零修改。
+2. **请求 JSON 收窄到 OpenAI 的 schema —— 为什么收窄**:只强制 `model` 和 `messages` 必填,可选的 `temperature` / `max_tokens` / `stream` 接受但不主动发明;`model_dump(exclude_none=True)`(序列化时剥掉 None 字段,避免空字段落到线上)剥掉 None,**为什么不直接 `temperature: null` 转发**:OpenAI 把"省略"理解为"用服务端默认",把 `null` 理解为"强制传 null 覆盖默认";剥掉才能保住调用方本意。
+3. **响应走 `response_model=ChatCompletionResponse` —— 为什么响应也要校验**:FastAPI 用 `response_model`(声明响应类型做自动校验)把上行回包按 OpenAI schema 再过一遍,任何字段缺失/形态错都会在网关边界就拦住,而不是被原样吐回、进了客户端才报错。
+4. **转发循环本身逐字节不变 —— 为什么这点要明说**:Bearer 头、HTTPError→502、状态码透传这些 s01 已经验证过的内核,这一章完全复用。**只换外面、不动里面**就是本章的全部技术动作。
+
+成品:任何 OpenAI 客户端(官方 SDK、LangChain、`curl`)能直连 `http://localhost:8002/v1/chat/completions`,客户端零修改。后续 s03 在这条路径上加 `stream=true`、s04 在这条路径下挂多厂商适配器,都基于这一章打下的形态。
 
 ## 上一章复盘
 
@@ -108,17 +115,6 @@ curl -X POST http://localhost:8002/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
-
-## 测试
-
-```sh
-pytest tests/test_s02_openai_protocol.py -v
-```
-
-上游用 `respx` mock(`tests/conftest.py` 的 `upstream_openai` 固定器),所以套件能离线跑,同时仍断言真实的线协议形态。两个测试覆盖如下:
-
-- `test_openai_route_exists` —— 合法负载被转发,返回带 `choices` 键的 body。
-- `test_request_validation_rejects_missing_messages` —— 缺 `messages` 时,Pydantic 边界返回 `422`,根本不会发出任何网络请求。
 
 ## → new-api 源码
 
