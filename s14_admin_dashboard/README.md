@@ -51,7 +51,14 @@ new-api 自己有 React 写的完整 Web 后台(`web/` 目录),那是个正经
 
 ## 方案
 
-网关内挂一个**最薄的服务端渲染**后台:
+`## 问题` 提了一件事:想看系统状态只能拼 `curl + jq`(痛点 #1 现状)。这件事**没法靠"s10 给 channels 加个 REST"或"s11 给 logs 加个 REST"能解决**——REST 端点还得用脚本去拼,只是把"运营不想学 curl"翻译成了"运营学 jq"——必须有一个浏览器开就能看到数字的页面,加上一个"我是管理员"的会话,只读露三条数据。下面这幅图把这件痛各放到四个角色里:
+
+- **`Browser` (运营用的浏览器)** —— 在装上 dashboard 之前,这是被迫拼 `curl + jq` 的角色;装上之后,这事被 dashboard 隔走——浏览器只管 GET `/dashboard/`,`admin` Cookie 跟着走,看到三个数字就完事。
+- **`Relay` (本章要写的 FastAPI + Jinja2)** —— 把痛点 #1 的解决动作集中放在这里:`@app.get("/dashboard/login")` 渲染 form、`@app.post("/dashboard/login")` 校验凭证 + 下发 `admin` Cookie、`@app.get("/dashboard/")` 验 Cookie + 渲染 `dashboard.html`。所有 dashboard 路由注册在 `app.mount("/", s13_app)` **之前**——Starlette 按注册顺序匹配,本地路由挡 mount,`/v1/chat/completions` 仍可达。
+- **`Cookies` (浏览器会话侧, `admin=1` httponly 明文)** —— 鉴权载体。HTTPOnly 防止 JS 读(缓解 XSS),但**没有签名**(没有用 `itsdangerous` 之类签名 Cookie 的密钥验证机制),浏览器 DevTools 改值就能伪造管理员。YAGNI:教学范围内只要能区分"已登录 / 未登录"两种状态就够;生产里必须上签名或者直接复用 s09 的 JWT。
+- **`Storage` (从 s10/s11 import 来的内存单例)** —— 数据来源。渠道数 `len(ch_mod.list_channels())`(s10 的 `_channels: dict`)、日志数 `len(log_store.list_logs())`(s11 的 `_flushed: list`)。**用户数硬编码 0**——s09 没 `list_all()` 接口,本章不为这一个数字去给 s09 加 SQL count;Browser 不直接读存储,Read 路径必须经 Relay 的 handler。
+
+引入四个最小部件:
 
 - **`s14_admin_dashboard/code.py`** —— 一个新的 FastAPI 实例,挂
   上 `/dashboard/login`(GET 渲染表单、POST 校验凭证并下发 Cookie)
@@ -79,6 +86,16 @@ GET  /v1/chat/completions          -> 仍可达(来自挂载的 s13)
 ```
 
 ## 工作原理
+
+**原理**: 浏览器打开 dashboard 时,整个流程是: GET `/dashboard/login` → Relay 渲染登录表单 (服务端用 Jinja2Templates 把 `login.html` 拼成 HTML 字符串返回) → 浏览器填表 POST `/dashboard/login` → Relay 校验 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 环境变量 → 通过则 `RedirectResponse("/dashboard/", status_code=302)` + `set_cookie("admin", "1", httponly=True)` → 浏览器带 Cookie GET `/dashboard/` → Relay 调 `_require_admin` 查 Cookie → 通过则 `TemplateResponse(request, "dashboard.html", {"stats": ...})` 渲染数字,失败则直接 `HTMLResponse("unauthorized", status_code=401)`。整章所有部件都为"服务端渲染 + 最小 cookie session"这条主线服务。
+
+**1. 一个 Jinja2 templates 服务端渲染器 (`templates/base.html` + `templates/dashboard.html` + `Jinja2Templates(directory=...)`)** —— `dashboard.html` 继承 `base.html`(页面骨架),渲染三个数字(users / channels / logs)。**为什么用 Jinja2 不用 React SPA**: FastAPI 官方内置 `Jinja2Templates`,服务端渲染对运维读看板这种只读场景最自然;new-api 的 `web/` React SPA (new-api 自带的前端,Vite + TypeScript + Zustand + Tailwind) 体积比后端还大,本教程不抄。
+
+**2. 一个明文 cookie session (`admin=1` httponly)** —— 表单 POST `/dashboard/login` 时由 `set_cookie("admin", "1", httponly=True)` 下发;dashboard handler 第一行调 `_require_admin(request)` 校验 `cookies.get("admin") == "1"`。**为什么明文**: 教学范围内"区分登录 / 未登录两种状态"够用;签名 / 加密是它的反向——浏览器不可伪造,代价是 5-10 行额外书架代码 (用 `itsdangerous` 之类签名 Cookie 的库),超出"最小可运行"。
+
+**3. 一个 admin CRUD handlers (`@app.get("/dashboard/")` + `_require_admin` 守卫 + 401)** —— 守卫没 Cookie 时直接 `HTMLResponse("unauthorized", status_code=401)`,**返 401 而非 302**: Starlette `TestClient` 默认跟随重定向,302 + 跟随 → 200 让断言失败;直接返 401 让 TestClient 停在原响应上,生产里应该 302(浏览器自动跳登录页)。**为什么不走 `Depends(_require_admin)`**: 401 响应不是 HTTPException、是手写的 HTMLResponse,`Depends` 配合自定义 Response 容易写绕。
+
+**4. 一个数据复用 import (`from s10_channel_management import channels as ch_mod` + `from s11_call_logs import log_store`)** —— dashboard handler 直接调 `len(ch_mod.list_channels())` 和 `len(log_store.list_logs())` 读内存单例;**没有数据库查询**——重启进程回到初始状态,这是一个"看得到数字"的最小后台,不是"可编辑的 CRUD 后台"。用户数硬编码 0——s09 没 `list_all()`,不为一个数字加 SQL count。
 
 ### 登录：POST + Cookie
 
@@ -190,6 +207,8 @@ handler 直接调函数读当前状态。**没有数据库查询**——重启�
 # 起服务（端口 8014）
 ADMIN_PASSWORD=foo python s14_admin_dashboard/code.py
 
+# 验证 dashboard 链路通了:登录拿 302 + Set-Cookie、带 Cookie GET /dashboard/ 拿 200 (渲染的 HTML 含 "Channels: 0" / "Logs: 0")——这能验证 cookie 下发 + 服务端渲染 + 数据 import 三段都到位:
+
 # 浏览器打开
 open http://127.0.0.1:8014/dashboard/login
 
@@ -231,9 +250,9 @@ curl -X POST http://127.0.0.1:8014/v1/chat/completions \
 > Windows 文件系统不分大小写，本地 IDE 里看着像 `Web/` 不少见；
 > 部署到 Linux/macOS 时按实际的小写路径 `web/` 访问。
 
-## 取舍
+## 本章不做什么
 
-- **没有用户管理 UI** —— 不展示用户列表、不支持改密码、不支持
+- **没有用户管理 UI (增删改查的浏览器 form 页面)** —— 不展示用户列表、不支持改密码、不支持
   封号。s09 已经实现了 `create_user` / `find_by_email`，但要
   展示成界面还有列表分页、搜索、批量操作、暗色模式……YAGNI。
   本章的 dashboard 只显示"用户数"（且硬编码 0，因为 s09 没
@@ -246,18 +265,21 @@ curl -X POST http://127.0.0.1:8014/v1/chat/completions \
 - **没有日志筛选 UI** —— 日志列表不分页、不按用户过滤、不按
   状态码过滤。s11 `log_store.list_logs()` 直接返回所有已 flush
   的日志，超长 JSON 在浏览器里渲染很慢。生产里要加分页 + 过滤
-  条件；本章 YAGNI。
-- **Cookie session 是明文、未签名** —— 浏览器改 `admin=1`
+  条件；本章 YAGNI。→ s_full 接 DB 后一并加。
+
+## 已知限制
+
+- **Cookie session 是明文、未签名** (没有密钥验证机制) —— 浏览器改 `admin=1`
   就能进。**不能上生产**。生产里要么用 `itsdangerous
   .URLSafeTimedSerializer` 签名 Cookie，要么直接复用 s09 的
   JWT（admin 是 is_admin=1 的特殊用户）。本章用明文 Cookie 是
   为了让两段测试足够短；加密 / 签名会引入 5-10 行额外的图书
-  架代码，超出"最小可运行"的范畴。
-- **没有 CSRF 保护** —— POST `/dashboard/login` 不带 CSRF token。
+  架代码，超出"最小可运行"的范畴。→ s_full 接真鉴权时一并修。
+- **没有 CSRF 保护** (跨站请求伪造 token——防止已登录用户被诱导提交表单) —— POST `/dashboard/login` 不带 CSRF token。
   攻击者构造一个表单让已登录 admin 浏览器自动提交，配合社工
   能改 admin 密码——但本章还没"改密码"功能，CSRF 没东西可
   偷。生产里加 `csrf_protect` 中间件（fastapi-csrf-protect 等
-  库）。
+  库），这是 s_full 加 CRUD form 后必须做的。
 - **没用 FastAPI 的 `Depends` 注入守卫** —— `_require_admin` 是
   手动调一次再 `if gate: return gate`，5 行。换成 `Depends
   (_require_admin)` + `response.status_code` 之类的写法更
@@ -281,6 +303,11 @@ curl -X POST http://127.0.0.1:8014/v1/chat/completions \
   前面，Starlette 会把 `/dashboard/*` 全部转给 s13 处理——s13
   没这些路由，会 404。代码里用注释 + 章节末尾的"挂载必须最后"
   强调，下一章起新挂载时务必检查。
+
+## 设计选择
+
+- **`os.path.dirname(__file__)` 取 templates 路径而非 `pathlib`** —— `os.path.join` 正反斜杠都兼容;`pathlib.PurePath.as_posix()` 在 Windows 拿到 `D:/...` 传进 `Jinja2Templates` 在某些版本下会触发 `FileNotFound` 错误。Windows 上正反斜杠兼容性这一条是 s14 在 Windows 上自测发现的小坑,笔记留下来。
+- **`TemplateResponse(request, name, context)` 是 Starlette ≥ 0.30 新签名** —— request 作为第一个位置参数,name 和 context 跟上。旧签名 `TemplateResponse(name, {"request": request, ...})` 在新 Starlette 下会把字符串当 request、把 dict 当 name,导致 Jinja2 缓存键是 `dict`(不可哈希)而报错 `TypeError: unhashable type: 'dict'`。s14 直接用新签名,不踩这个坑。
 
 ## 下章预告
 

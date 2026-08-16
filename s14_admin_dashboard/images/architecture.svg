@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 620" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 340" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
@@ -7,7 +7,7 @@
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
     .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
-    .title      { font-size: 15px; font-weight: bold; fill: #222; }
+    .title      { font-size: 14px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
     .refsmall   { font-size: 11px; fill: #777; }
@@ -24,123 +24,50 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s14: 管理员后台, 渠道表 / 用户表 CRUD, 不再只在内存</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s14: Cookie + Jinja2, 浏览器看三个数字</text>
 
-  <!-- ============ TOP-LEFT: s10 + s11 + s09 参考框 (前置章节, 本章接力) ============ -->
+  <rect class="reference" x="20" y="50" width="260" height="64"/>
+  <text x="150" y="76" text-anchor="middle" class="small" fill="#555">s10 + s11 + s09 (前置)</text>
+  <text x="150" y="100" text-anchor="middle" class="refsmall">channels · logs · users</text>
 
-  <rect class="reference" x="20" y="52" width="320" height="100"/>
-  <text x="180" y="74" text-anchor="middle" class="small" fill="#555">s10 channels + s11 logs + s09 users (前置)</text>
-  <text x="180" y="92" text-anchor="middle" class="refsmall">ch_mod.list_channels() · log_store.list_logs()</text>
-  <text x="180" y="108" text-anchor="middle" class="refsmall">users 没 list_all() → 硬编码 0</text>
-  <text x="180" y="124" text-anchor="middle" class="refsmall">本章直接 import 内存单例读</text>
-  <text x="180" y="140" text-anchor="middle" class="refsmall">对比: new-api 是 React SPA (web/), 这里是 Jinja2 最小替身</text>
+  <rect class="client" x="20" y="150" width="120" height="60"/>
+  <text x="80" y="178" text-anchor="middle" class="label">Browser</text>
+  <text x="80" y="196" text-anchor="middle" class="small">运营用的界面</text>
 
-  <!-- ============ MAIN FLOW ROW (本章主路径) ============ -->
+  <rect class="gateway" x="160" y="150" width="160" height="60"/>
+  <text x="240" y="178" text-anchor="middle" class="label">/login GET</text>
+  <text x="240" y="196" text-anchor="middle" class="small">Jinja2 form</text>
 
-  <!-- Browser -->
-  <rect class="client" x="20" y="200" width="120" height="80"/>
-  <text x="80" y="226" text-anchor="middle" class="label">Browser</text>
-  <text x="80" y="244" text-anchor="middle" class="small">人用的界面</text>
-  <text x="80" y="262" text-anchor="middle" class="small">不是 curl</text>
+  <rect class="gateway" x="160" y="230" width="160" height="60"/>
+  <text x="240" y="258" text-anchor="middle" class="label">/login POST</text>
+  <text x="240" y="276" text-anchor="middle" class="small">校验 + 302</text>
 
-  <!-- /dashboard/login GET (form) -->
-  <rect class="gateway" x="160" y="200" width="160" height="80"/>
-  <text x="240" y="226" text-anchor="middle" class="label">GET /dashboard/login</text>
-  <text x="240" y="244" text-anchor="middle" class="small">Jinja2 HTML form</text>
-  <text x="240" y="262" text-anchor="middle" class="small">email + password 字段</text>
+  <rect class="middleware" x="340" y="230" width="160" height="60"/>
+  <text x="420" y="258" text-anchor="middle" class="label">admin Cookie</text>
+  <text x="420" y="276" text-anchor="middle" class="small">httponly 明文</text>
 
-  <!-- /dashboard/login POST -->
-  <rect class="gateway" x="160" y="300" width="160" height="80"/>
-  <text x="240" y="326" text-anchor="middle" class="label">POST /dashboard/login</text>
-  <text x="240" y="344" text-anchor="middle" class="small">校验 ADMIN_EMAIL/PASSWORD</text>
-  <text x="240" y="362" text-anchor="middle" class="small">form POST → 302 + Set-Cookie</text>
+  <rect class="gateway" x="340" y="150" width="160" height="60"/>
+  <text x="420" y="178" text-anchor="middle" class="label">/dashboard/ GET</text>
+  <text x="420" y="196" text-anchor="middle" class="small">验 Cookie + render</text>
 
-  <!-- Cookie session -->
-  <rect class="middleware" x="340" y="300" width="160" height="80"/>
-  <text x="420" y="326" text-anchor="middle" class="label">Cookie session</text>
-  <text x="420" y="344" text-anchor="middle" class="small">admin=1 (httponly)</text>
-  <text x="420" y="362" text-anchor="middle" class="small">明文 · 教学版 YAGNI</text>
+  <rect class="middleware" x="520" y="150" width="180" height="60"/>
+  <text x="610" y="178" text-anchor="middle" class="label">dashboard.html</text>
+  <text x="610" y="196" text-anchor="middle" class="small">3 个数字直出</text>
 
-  <!-- /dashboard/ (GET) -->
-  <rect class="gateway" x="160" y="400" width="160" height="80"/>
-  <text x="240" y="426" text-anchor="middle" class="label">GET /dashboard/</text>
-  <text x="240" y="444" text-anchor="middle" class="small">_require_admin 验 Cookie</text>
-  <text x="240" y="462" text-anchor="middle" class="small">TemplateResponse(render)</text>
+  <line class="arrow" x1="140" y1="180" x2="158" y2="180"/>
+  <text x="149" y="175" text-anchor="middle" class="small">GET</text>
 
-  <!-- Rendered dashboard HTML -->
-  <rect class="middleware" x="340" y="400" width="200" height="80"/>
-  <text x="440" y="426" text-anchor="middle" class="label">dashboard.html (Jinja2)</text>
-  <text x="440" y="444" text-anchor="middle" class="small">Users: 0 · Channels: N · Logs: M</text>
-  <text x="440" y="462" text-anchor="middle" class="small">服务端渲染 HTML · 直出</text>
+  <line class="arrow" x1="240" y1="210" x2="240" y2="228"/>
 
-  <!-- 401 reject path (no cookie) -->
-  <line class="arrowR" x1="158" y1="420" x2="142" y2="420" stroke="#c5221f"/>
-  <text x="60" y="416" text-anchor="start" class="small" fill="#c5221f">无 Cookie → 401</text>
+  <line class="arrow" x1="320" y1="260" x2="338" y2="260"/>
+  <text x="329" y="255" text-anchor="middle" class="small">Set</text>
 
-  <!-- arrows: browser -> login form -->
-  <line class="arrow" x1="140" y1="240" x2="158" y2="240"/>
-  <text x="149" y="235" text-anchor="middle" class="small">GET</text>
+  <line class="arrow" x1="500" y1="180" x2="518" y2="180"/>
+  <text x="509" y="175" text-anchor="middle" class="small">render</text>
 
-  <!-- login form -> login submit (browser submits form) -->
-  <line class="arrow" x1="240" y1="280" x2="240" y2="298"/>
-  <text x="248" y="292" text-anchor="start" class="small">form POST</text>
+  <polyline class="arrowR" points="500,200 510,200 510,290 420,290" stroke="#228b22"/>
+  <text x="455" y="285" text-anchor="middle" class="small" fill="#228b22">登录回到</text>
 
-  <!-- login submit -> Cookie -->
-  <line class="arrow" x1="320" y1="340" x2="338" y2="340"/>
-  <text x="329" y="335" text-anchor="middle" class="small">Set-Cookie</text>
-
-  <!-- Cookie -> browser (302 + cookie set) -->
-  <line class="arrowR" x1="340" y1="320" x2="142" y2="280" stroke="#228b22"/>
-  <polyline class="arrowR" points="142,280 142,260" stroke="#228b22"/>
-  <text x="240" y="320" text-anchor="middle" class="small" fill="#228b22">302 → /dashboard/</text>
-
-  <!-- browser -> /dashboard/ with cookie -->
-  <polyline class="arrow" points="80,280 80,400 158,400" stroke="#228b22"/>
-  <text x="100" y="350" text-anchor="start" class="small" fill="#228b22">session cookie 鉴权</text>
-
-  <!-- /dashboard/ -> rendered dashboard -->
-  <line class="arrow" x1="320" y1="440" x2="338" y2="440"/>
-  <text x="329" y="435" text-anchor="middle" class="small">render</text>
-
-  <!-- rendered dashboard -> browser (200 HTML) -->
-  <line class="arrowR" x1="338" y1="460" x2="320" y2="460" stroke="#228b22"/>
-  <polyline class="arrowR" points="320,460 100,460 100,282" stroke="#228b22"/>
-  <text x="200" y="478" text-anchor="middle" class="small" fill="#228b22">200 + HTML</text>
-
-  <!-- ============ Data sources ============ -->
-
-  <rect class="storage" x="560" y="200" width="160" height="60"/>
-  <text x="640" y="222" text-anchor="middle" class="label">s10 channels</text>
-  <text x="640" y="240" text-anchor="middle" class="small">list_channels() · 内存 dict</text>
-
-  <rect class="storage" x="560" y="280" width="160" height="60"/>
-  <text x="640" y="302" text-anchor="middle" class="label">s11 log_store</text>
-  <text x="640" y="320" text-anchor="middle" class="small">list_logs() · flush 后列表</text>
-
-  <rect class="storage" x="560" y="360" width="160" height="60"/>
-  <text x="640" y="382" text-anchor="middle" class="label">s09 users</text>
-  <text x="640" y="400" text-anchor="middle" class="small">stub: 0 · 没 list_all()</text>
-
-  <!-- dashboard reads from data sources -->
-  <line class="arrow" x1="540" y1="420" x2="640" y2="226" stroke="#228b22"/>
-  <line class="arrow" x1="540" y1="430" x2="640" y2="306" stroke="#228b22"/>
-  <line class="arrow" x1="540" y1="440" x2="640" y2="386" stroke="#228b22"/>
-  <text x="580" y="350" text-anchor="start" class="small" fill="#228b22">直接 import 读内存单例</text>
-
-  <!-- ============ s10 + s11 + s09 参考框 → s14 主路径 的"接力"虚线 ============ -->
-
-  <line class="arrowRef" x1="240" y1="152" x2="240" y2="198"/>
-  <text x="246" y="178" text-anchor="start" class="refsmall">接力</text>
-
-  <!-- ============ s13 mount (老 chat 端点) ============ -->
-
-  <rect class="gateway" x="20" y="510" width="700" height="40"/>
-  <text x="370" y="528" text-anchor="middle" class="label">app.mount("/", s13_app) · /v1/chat/completions 仍可达 · /dashboard/* 本地路由挡挂载</text>
-  <text x="370" y="544" text-anchor="middle" class="small">本地 /dashboard/* 先注册 · s13 mount 最后</text>
-
-  <!-- ============ Caption: WHY → 本章做了啥 → 后续接力 ============ -->
-
-  <text x="360" y="572" text-anchor="middle" class="small">没有 s14: 运营查系统状态只能拼 curl + jq 看 JSON, 没有可视化入口, "渠道表不能只在内存" 这句话没在浏览器里露出来</text>
-  <text x="360" y="588" text-anchor="middle" class="small">本章做了啥: 浏览器 GET 拿 form → form POST 拿 admin cookie → GET /dashboard/ 验 Cookie → Jinja2 渲染 3 个数字 (s10 channels + s11 logs + s09 users stub)</text>
-  <text x="360" y="604" text-anchor="middle" class="small">后续接力: s15 把整套 Docker 化 (compose + healthcheck), s16 给后台加 Prometheus 指标卡, 生产再上 itsdangerous 签名 Cookie + 分页筛选 + 真 CRUD UI</text>
+  <line class="arrowRef" x1="280" y1="116" x2="280" y2="148"/>
+  <text x="286" y="138" text-anchor="start" class="refsmall">接力</text>
 </svg>
