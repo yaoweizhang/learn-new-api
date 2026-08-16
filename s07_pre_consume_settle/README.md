@@ -2,17 +2,26 @@
 
 > Previous: [s06](../s06_token_counting/) · Next: [s08](../s08_rate_limiting/)
 
-> *"多扣一点，结账退给你"* —— 预扣保守一点，结算双向找齐。
+> *"预扣保守一点,结算双向找齐"* —— 多扣一点不怕,真账目按上游报的来。
 
 > **Layer**：L3 计量与扣费
 
 ## 本章要做什么
 
-调上游之前先按 s06 估算值预扣,调后按上游报的真实 usage 双向结算,失败整笔退还。学完你拿到一个"用户不为失败调用付钱"的余额系统。
+s06 能算账,但没人记账——spend-after(调完再扣)的天然漏洞:一个 100 token 配额的余额充足用户,同时提交 100 条 100 token 的并行请求,闸门全过、等真正打完上游才知道真实花费,用户可能在这一刻**变负**——下一条本来余额充足的合法请求反而因为配额已经下溢而被拒。
+
+要解决这个,改用预扣+结算两阶段:调上游前按 s06 的估算值乘单价先预扣一个偏宽的额度(不够直接 `402 Payment Required` 不打上游),上游回包后用真实 `usage` 跟预扣值做差额结算——少用退、超用补、整笔失败原样退。本章就把这两刀写出来:
+
+1. **写一个 `quota` 模块 —— 为什么要有自己的模块而不是直接扣字典**:`reset()` / `set_balance(uid, n)` / `get_balance(uid)` / `deduct(uid, n) -> bool`(原子条件扣减,余额不足返 `False` 不部分扣)/ `refund(uid, n)` / `settle(uid, pre, actual)`(退还或补差额,原子返回实扣)。**为什么扣减必须在 `threading.Lock` 下原子**:同用户并发请求不能"双花",先读再写会被两个 in-flight 请求同时穿过;**为什么用 `threading.Lock` 而不是 `asyncio.Lock`**:配额算式是纳秒级,加锁开销可忽略,`asyncio.Lock` 在每个 `await` 点要让出,划不来。
+2. **handler 调前算 estimate + 预扣 —— 为什么用偏宽的估算**:`estimate = (prompt_tokens + expected_completion) * RATE_PER_TOKEN`,`expected_completion` 走 `req.max_tokens or 256`。**为什么没 `max_tokens` 时按 256**:大多数回复比 256 短,所以用户常常收到小笔退款——偏宽是为了闸门能在请求飞行前拦住明显不够余额的用户,宁多勿少;**为什么不调用上游真实 `/count_tokens` 接口**:本章要的是估算不是精确,多一次远端调用就把"预扣"这件事本身变成昂贵的——等到 s_full 走精确路径。
+3. **handler 调后算 actual + 结算 —— 为什么差额要双向找齐**:成功路径 `actual = (max(上游 pt, 本地 pt) + ct) * RATE`,`settle(uid, estimate, actual)` 内部 `diff = actual - estimate`,`diff>0` 补差额(余额不够 deduct 静默失败——生产是 billing 异常)、`diff<0` 退差额。**为什么 `max(上游 pt, 本地 pt)`**:上游 tokenizer 和本地略有差异,取较大值保证本地账目不被悄悄少扣;**为什么 `ct` 缺失时回退到 `max(1, len(reply)//4)` 而不是 0**:`pt` 是输入我们没法本地算,`ct` 是输出我们已经拿到内容,本地估一下总比 0 准。
+4. **失败路径整笔 refund —— 为什么不能"扣就扣了"**:网络错(`httpx.HTTPError`)、`r.status_code >= 400`、模型名错(`pick_provider` 抛 `ValueError`)——任一失败都把整份预扣 `refund` 回去。**为什么失败也走 refund**:用户没有拿到任何有效回复,按 token 收钱没道理;**为什么不是事后异步对账**:对账窗口越大,并发漏洞越大——同步 refund 让用户余额状态始终和"成功收到的回复数"对得上。
+
+成品:`curl -X POST .../v1/chat/completions` 成功时响应里带 `"usage"` + `"quota_charged": N`;调一次 `GET /quota/u1` 看到余额减少了一笔实际花费(可能比预扣少,差额已退);余额为 0 时直接 `402 insufficient quota`,上游一次都不打。后续 s08 在闸门后接按用户的限速,s09 把 `_balances` 持久化进 SQLite 走事务化扣减。
 
 ## 上一章复盘
 
-s06 报出 token 数，但网关只算不算账。失败调用该不该扣费？
+s06 报出 token 数,但网关只算不算账。失败调用该不该扣费?
 
 ## 在整体中的位置
 
@@ -83,7 +92,7 @@ settle(principal.user_id, estimate, actual)
 
 Asymmetry note: `pt` falls back to 0 if upstream omits it, but `ct` falls back to a char/4 estimate (`max(1, len(content) // 4)`). Reason: tokenizers differ; `ct` is the *output* we already have, so we can estimate locally; `pt` is the *input* which we cannot recover locally if upstream omits it.
 
-**注意**：s07 这里的 `max(...)` 在 s_full 的 `services/billing.py` 替换为"pt/ct 任一缺失则保留 pre_deducted"。原因是 pre-consume 已经 floor 在 estimate 上，再 max 会让用户永远按 estimate 付费，掩盖超额路径；s_full 选择显式承担"pt/ct 缺失 → 不退款"的语义。
+**注意**:s07 这里的 `max(...)` 在 s_full 的 `services/billing.py` 替换为"pt/ct 任一缺失则保留 pre_deducted"。原因是 pre-consume 已经 floor 在 estimate 上,再 max 会让用户永远按 estimate 付费,掩盖超额路径;s_full 选择显式承担"pt/ct 缺失 → 不退款"的语义。
 
 ## 运行
 
@@ -109,20 +118,6 @@ curl http://localhost:8007/quota/u1                                  # {"balance
 ```
 
 `RATE_PER_TOKEN`(默认 1)和 `PORT`(默认 8007)都可以通过环境变量覆盖。
-
-## 测试
-
-```bash
-pytest tests/test_s07_pre_consume_settle.py -v
-```
-
-三个测试覆盖契约:
-
-| 测试 | 断言 |
-| --- | --- |
-| `test_pre_consume_deducts_before_call` | 一笔成功的调用会从余额里扣一部分。 |
-| `test_insufficient_quota_returns_402` | 一笔余额为 0 的用户会拿到 `402 Payment Required`。 |
-| `test_upstream_failure_refunds_pre_consume` | 当上游返回 500 时,整份预扣要退回去。 |
 
 ## → new-api 源码
 
