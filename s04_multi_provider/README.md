@@ -138,7 +138,7 @@ cd s04_multi_provider
 PORT=8004 python code.py
 ```
 
-确认三家适配器路径都能响应?打这条 curl——能拿到 `{"status":"ok"}` 说明 FastAPI 进程在响应、`Provider` ABC 和三家 provider 实现都加载到内存里了;再分别用 `model: gpt-...` / `claude-...` / `gemini-...` 各发一个请求,被 `pick_provider` 派到对应适配器、再被 `to_upstream` 翻译后转发,即说明三家适配器都活了:
+确认三家适配器路径都能响应?打这条 curl——能拿到 `{"status":"ok"}` 说明 FastAPI 进程在响应、`Provider` ABC 和三家 provider 实现都加载到内存里了;再分别用 `model: gpt-...` / `claude-...` / `gemini-...` 各发一个请求,被 `pick_provider` 派到对应适配器、再被 `to_upstream` 翻译后转发,即说明三家适配器都在响应:
 
 ```sh
 curl http://localhost:8004/health
