@@ -208,7 +208,7 @@ curl -s http://localhost:8012/admin/cache/stats
 真实部署里同样的"响应缓存"长这样(路径区分大小写,Windows 上看
 着像 `Redis.go`、Linux/macOS 是 `redis.go`):
 
-- `common/Redis.go` —— Redis 客户端单例 + 健康检查。生产缓存的实
+- `common/redis.go` —— Redis 客户端单例 + 健康检查。生产缓存的实
   际后端;我们这里的 `dict[str, bytes]` 就是它的最小内存替身。
 - `pkg/cachex/codec.go` —— 键的编解码。Go 里序列化用 `json.Marshal`
   ;这里同样的目的但场景不同——new-api 是把 `RequestPayload` struct

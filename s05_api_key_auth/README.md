@@ -134,13 +134,15 @@ curl -X POST http://localhost:8005/v1/chat/completions \
 
 | 这里 | new-api |
 |---|---|
-| `storage.py`(进程内 `_keys`) | `model/Key.go` —— 持久化的 `sk-*` 行 + Redis 缓存 |
-| `require_api_key` 依赖 | `middleware/Auth.go` —— `AuthHelper` 读 `Authorization: Bearer …`、查 key、拒掉被禁/失效的 token |
-| `is_blocked(key)` 钩子 | `middleware/Auth.go` 里的 Redis 黑名单检查(按 token 封禁的路径) |
-| `Principal` 挂在 `request.state` | `middleware/Auth.go` 里的 `c.Set("ctx", ctx)` —— 之后每个下游 handler 都从 context 里读 user/scopes |
+| `storage.py`(进程内 `_keys`) | `model/token.go` —— 持久化的 `sk-*` 行 + Redis 缓存 |
+| `require_api_key` 依赖 | `middleware/auth.go` —— `AuthHelper` 读 `Authorization: Bearer …`、查 key、拒掉被禁/失效的 token |
+| `is_blocked(key)` 钩子 | `middleware/auth.go` 里的 Redis 黑名单检查(按 token 封禁的路径) |
+| `Principal` 挂在 `request.state` | `middleware/auth.go` 里的 `c.Set("ctx", ctx)` —— 之后每个下游 handler 都从 context 里读 user/scopes |
 | `dependencies=[Depends(require_api_key)]` | `Router.Use(Auth)` —— 在 router 层级达到同样效果 |
 
-new-api 真实实现厚得多:它会加载用户行、解析每个 channel 的 key、检查配额(`model/UserQuota.go`),再把 `Principal` 写入请求 context,让 relay 层能把 usage 落到具体用户身上。这里展示的接缝(`storage.is_blocked`)就是能让后续章节把这些片段接上、而不必改写 `code.py` 的最小切面。
+> 上面所有路径在 GitHub 上都是小写(`model/token.go`、`middleware/auth.go`)。Windows 文件系统不分大小写,本地 IDE 里看着像 `Token.go` / `Auth.go` 也常见;Linux/macOS 部署时按小写路径访问。
+
+new-api 真实实现厚得多:它会加载用户行、解析每个 channel 的 key、检查配额(`model/user.go` 里的 user 表 + quota 字段),再把 `Principal` 写入请求 context,让 relay 层能把 usage 落到具体用户身上。这里展示的接缝(`storage.is_blocked`)就是能让后续章节把这些片段接上、而不必改写 `code.py` 的最小切面。
 
 ## 取舍
 

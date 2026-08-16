@@ -121,8 +121,8 @@ curl http://localhost:8007/quota/u1                                  # {"balance
 
 ## → new-api 源码
 
-- `service/PreConsumeQuota.go` —— 预扣 / 结算逻辑。
-- `model/Quota.go` —— Quota 结构 + 每个用户的计数器。
+- `service/billing.go` —— 预扣 / 结算逻辑(`PreConsumeQuota`、`SettleQuota`、`RefundQuota` 等函数)。
+- `service/quota.go` —— 配额计算 + quota Lua 脚本封装(单笔扣减用 Redis 原子操作保证一致性)。
 
 ## 取舍
 

@@ -129,9 +129,9 @@ curl -X POST http://localhost:8006/v1/chat/completions \
 
 ## → new-api 源码
 
-- `service/TokenCalculate.go` —— 真实实现。按厂商分派(OpenAI 分词
+- `service/token_counter.go` —— 真实实现。按厂商分派(OpenAI 分词
   器、Claude 启发式、Gemini 启发式),缓存每条消息的计数,然后把结
-  果交给计费层。
+  果交给计费层(`service/billing.go`)。
 
 ## 取舍
 

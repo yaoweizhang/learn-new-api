@@ -124,7 +124,7 @@ curl -X POST http://localhost:8001/relay \
 
 | 这里 | new-api |
 |---|---|
-| `relay()` 路由 | `relay/relay.go` —— 把入站请求派发到上游的入口 |
+| `relay()` 路由 | `controller/relay.go` —— 把入站请求派发到上游的入口 |
 
 新版本把这个单一路由泛化成 `Adaptor` 接口(`relay/channel/openai/adaptor.go`——按 channel 的适配器,负责构造出站请求并解析回包),每个厂商一套实现。s04 我们会走到同样的设计。
 

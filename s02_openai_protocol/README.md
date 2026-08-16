@@ -121,8 +121,8 @@ curl -X POST http://localhost:8002/v1/chat/completions \
 | 这里 | new-api |
 |---|---|
 | `ChatCompletionRequest` 模型 | `relay/channel/openai/adaptor.go` —— OpenAI 线协议和内部 `relay` 结构之间的入参/响应 DTO 转换 |
-| `chat_completions` 路由 | `relay/relay.go` —— 把入站请求派发到 OpenAI 的 `Adaptor`（new-api 术语：厂商适配器接口） |
-| `model_dump(exclude_none=True)` | `relay/constant.go` —— 转发前由它按 channel 做归一化,丢掉空字段 |
+| `chat_completions` 路由 | `controller/relay.go` —— 把入站请求派发到 OpenAI 的 `Adaptor`（new-api 术语：厂商适配器接口） |
+| `model_dump(exclude_none=True)` | `relay/channel/openai/adaptor.go` 的 `ConvertOpenAIRequest` + `dto` 各包 —— 转发前每个 channel adaptor 把自己家厂商的请求转成内部 `dto.GeneralOpenAIRequest`,Go 端用 `omitempty` JSON tag 实现"丢空字段";`relay/constant/relay_mode.go` 里只放 `RelayModeChatCompletions` 之类的模式枚举 |
 
 new-api 把这套模式抽象成 `Adaptor` 接口(`relay/channel/openai/adaptor.go`),每个厂商一个实现。s04 我们会走到同样的设计。
 

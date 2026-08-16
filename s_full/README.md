@@ -216,18 +216,18 @@ export JWT_SECRET="..."                 # JWT 签名密钥（默认 "change-me-i
 
 | s_full 组件              | new-api 对应位置                                  | 备注 |
 |--------------------------|--------------------------------------------------|------|
-| `routes/chat.py`         | `router/relay-router.go` → controller/relay → service/RelayService | Gin handler → Go controller → service 三层；FastAPI 的 `APIRouter` 兼路由+编排，所以这里只有路由文件 |
+| `routes/chat.py`         | `router/relay-router.go` → `controller/relay.go` → `service/` (RelayTask etc) | Gin handler → Go controller → service 三层；FastAPI 的 `APIRouter` 兼路由+编排，所以这里只有路由文件 |
 | `routes/auth.py`         | `router/api-router.go` 中 `/api/user/register`   | new-api 用 gin；教程用 FastAPI |
 | `routes/admin.py`        | `router/api-router.go` 中 `/api/channel/*`        | 同上 |
 | `services/quota.py`      | `service/quota.go`                                | new-api 走 Redis Lua 脚本保证原子扣减；教程用 `threading.Lock` + dict 保持可读性 |
-| `services/rate_limit.py` | `service/ratelimit.go`                            | new-api 走 Redis token bucket；教程是 in-memory |
-| `services/billing.py`    | `service/pre_consume_quota.go`                    | 同上 |
-| `models/user.py`         | `model/user.go` + `model/userquota.go`            | 教程把 user 表和 quota 表都用 SQLite；new-api 是 MySQL + 单独 quota 表 |
+| `services/rate_limit.py` | `middleware/rate-limit.go` (Redis token bucket)   | 注意: rate-limit 在 middleware 里、不在 service 里 |
+| `services/billing.py`    | `service/billing.go` (PreConsume/Settle/Refund)  | 注意: 没有 `pre_consume_quota.go`,逻辑全在 billing.go |
+| `models/user.py`         | `model/user.go` (user + quota 字段合一)           | new-api 没有独立的 `userquota.go` 表,user 表带 quota 字段 |
 | `models/channel.py`      | `model/channel.go`                                | 教程 in-memory；new-api 是 DB-backed |
 | `models/log.py`          | `model/log.go`                                    | 教程 deque + 100ms flush；new-api 是 MySQL 批量 insert |
-| `adapters/*.py`          | `relay/adaptor/{openai,anthropic,gemini}/adaptor.go` | new-api 每个 provider 一个子包；教程单文件更易读 |
+| `adapters/*.py`          | `relay/channel/openai/adaptor.go` + `relay/channel/claude/relay-claude.go` + `relay/channel/gemini/relay-gemini.go` | new-api 每个 provider 一个子目录；openai/claude/gemini 各自有自己的 adaptor 实现（**没有 `relay/adaptor/` 目录、没有 `anthropic/` 子目录——Claude 在 `claude/`**）|
 | `middleware/auth.py`     | `middleware/auth.go`                              | new-api 走 JWT；教程同样 |
-| `middleware/trace.py`    | `middleware/trace.go` + `middleware/metrics.go`  | new-api 用 OpenTelemetry；教程用 prometheus_client |
+| `middleware/trace.py`    | `middleware/request-id.go` + `pkg/perf_metrics/metrics.go` | new-api 没有独立的 `trace.go`,request-id 由 `request-id.go` 设置;指标由 `pkg/perf_metrics/` 提供（包名 `perfmetrics`）|
 
 ### 一个重要区别
 

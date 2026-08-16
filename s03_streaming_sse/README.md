@@ -137,8 +137,8 @@ curl -N -X POST http://localhost:8003/v1/chat/completions \
 
 | 这里 | new-api |
 |---|---|
-| `_relay_stream` / `StreamingResponse` | `relay/sse.go` —— chunked SSE 写入器(`w.Write` 对应 `aiter_bytes`)以及流生命周期 |
-| `accept: text/event-stream` | `relay/relay.go` —— 在 `req.Stream` 上的流协商 |
+| `_relay_stream` / `StreamingResponse` | `relay/helper/stream_scanner.go` —— chunked SSE 写入器(`StreamScannerHandler` 调 `sendStreamData`、`bufio.Scanner` 按行切片);`relay/channel/openai/relay-openai.go` 里的 `OaiStreamHandler` 是 OpenAI 专属编排 |
+| `accept: text/event-stream` | `controller/relay.go` —— 在 `req.Stream` 上的流协商 |
 | `x-accel-buffering: no` | `middleware/proxy.go` —— 对 `/v1` 路由关闭 nginx 缓冲 |
 
 new-api 把这件事拆成两阶段:SSE chunker 负责把上游 body 切成事件;

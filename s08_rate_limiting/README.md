@@ -95,7 +95,7 @@ done
 
 ## → new-api 源码
 
-- `middleware/RateLimit.go` —— 用 Redis 计数器做按用户限速的中间件。这里我们把它内联成一个函数调用,契约更直观。
+- `middleware/rate-limit.go` —— 用 Redis 计数器做按用户限速的中间件。这里我们把它内联成一个函数调用,契约更直观。
 
 ## 取舍
 
