@@ -3,88 +3,56 @@
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
-    .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
-    .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
     .title      { font-size: 14px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
-    .refsmall   { font-size: 11px; fill: #777; }
     .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
     .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
-    .arrowRef   { stroke: #888; stroke-width: 1;   fill: none; marker-end: url(#arrowRef); stroke-dasharray: 3 2; }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
     </marker>
-    <marker id="arrowRef" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
-    </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s07: 先多扣一点用完退,拦住超额调用</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s07: 预扣 + 结算,失败整笔退</text>
 
-  <!-- ============ TOP-LEFT: s05 + s06 参考框 (上两章, 本章接力) ============ -->
-
-  <rect class="reference" x="20" y="50" width="260" height="80"/>
-  <text x="150" y="78" text-anchor="middle" class="small" fill="#555">s05 + s06 (上两章)</text>
-  <text x="150" y="100" text-anchor="middle" class="refsmall">Principal + prompt_tokens → 本章输入</text>
-  <text x="150" y="118" text-anchor="middle" class="refsmall">不重写, 接力</text>
-
-  <!-- ============ MAIN FLOW (本章主路径) ============ -->
-
-  <!-- Client -->
   <rect class="client" x="20" y="160" width="120" height="64"/>
   <text x="80" y="186" text-anchor="middle" class="label">Client</text>
-  <text x="80" y="206" text-anchor="middle" class="small">+ Bearer · POST</text>
+  <text x="80" y="206" text-anchor="middle" class="small">带 Bearer</text>
 
-  <!-- Relay handler -->
   <rect class="gateway" x="170" y="160" width="160" height="64"/>
-  <text x="250" y="186" text-anchor="middle" class="label">/v1/chat/completions</text>
-  <text x="250" y="206" text-anchor="middle" class="small">扣 / 退 / 补 差额</text>
+  <text x="250" y="186" text-anchor="middle" class="label">/v1/chat/...</text>
+  <text x="250" y="206" text-anchor="middle" class="small">扣 → 调 → 退/补</text>
 
-  <!-- quota store (NEW — in-memory, code.py process-local) -->
   <rect class="storage" x="360" y="160" width="160" height="64"/>
-  <text x="440" y="186" text-anchor="middle" class="label">quota.py (本章)</text>
-  <text x="440" y="206" text-anchor="middle" class="small">dict + Lock · 原子扣减</text>
+  <text x="440" y="186" text-anchor="middle" class="label">quota.py</text>
+  <text x="440" y="206" text-anchor="middle" class="small">dict + Lock · 原子</text>
 
-  <!-- Upstream -->
   <rect class="upstream" x="550" y="160" width="150" height="64"/>
   <text x="625" y="186" text-anchor="middle" class="label">Upstream</text>
-  <text x="625" y="206" text-anchor="middle" class="small">回包带 usage</text>
+  <text x="625" y="206" text-anchor="middle" class="small">回 usage</text>
 
-  <!-- 402 reject path (dashed red) routed ABOVE the row — Round-8 fix preserved -->
   <polyline class="arrowR" points="440,160 440,148 80,148 80,160" stroke="#c5221f"/>
-  <text x="260" y="143" text-anchor="middle" class="small" fill="#c5221f">余额不足 → 402</text>
+  <text x="260" y="143" text-anchor="middle" class="small" fill="#c5221f">402</text>
 
-  <!-- Chain arrows (left to right) -->
   <line class="arrow" x1="140" y1="190" x2="168" y2="190"/>
-  <text x="154" y="185" text-anchor="middle" class="small">Bearer</text>
+  <text x="154" y="185" text-anchor="middle" class="small">求</text>
 
-  <!-- Handler -> quota: pre-deduct -->
   <line class="arrow" x1="330" y1="180" x2="358" y2="180"/>
-  <text x="344" y="175" text-anchor="middle" class="small">先扣</text>
+  <text x="344" y="175" text-anchor="middle" class="small">扣</text>
 
-  <!-- Handler -> upstream: ask — routed BELOW the row, Round-8 fix preserved -->
   <polyline class="arrow" points="250,224 250,260 625,260 625,224"/>
-  <text x="437" y="255" text-anchor="middle" class="small">ask</text>
+  <text x="437" y="255" text-anchor="middle" class="small">求</text>
 
-  <!-- Upstream -> handler: reply with usage — routed BELOW the row, Round-8 fix preserved -->
   <polyline class="arrowR" points="625,224 625,246 250,246 250,224"/>
-  <text x="437" y="241" text-anchor="middle" class="small">回包</text>
+  <text x="437" y="241" text-anchor="middle" class="small">回</text>
 
-  <!-- Handler -> quota: settle / refund -->
   <line class="arrowR" x1="330" y1="208" x2="358" y2="208" stroke="#228b22"/>
-  <text x="344" y="222" text-anchor="middle" class="small" fill="#228b22">差额</text>
+  <text x="344" y="222" text-anchor="middle" class="small" fill="#228b22">退</text>
 
-  <!-- 502 / 4xx reject path (dashed red) — failure refund -->
   <line class="arrowR" x1="170" y1="290" x2="80" y2="290" stroke="#c5221f"/>
-  <text x="125" y="285" text-anchor="middle" class="small" fill="#c5221f">失败 → refund</text>
-
-  <!-- ============ s05 + s06 参考框 → s07 主路径 的"接力"虚线 ============ -->
-
-  <line class="arrowRef" x1="240" y1="132" x2="240" y2="158"/>
-  <text x="246" y="150" text-anchor="start" class="refsmall">接力</text>
+  <text x="125" y="285" text-anchor="middle" class="small" fill="#c5221f">退整</text>
 </svg>
