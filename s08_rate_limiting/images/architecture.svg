@@ -6,84 +6,54 @@
     .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
-    .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
     .title      { font-size: 14px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
-    .refsmall   { font-size: 11px; fill: #777; }
     .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
     .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
-    .arrowRef   { stroke: #888; stroke-width: 1;   fill: none; marker-end: url(#arrowRef); stroke-dasharray: 3 2; }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
     </marker>
-    <marker id="arrowRef" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
-    </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s08: 按用户桶限速,单用户刷不爆上游</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s08: 按用户桶限速,429 拒 (无 Retry-After)</text>
 
-  <!-- ============ TOP-LEFT: s05 + s07 参考框 (前置章节, 本章接力) ============ -->
-
-  <rect class="reference" x="20" y="50" width="260" height="80"/>
-  <text x="150" y="78" text-anchor="middle" class="small" fill="#555">s05 + s07 (前置)</text>
-  <text x="150" y="100" text-anchor="middle" class="refsmall">Principal + 预扣 / 结算 → 本章接入</text>
-  <text x="150" y="118" text-anchor="middle" class="refsmall">不重写, 在闸门后插一条</text>
-
-  <!-- ============ MAIN FLOW (本章主路径) ============ -->
-
-  <!-- Client -->
   <rect class="client" x="20" y="160" width="120" height="64"/>
   <text x="80" y="186" text-anchor="middle" class="label">Client</text>
-  <text x="80" y="206" text-anchor="middle" class="small">+ Bearer · POST</text>
+  <text x="80" y="206" text-anchor="middle" class="small">带 Bearer</text>
 
-  <!-- s05 auth -->
   <rect class="middleware" x="170" y="160" width="120" height="64"/>
   <text x="230" y="186" text-anchor="middle" class="label">s05 auth</text>
-  <text x="230" y="206" text-anchor="middle" class="small">require_api_key</text>
+  <text x="230" y="206" text-anchor="middle" class="small">require</text>
 
-  <!-- Bucket (NEW — per-user, in-memory) -->
   <rect class="storage" x="320" y="160" width="160" height="64"/>
-  <text x="400" y="186" text-anchor="middle" class="label">bucket.py (本章)</text>
-  <text x="400" y="206" text-anchor="middle" class="small">dict + Lock · take 原子</text>
+  <text x="400" y="186" text-anchor="middle" class="label">bucket.py</text>
+  <text x="400" y="206" text-anchor="middle" class="small">take 原子</text>
 
-  <!-- Relay handler -->
   <rect class="gateway" x="510" y="160" width="120" height="64"/>
   <text x="570" y="186" text-anchor="middle" class="label">/v1/chat/...</text>
-  <text x="570" y="206" text-anchor="middle" class="small">→ s07 预扣 + 调上游</text>
+  <text x="570" y="206" text-anchor="middle" class="small">→ s07 预扣</text>
 
-  <!-- Upstream -->
   <rect class="upstream" x="660" y="160" width="40" height="64"/>
-  <text x="680" y="194" text-anchor="middle" class="small">Upstream</text>
+  <text x="680" y="194" text-anchor="middle" class="small">Up</text>
 
-  <!-- Chain arrows (left to right): client -> auth -> bucket -> handler -> upstream -->
   <line class="arrow" x1="140" y1="190" x2="168" y2="190"/>
-  <text x="154" y="185" text-anchor="middle" class="small">Bearer</text>
+  <text x="154" y="185" text-anchor="middle" class="small">求</text>
 
   <line class="arrow" x1="290" y1="190" x2="318" y2="190"/>
   <text x="304" y="185" text-anchor="middle" class="small">uid</text>
 
-  <!-- bucket -> handler: take result -->
   <line class="arrow" x1="480" y1="190" x2="508" y2="190"/>
-  <text x="494" y="185" text-anchor="middle" class="small">取 1</text>
+  <text x="494" y="185" text-anchor="middle" class="small">过</text>
 
-  <!-- handler -> upstream: ask -->
   <line class="arrow" x1="630" y1="190" x2="658" y2="190"/>
-  <text x="644" y="185" text-anchor="middle" class="small">ask</text>
+  <text x="644" y="185" text-anchor="middle" class="small">转</text>
 
-  <!-- 429 reject path (dashed amber) — bucket exhausted, routed back to client above -->
   <polyline class="arrowR" points="400,160 400,148 80,148 80,160" stroke="#b58900"/>
-  <text x="240" y="143" text-anchor="middle" class="small" fill="#b58900">桶空 → 429</text>
+  <text x="240" y="143" text-anchor="middle" class="small" fill="#b58900">429</text>
 
-  <!-- refill indicator (subtle dashed green) — bucket self-refills over time -->
   <line class="arrowR" x1="320" y1="262" x2="480" y2="262"/>
-  <text x="400" y="257" text-anchor="middle" class="small" fill="#228b22">睡 1s → +1</text>
-
-  <!-- ============ s05 + s07 参考框 → s08 主路径 的"接力"虚线 ============ -->
-
-  <line class="arrowRef" x1="280" y1="132" x2="280" y2="158"/>
-  <text x="286" y="150" text-anchor="start" class="refsmall">接力</text>
+  <text x="400" y="257" text-anchor="middle" class="small" fill="#228b22">补 1</text>
 </svg>
