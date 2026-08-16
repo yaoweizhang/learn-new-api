@@ -24,7 +24,7 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 ## 方案
 
-引入一个 `Principal`（当前请求代表的用户身份与权限：一个 `user_id` 加一个 `scopes`（权限标签元组，挂在 Principal 上）元组）和一个
+引入一个 `Principal`（当前请求代表的用户身份与权限：`user_id` + `scopes` 元组；`scopes` 是权限标签，挂在 Principal 上）和一个
 `Depends`（FastAPI 依赖注入：路由前自动跑的函数）`require_api_key` 依赖,它会在 chat-completion 处理器之前运行。这个依赖做这几件事:
 
 1. 从请求里读 `Authorization: Bearer <key>`。

@@ -263,7 +263,7 @@ pytest tests/test_s_full_smoke.py -v
 
 ### 一个重要区别
 
-new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护一个 channel pool，每个 channel 是某个上游的实例，按 (priority, weight, healthy) 排序自动 failover。教程里 `models/channel.py` 实现了 channel pool 的最简形态（`pick_channel_for`），但 `routes/chat.py` 当前直接按模型前缀选 provider，**没有真的去 channel pool 里挑**——这是为了保持 s_full 与 s04 的行为一致（s04 也只挑 provider，不挑 channel）。channel pool 的真正使用参见 s13 (retry + fallback) 和 s14 (admin dashboard)。
+new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护一个 channel pool，每个 channel 是某个上游的实例，按 (priority, weight, healthy) 排序自动 failover。`s_full` 当前**不做 channel pool 的真实选路**——`routes/chat.py` 直接按模型前缀选 provider，与 s04 保持一致（s04 也只挑 provider，不挑 channel）。channel pool 的真正使用参见 s13 (retry + fallback) 和 s14 (admin dashboard)。如果以后要扩展 channel failover，需要在 `routes/chat.py` 里加一个新选择函数（按 priority/weight 在同 provider 的 channel 里挑一条）。
 
 ---
 
@@ -281,7 +281,7 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
 
 ### 已知限制（与教程目标一致，YAGNI）
 
-- **没有 channel pool 的真实选路**：`_pick(model)` 只按模型前缀选 provider，不会去 `models/channel.py` 里挑具体 channel。如果想跑 channel failover，要扩展 `routes/chat.py` 在选到 provider 之后再调 `pick_channel_for(...)` 选一个具体的 base_url。
+- **没有 channel pool 的真实选路**：`_pick(model)` 只按模型前缀选 provider，不会按 priority/weight 在 `models/channel.py` 里挑具体 channel。如果想跑 channel failover，需要在 `routes/chat.py` 里加一个新选择函数——在选到 provider 之后再按 priority/weight 挑一个具体的 base_url。
 - **没有 retry / fallback**（参见 s13）：单次上游调用失败直接 refund + 502。
 - **没有 caching**（参见 s12）：同样的 prompt 不会走 prompt cache。
 - **streaming 部分支持**：客户端发 `stream=true` 时走 `StreamingResponse`

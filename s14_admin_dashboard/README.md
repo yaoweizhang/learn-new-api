@@ -1,4 +1,4 @@
-# s14:最简服务端渲染的管理后台(Jinja2 + 会话 Cookie) — Jinja2 + Cookie 认证,只读看板上线
+# s14: 最简服务端渲染的管理后台(Jinja2 + 会话 Cookie) — Jinja2 + Cookie 认证,只读看板上线
 
 > Previous: [s13](../s13_retry_fallback/) · Next: [s15](../s15_docker_deployment/)
 

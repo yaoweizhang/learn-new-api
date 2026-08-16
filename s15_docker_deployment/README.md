@@ -1,4 +1,4 @@
-# s15:Docker 化部署(单容器 + HEALTHCHECK + docker-compose) — Dockerfile + compose + /healthz
+# s15: Docker 化部署(单容器 + HEALTHCHECK + docker-compose) — 一个容器 + 一个 compose,跑起来就能用
 
 > Previous: [s14](../s14_admin_dashboard/) · Next: [s16](../s16_observability/)
 

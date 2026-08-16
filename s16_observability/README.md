@@ -1,4 +1,4 @@
-# s16:可观测性——Prometheus 指标 + 结构化日志 + trace_id — x-trace-id 串起来,Prometheus 拉请求 / 延迟 / 错误
+# s16: 可观测性——Prometheus 指标 + 结构化日志 + trace_id — trace_id 串请求,Prometheus 拉指标
 
 > Previous: [s15](../s15_docker_deployment/) · Next: [s_full](../s_full/)
 

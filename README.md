@@ -108,7 +108,7 @@ flowchart TB
 
 这是 new-api 的 Python 重写 + 精简版，删了：Go 适配器层类型反射、Redis 多节点共享、复杂的渠道组与赔率、计费规则引擎、完整的 RBAC。保留了：核心装配范式、预扣 + 结算双账号模型、按用户限速、可观测中间件（Prometheus + trace_id）。读者下一步可看：new-api 仓库的 `service/pre_consume.go`、`service/channel_select.go`、`middleware/RateLimit.go` —— 这三处对应 s07 / s13 / s08 的 Go 实现。
 
-**Capability matrix**（行=核心能力，列=章节，✓=实现，R=只读，.=不实现）:
+**Capability matrix**（行=核心能力，列=章节，✓=实现，.=不实现）:
 
 | 能力 | s01 | s02 | s03 | s04 | s05 | s06 | s07 | s08 | s09 | s10 | s11 | s12 | s13 | s14 | s15 | s16 | s_full |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|

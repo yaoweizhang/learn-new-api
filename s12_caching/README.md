@@ -1,4 +1,4 @@
-# s12:精确匹配响应缓存(in-memory dict + sha256 key) — sha256(canonical JSON) 做 key,300s TTL
+# s12:精确匹配响应缓存(in-memory dict + sha256 key) — 同样的请求不再问上游——sha256 一致就返
 
 > Previous: [s11](../s11_call_logs/) · Next: [s13](../s13_retry_fallback/)
 
