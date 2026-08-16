@@ -57,6 +57,12 @@ token,等到上游回复时:
 - 否则就用 `prompt_tokens` 估算值 + `len(reply) // 4`(对完成
   token)合成一份 `usage`。
 
+`## 问题` 提了三件痛:调用前不知道这一笔要花多少(痛点 #1)、上游 `usage` 缺失就拿不到账单(痛点 #2)、估算不够准就不能合理计费(痛点 #3)。这三件事**任何一件**都没法靠"客户端自己估"或"运维后对账"能解决——必须由网关在转发前先数 token、转发后再合并 upstream usage。下面这幅图把这三件事各放到一个角色里:
+
+- **`Client` (调用方)** —— 在装 s06 之前,这是"只管发请求、账单等回包再说"的角色;装上之后,这事被中继解了——Client 只管发 `prompt`,token 数和 `usage` 都由中继填好回吐。
+- **`Relay` (本章要写的数 token + 合并 usage)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:handler 调 `tokenizer.count_prompt(messages, model)` 拿到 `prompt_tokens`(OpenAI 走 `tiktoken`,其它走 `char/4`);转发上游后,如果回了完整 `usage` 就用它,缺失就用本地估算值 + 回复长度合成一份。Client 看不见上游报了多少 token,Upstream 看不见本地估了多少。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。它在响应里带 `usage` 字段就如实回,缺失也无所谓——中继会用 `max(上游, 本地)` 兜底,账单永远算得清。
+
 下面这张 ASCII 流程图把"先计数再转发"画出来,和下面那张架构图相对照——上面这张是单跳时序,下面那张是角色拓扑,中间那块都是 s06 中继(预热计数 + 合并 upstream usage):
 
 ```
@@ -69,6 +75,16 @@ Client ──POST──▶ s06 ──count prompt──▶ Upstream ──reply�
 ![architecture](images/architecture.svg)
 
 ## 工作原理
+
+**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: 处理器调 `tokenizer.count_prompt(messages, model)` 在转发前先算 prompt token 数 → 用 Pydantic 校验过的 `messages` 算, 不读原始 body → 转发到上游 → 拿到响应里的 `usage` 字段 → 用 `max(上游, 本地)` 做兜底补齐 `prompt_tokens` → 把完整 `usage` 回吐客户端。整章所有部件都为这条主线服务。
+
+**1. 一个 tiktoken encoder (`tokenizer.count_openai`,`cl100k_base` 编码)** —— OpenAI 官方分词器,按 BPE 把文本切成 token。`count_openai` 对每条消息加 4 token overhead(角色 + 分隔符),再给回复预热加 2。`gpt-*` / `o*` 前缀的模型走这条路径。
+
+**2. 一个 count_prompt dispatcher (`tokenizer.count_prompt`)** —— 按模型名前缀分派:OpenAI 走 `count_openai`,其它走 `count_estimate`(`sum(len(content)) // 4`,至少 1)。handler 在转发前调它,把 `prompt_tokens` 留给响应阶段合并用。
+
+**3. 一个 upstream usage merger (handler 内的合并逻辑)** —— 上游回了完整 `usage`(`total_tokens > 0`)就用它,缺失就用本地估算值 + `len(reply) // 4`(对完成 token)合成一份。`prompt_tokens` 取 `max(上游, 本地)` 兜底——挡住"上游 tokenizer 估得比本地少"的边界。
+
+**4. 一个 char/4 fallback (`tokenizer.count_estimate`)** —— 非 OpenAI 模型没有官方分词器,业内通用 `1 token ≈ 4 chars` 经验估算,故意粗糙——够给后续章节(s07 预扣)做软配额,精确计费等上游 `/count_tokens`。
 
 `tiktoken.get_encoding("cl100k_base")` 给我们的是 OpenAI 对 `gpt-4*`
 和 `gpt-3.5-turbo` 用的那套 BPE 编码器。根据 OpenAI cookbook,每条
@@ -115,6 +131,8 @@ curl -X POST http://localhost:8006/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
 
+确认 tiktoken 装好了 + 数 token 接口能响应?打上面这条 curl——回包里看到 `"usage": {"prompt_tokens": N, "completion_tokens": M, "total_tokens": N+M}` 三字段齐全,说明 `cl100k_base` 编码器已加载到内存、handler 的 `count_prompt` + 合并 upstream usage 整条链都在跑:
+
 响应里现在带着:
 
 ```json
@@ -133,11 +151,23 @@ curl -X POST http://localhost:8006/v1/chat/completions \
   器、Claude 启发式、Gemini 启发式),缓存每条消息的计数,然后把结
   果交给计费层(`service/billing.go`)。
 
-## 取舍
+## 本章不做什么
 
-- **还没有流式 token 计数**。计数在请求阶段算;流式响应(`s03_streaming_sse`)要把 token 数到 SSE chunk 落地的那一刻再算,目前还是 pre-consume 估算 + settle 校正的组合。
-- **char/4 比较粗糙**。在英文上对 Claude/Gemini 准确率大约 ±20%——给软配额提示够用,精确计费则不行。生产路径应该在上游提供 `/count_tokens` 时调它。
-- **overhead 是硬编码的**。每条消息 4 token 这条规则来自 OpenAI cookbook;真实 overhead 随 role 和工具定义而变。一章内我们接受这点漂移,后面再按 model-specific 规则读。
+- **没有流式 token 计数** (逐 token 推送响应 `s03_streaming_sse`)——计数在请求阶段算;流式响应要把 token 数到 SSE chunk 落地的那一刻再算。→ s_full 接上游 usage 流式回调,在 SSE 末尾对齐总数。
+- **没有按 model 的精确分词器** (除 OpenAI 之外的官方 tokenizer)——Claude/Gemini 没有官方开源分词器,统一走 `char/4` 经验估算。→ 等上游提供 `/count_tokens` 端点再切。
+- **没有按 role / tool overhead 的细分** (聊天消息格式开销:role 标签、工具定义等每条消息占的 token)——`count_openai` 写死每条消息 4 token,不分 role、不算 tool 定义。→ s_full 接 model-specific 的 `count_message_with_overhead`。
+
+## 已知限制
+
+- **char/4 比较粗糙** (经验估算公式,1 token ≈ 4 字符)——在英文上对 Claude/Gemini 准确率大约 ±20%——给软配额提示够用,精确计费则不行。生产路径应该在上游提供 `/count_tokens` 时调它。
+- **overhead 是硬编码的** (每条聊天消息的固定 token 开销)——每条消息 4 token 这条规则来自 OpenAI cookbook;真实 overhead 随 role 和工具定义而变。一章内我们接受这点漂移,后面再按 model-specific 规则读。
+- **`tiktoken` 首次加载慢** (下载 + 缓存 BPE 词表)——首次 `import tiktoken` 会触发 `cl100k_base` 词表下载,冷启动约 1-2s;生产路径通常把词表预打包进镜像。
+
+## 设计选择
+
+- **`max(上游 pt, 本地 pt)` 兜底** (取两边 prompt token 估算的较大值 / vs 取上游值)——上游 tokenizer 和本地略有差异,取较大值保证本地账目不被悄悄少扣;代价是用户偶尔会被多扣一点点 token,但账单永远不漏。
+- **非 OpenAI 走 `char/4` 而非不数** ——给 s07 预扣提供一个"虽然粗糙但总比 0 强"的数字;精确计费交给上游 `/count_tokens` 兜底。
+- **三字段 usage 始终填齐** (`prompt_tokens` / `completion_tokens` / `total_tokens` / vs 仅回上游给的)——OpenAI SDK 期待三字段都到位,缺一字段客户端就会自己再算。补齐是契约的一部分。
 
 ## 下章预告
 
