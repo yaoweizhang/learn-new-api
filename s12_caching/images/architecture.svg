@@ -81,7 +81,7 @@
 
   <!-- HIT short-circuit: cache → CacheMiddleware → client (dashed green, routed ABOVE) -->
   <polyline class="arrowR" points="180,225 180,110 75,110 75,130" stroke="#228b22"/>
-  <text x="100" y="105" text-anchor="middle" class="small" fill="#228b22">命中→直返</text>
+  <text x="100" y="105" text-anchor="middle" class="small" fill="#228b22">命中返</text>
 
   <!-- ============ s11 参考框 → s12 主路径 的"接力"虚线 ============ -->
 
