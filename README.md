@@ -123,6 +123,8 @@ flowchart TB
 | 可观测性（trace + metric） | . | . | . | . | . | . | . | . | . | . | . | . | . | . | . | ✓ | ✓ |
 | 部署形态 | . | . | . | . | . | . | . | . | . | . | . | . | . | . | ✓ | . | . |
 
+**测试**: 每个章节在 `tests/test_sNN_*.py` 有对应的 pytest 测试。共享上游 mock 在 `tests/conftest.py`(`respx` 拦截真实出站请求,每章测试离线跑、断言真实线协议)。仓库根跑 `pytest tests/` 看全 17 章 + 共享用例共 164 通过;`pytest tests/test_s_full_smoke.py` 看整合形态 14 通过。
+
 ## 依赖
 
 Python 3.11+。先 `pip install -r requirements.txt`。
