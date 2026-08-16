@@ -71,5 +71,5 @@
   <polyline class="arrow" points="250,210 250,228 240,238"/>
   <polyline class="arrow" points="250,210 420,228 420,238"/>
   <polyline class="arrow" points="250,210 610,228 610,238"/>
-  <text x="440" y="232" text-anchor="middle" class="small" fill="#228b22">on chat path</text>
+  <text x="440" y="232" text-anchor="middle" class="small" fill="#228b22">match</text>
 </svg>
