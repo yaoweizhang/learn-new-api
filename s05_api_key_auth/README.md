@@ -8,7 +8,16 @@
 
 ## 本章要做什么
 
-每次访问 `/v1/chat/completions` 都必须带上合法的 API key(`Authorization: Bearer <key>`)。未知、缺失、被封禁的 key 统统返回 `401`,挂到 chat 路由的 `Depends(require_api_key)` 依赖闸门。学完你会拿到一个"守门人"闸门。
+s01-s04 中继对谁都敞着——能摸到端口就能花上游 key 的钱,根本没有"谁在调"这件事:按用户限速、按用户计费、按用户 scope 控制,全都挂不上去,因为连调用方身份都没有。
+
+要解决这个,在 chat 路由前面加一道 Bearer 闸门:每个 `/v1/chat/completions` 请求都先过 `Depends(require_api_key)`,不知道 / 不认识 / 被封禁的 key 一律 `401` 打掉,通过之后才进转发循环。本章就写这一道闸门:
+
+1. **写 `require_api_key` 依赖 —— 为什么必须用 Depends 而不是中间件**:`Depends`(FastAPI 依赖注入:路由处理器之前自动跑的函数)是 FastAPI 的官方可测试注入点,**为什么不比 on_event 拦截**:on_event 只能编进 ASGI 中间件栈、测不动;**为什么每个 handler 自己声明**:路由写 `dependencies=[Depends(require_api_key)]` 不必改全局栈,新加路由默认是开放的(不会偷偷被闸上)——这是显式优于隐式的取舍。
+2. **读 `Authorization: Bearer <key>` —— 为什么是 Bearer 头而不是 query 串**:Bearer 头一行密码,放请求头里、**为什么不放 URL**:`Authorization: Bearer sk-xxx` 是 OAuth 2.0 标准放密钥的地方,放 URL 会被 nginx access log、上游 SLA 日志、浏览器历史全留下来——密钥不应穿过日志系统;**为什么 split 方式是 `startswith("Bearer ")` + `removeprefix(...)`**:大小写不敏感但前缀格式严格,空格分隔切干净。
+3. **查 `storage.lookup_key` + `storage.is_blocked` —— 为什么分两步**:先查黑名单(`is_blocked`)、再查白名单(`lookup_key`),**为什么不合并成一个 if**:`is_blocked` 是个生产接缝(未来接 Redis `banned:` 集合),即使白名单查不到,被显式封禁的 key 也应被特殊处理(返回 `key blocked` 而不是 `unknown key`,运维能区分意图);**为什么 storage 是独立模块**:和 s04 把 adapter 抽出来的理由一致——`code.py` 不该知道 key 存在哪里,只调 `lookup_key(key)` 拿 `Principal`。
+4. **把 `Principal` 挂到 `request.state` —— 为什么挂到 state 而不是 return**:`Depends` 把 `principal` 当返回值也能拿到,但**为什么还要写 `request.state.principal = principal`**:后续中间件 / handler(限速 s08 / 配额 s07 / 日志 s11)都从 `request.state.principal` 拿身份,不一定走 Depends 链(`Principal` 也要够轻,本教程里只装 `user_id` + `scopes`)。
+
+成品:`curl -i .../v1/chat/completions`(没有 `Authorization` 头)回 `401 missing bearer token`;注册一个 key `sk-demo` 再带 `authorization: Bearer sk-demo` 发请求,转发生效。后续 s07 在闸门之后接按用户的配额,s08 在闸门之后接按用户的限速,s11 把每次调用的 `user_id` 写进日志;chat 路径的鉴权链路到这里定型。
 
 ## 上一章复盘
 
@@ -120,18 +129,6 @@ curl -X POST http://localhost:8005/v1/chat/completions \
 ```
 
 更稳妥的做法是把这段塞进 `storage.py` 的启动逻辑,或者直接走测试驱动。new-api 启动时也是这套:它读自己的 user 表。
-
-## 测试
-
-```sh
-pytest tests/test_s05_api_key_auth.py -v
-```
-
-三条测试 + 一条 autouse 固定器(`_clean`),它在每条测试前后都重置进程内 key 表:
-
-- `test_missing_authorization_rejected` —— 不带 `Authorization` 头 → `401`。
-- `test_valid_key_passes_through` —— 已注册 key `sk-test-123` → mock 的 OpenAI 返回 `200`。
-- `test_unknown_key_rejected` —— 未知 key `sk-nope` → `401`。
 
 ## → new-api 源码
 
