@@ -6,36 +6,6 @@
 
 > **Layer**：LX 整合形态
 
-## 本章要做什么
-
-经过 s01-s16 的逐步拆解,16 个章节各自能跑、能测,但都是教学形态:每个 chapter 自己的 `code.py` 是一个独立 FastAPI app,s16 通过 `app.mount("/", s15_app)` 把 15 → 14 → ... → 02 串成一条链。**生产里这条路走不通**——挂载链会让路径被前缀化(挂到 `/` 之外的子路径时整条链的路径都得跟着改),路由散落在 16 个 app 里排查时要顺着 mount 追,新读者打开 `s16/code.py` 看到的不是入口而是 16 层 mount。
-
-要解决这个,把 16 章的功能**重新装配**成一个独立的 FastAPI app:不再挂载 chapter chain,改为在 `s_full/code.py` 入口用 `app.include_router(...)` 把 `routes/auth.py / routes/admin.py / routes/chat.py` 三个本地 router 接进来;目录按 `routes / services / models / adapters / middleware` 五层重组,对应 `new-api` 的 `Router → Controller → Service → Model → Middleware`。本章就把这个"教学挂载 → 生产装配"的过程做出来:
-
-1. **把 16 章代码复制到 `s_full/` 下的五层子目录 —— 为什么是复制而不是 import**: `routes/auth.py` ← s09 的注册/登录、`routes/chat.py` ← s04+s05+s06+s07+s08 的 chat 转发链路、`services/quota.py` ← s07 的预扣结算、`services/rate_limit.py` ← s08 的 token bucket、`models/user.py` ← s09 的 SQLite+bcrypt、`adapters/{openai,claude,gemini}.py` ← s04 的 Provider ABC、`middleware/trace.py` ← s16 的 `TraceAndMetricsMiddleware`。**为什么不 `from s09_user_system.auth import router` 跨章 import**:(a) tutorial 章节本身要保持自包含可读,跨章 import 会把"s09 跑得动"绑到"s07 的某个内部细节没改";(b) `s_full` 要展示**独立项目**的目录长什么样——独立项目不能 import 教学章节;(c) pytest collection 时跨章 import 容易触发意料之外的初始化副作用(比如 s07 启动时把 `models/user.py` 的 sqlite 文件创建到 s07 自己的 cwd)。
-
-2. **入口用 `include_router` 替代 `app.mount` —— 为什么 production 不挂载 chapter chain**: `s_full/code.py` 写 `app.include_router(auth.router)` / `app.include_router(admin.router)` / `app.include_router(chat.router)`,**不**挂任何 chapter。**为什么不挂**:(a) `app.mount("/...", sNN_app)` 会让 mounted 子 app 的 routes 注册到挂载点,生产里如果把整应用挂到 `/api/v1` 下,内部 16 层的路径都要再前缀化一次——一旦 mount 链某层忘了加前缀,客户端 404 排查要追 16 层;(b) 教学形态用 mount 是为了**章节之间能复用前章的代码**(s02 直接 import s01 的 `app`,这样 s02 的 README 只讲"换协议"那一件事,前面"能转发"那一章就被复用掉了),生产里功能被独立组织后,这种复用不再必要;(c) 路由散落在 16 个 app 里,新读者打开 `s16/code.py` 看到 `app.mount("/", s15_app)` 第一反应是"这是入口吗?再追 15 层才知道"——`include_router` 让 `code.py` 一眼看到全部对外路由。
-
-3. **挂上 `TraceAndMetricsMiddleware` 和日志 flush loop —— 为什么这两个必须随装配一起搬**: `app.add_middleware(TraceAndMetricsMiddleware)` 装在 s16 那层,s_full 直接把同一个中间件挂到自己的 app 上(代码逐字复制,不动逻辑),`prometheus_client.generate_latest()` 通过 `app.get("/metrics")` 暴露;`models/log.py` 的 `flush_loop` 在 `@app.on_event("startup")` 启动、`@app.on_event("shutdown")` 停。**为什么不能只复制 routes 不复制中间件**:(a) `chat.py` 里的 `p: Principal = Depends(require_api_key)` 依赖 `middleware/auth.py` 注入 Principal,auth 必须在 chat 之前 import;(b) `routes/chat.py` 调 `models/log.enqueue_log()` 记调用,`flush_loop` 不启动日志永远不落盘;(c) `TraceAndMetricsMiddleware` 是唯一给 `/metrics` 喂数据的地方,不挂中间件 `/metrics` 就是空响应。
-
-4. **保留教学里的所有 invariant —— 为什么 s_full 不"优化"任何细节**: `_pick(model)` 仍按模型前缀选 provider(`gpt-*` → OpenAI、`claude-*` → Anthropic、`gemini-*` → Google),跟 s04 保持一致;`Principal` 从 `middleware/auth.py` 注入,跟 s08 修正后的 typed-parameter 模式一致;`quota.settle` 双向结算(超量补扣、节约退还)对齐 s07。**为什么不借机"加" channel pool / retry / caching**: 这些是 s13 / s12 / s10 的独立主题,s_full 是"装配"不是"扩展"——一旦在装配视图里偷偷加新功能,读者对照"目录映射"那一节就会发现"文件多了一行注释里没写",装配视图的诚实性就破了。**已知限制**(跟教学一致):没有 channel pool 真实选路、没有 retry/fallback、没有 caching、流式 4xx 客户端拿到 200+空 body(Starlette 头已发)、admin 操作没审计。
-
-成品: `python s_full/code.py`(或 `python -m s_full.code`)拿到单一 FastAPI app,端口默认 8099,`curl localhost:8099/health` 看到 `{"status":"ok"}`,`curl -X POST localhost:8099/auth/signup -d '...'` 注册、`/auth/login` 拿 token、再 `curl -X POST localhost:8099/v1/chat/completions -H 'Authorization: Bearer ...'` 走完整 16 章链路(限流 → 预扣 → 选 provider → 转发 → 结算 → 记日志),`curl localhost:8099/metrics` 看到 Prometheus 指标。`tests/test_s_full_smoke.py` 14 个 smoke 测试覆盖完整端到端流程。**后续**: 这就是教程终点——再往下是部署(s15 已演示)、告警规则、生产级 channel pool,都是工程实践不是教学。
-
-## 上一章复盘
-
-s16 是教学最后一章,代码结构是 mount chain,目录扁。
-
-## 在整体中的位置
-
-16 章的"生产装配"——把 mount 换成 include_router,目录拆成 routes / services / models / middleware,代码仍是同一份。
-
-> 这是教程最后一章,把 s01-s16 的所有功能**重新组织**成一个生产形态的应用,目录结构对齐 `new-api` 的 `Router → Controller → Service → Model`。
->
-> **本章不引入任何新功能**——把同样的代码整理到更干净的目录里,让读者理解"教学拆解 vs 生产目录"之间的对应关系。
-
----
-
 ## 问题
 
 经过 s01-s16 的逐步拆解，我们拥有：
@@ -59,6 +29,24 @@ new-api/
 ```
 
 `s_full` 要回答：**"如果把教程里累积的所有功能放到这套目录里，应该长什么样？"**
+
+解法就是把 16 章的功能**重新装配**成一个独立的 FastAPI app：`include_router` 替代 `mount`，目录拆成 `routes / services / models / adapters / middleware` 五层。下面就讲怎么做。
+
+---
+
+## 本章要做什么
+
+要解决这个,把 16 章的功能**重新装配**成一个独立的 FastAPI app:不再挂载 chapter chain,改为在 `s_full/code.py` 入口用 `app.include_router(...)` 把 `routes/auth.py / routes/admin.py / routes/chat.py` 三个本地 router 接进来;目录按 `routes / services / models / adapters / middleware` 五层重组,对应 `new-api` 的 `Router → Controller → Service → Model → Middleware`。本章就把这个"教学挂载 → 生产装配"的过程做出来:
+
+1. **把 16 章代码复制到 `s_full/` 下的五层子目录 —— 为什么是复制而不是 import**: `routes/auth.py` ← s09 的注册/登录、`routes/chat.py` ← s04+s05+s06+s07+s08 的 chat 转发链路、`services/quota.py` ← s07 的预扣结算、`services/rate_limit.py` ← s08 的 token bucket、`models/user.py` ← s09 的 SQLite+bcrypt、`adapters/{openai,claude,gemini}.py` ← s04 的 Provider ABC、`middleware/trace.py` ← s16 的 `TraceAndMetricsMiddleware`。**为什么不 `from s09_user_system.auth import router` 跨章 import**:(a) tutorial 章节本身要保持自包含可读,跨章 import 会把"s09 跑得动"绑到"s07 的某个内部细节没改";(b) `s_full` 要展示**独立项目**的目录长什么样——独立项目不能 import 教学章节;(c) pytest collection 时跨章 import 容易触发意料之外的初始化副作用(比如 s07 启动时把 `models/user.py` 的 sqlite 文件创建到 s07 自己的 cwd)。
+
+2. **入口用 `include_router` 替代 `app.mount` —— 为什么 production 不挂载 chapter chain**: `s_full/code.py` 写 `app.include_router(auth.router)` / `app.include_router(admin.router)` / `app.include_router(chat.router)`,**不**挂任何 chapter。**为什么不挂**:(a) `app.mount("/...", sNN_app)` 会让 mounted 子 app 的 routes 注册到挂载点,生产里如果把整应用挂到 `/api/v1` 下,内部 16 层的路径都要再前缀化一次——一旦 mount 链某层忘了加前缀,客户端 404 排查要追 16 层;(b) 教学形态用 mount 是为了**章节之间能复用前章的代码**(s02 直接 import s01 的 `app`,这样 s02 的 README 只讲"换协议"那一件事,前面"能转发"那一章就被复用掉了),生产里功能被独立组织后,这种复用不再必要;(c) 路由散落在 16 个 app 里,新读者打开 `s16/code.py` 看到 `app.mount("/", s15_app)` 第一反应是"这是入口吗?再追 15 层才知道"——`include_router` 让 `code.py` 一眼看到全部对外路由。
+
+3. **挂上 `TraceAndMetricsMiddleware` 和日志 flush loop —— 为什么这两个必须随装配一起搬**: `app.add_middleware(TraceAndMetricsMiddleware)` 装在 s16 那层,s_full 直接把同一个中间件挂到自己的 app 上(代码逐字复制,不动逻辑),`prometheus_client.generate_latest()` 通过 `app.get("/metrics")` 暴露;`models/log.py` 的 `flush_loop` 在 `@app.on_event("startup")` 启动、`@app.on_event("shutdown")` 停。**为什么不能只复制 routes 不复制中间件**:(a) `chat.py` 里的 `p: Principal = Depends(require_api_key)` 依赖 `middleware/auth.py` 注入 Principal,auth 必须在 chat 之前 import;(b) `routes/chat.py` 调 `models/log.enqueue_log()` 记调用,`flush_loop` 不启动日志永远不落盘;(c) `TraceAndMetricsMiddleware` 是唯一给 `/metrics` 喂数据的地方,不挂中间件 `/metrics` 就是空响应。
+
+4. **保留教学里的所有 invariant —— 为什么 s_full 不"优化"任何细节**: `_pick(model)` 仍按模型前缀选 provider(`gpt-*` → OpenAI、`claude-*` → Anthropic、`gemini-*` → Google),跟 s04 保持一致;`Principal` 从 `middleware/auth.py` 注入,跟 s08 修正后的 typed-parameter 模式一致;`quota.settle` 双向结算(超量补扣、节约退还)对齐 s07。**为什么不借机"加" channel pool / retry / caching**: 这些是 s13 / s12 / s10 的独立主题,s_full 是"装配"不是"扩展"——一旦在装配视图里偷偷加新功能,读者对照"目录映射"那一节就会发现"文件多了一行注释里没写",装配视图的诚实性就破了。**已知限制**(跟教学一致):没有 channel pool 真实选路、没有 retry/fallback、没有 caching、流式 4xx 客户端拿到 200+空 body(Starlette 头已发)、admin 操作没审计。
+
+成品: `python s_full/code.py`(或 `python -m s_full.code`)拿到单一 FastAPI app,端口默认 8099,`curl localhost:8099/health` 看到 `{"status":"ok"}`,`curl -X POST localhost:8099/auth/signup -d '...'` 注册、`/auth/login` 拿 token、再 `curl -X POST localhost:8099/v1/chat/completions -H 'Authorization: Bearer ...'` 走完整 16 章链路(限流 → 预扣 → 选 provider → 转发 → 结算 → 记日志),`curl localhost:8099/metrics` 看到 Prometheus 指标。`tests/test_s_full_smoke.py` 14 个 smoke 测试覆盖完整端到端流程。**后续**: 这就是教程终点——再往下是部署(s15 已演示)、告警规则、生产级 channel pool,都是工程实践不是教学。
 
 ---
 
