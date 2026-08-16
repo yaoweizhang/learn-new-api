@@ -6,9 +6,11 @@
 
 > **Layer**：L2 鉴权与身份
 
-## 本章要做什么
+## 问题
 
-s01-s04 中继对谁都敞着——能摸到端口就能花上游 key 的钱,根本没有"谁在调"这件事:按用户限速、按用户计费、按用户 scope 控制,全都挂不上去,因为连调用方身份都没有。
+s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根本没有"谁在调"这件事:谁能摸到中继,谁就能花掉你的上游配额,也没有地方挂上按用户的限速、计费、scope。中继是完全敞开的。
+
+## 本章要做什么
 
 要解决这个,在 chat 路由前面加一道 Bearer 闸门:每个 `/v1/chat/completions` 请求都先过 `Depends(require_api_key)`,不知道 / 不认识 / 被封禁的 key 一律 `401` 打掉,通过之后才进转发循环。本章就写这一道闸门:
 
@@ -19,17 +21,7 @@ s01-s04 中继对谁都敞着——能摸到端口就能花上游 key 的钱,根
 
 成品:`curl -i .../v1/chat/completions`(没有 `Authorization` 头)回 `401 missing bearer token`;注册一个 key `sk-demo` 再带 `authorization: Bearer sk-demo` 发请求,转发生效。后续 s07 在闸门之后接按用户的配额,s08 在闸门之后接按用户的限速,s11 把每次调用的 `user_id` 写进日志;chat 路径的鉴权链路到这里定型。
 
-## 上一章复盘
-
-s04 之后任何能访问的客户端都能花网关的钱。必须先有"谁在打"的标识。
-
-## 在整体中的位置
-
-守门人——任何后续处理(限速、配额、转发)都假设这步已经放行。**双轨鉴权其一**：s05 的 Bearer API key 守 chat 路径；dashboard / admin 路径另由 s09 的 JWT 鉴权把关(见 s09 README)。两条并存、不替代：chat 路径始终走 API key，dashboard / admin 始终走 JWT。
-
-## 问题
-
-s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根本没有"谁在调"这件事:谁能摸到中继,谁就能花掉你的上游配额,也没有地方挂上按用户的限速、计费、scope。中继是完全敞开的。
+**双轨鉴权其一**:s05 的 Bearer API key 守 chat 路径;dashboard / admin 路径另由 s09 的 JWT 鉴权把关(见 s09 README)。两条并存、不替代:chat 路径始终走 API key,dashboard / admin 始终走 JWT。
 
 ## 方案
 

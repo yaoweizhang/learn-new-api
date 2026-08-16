@@ -17,32 +17,30 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s05: chat 路由前加一道 Bearer 闸门,401 把匿名打掉</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s05: chat 路由前 Bearer 闸门</text>
 
-  <!-- Client -->
   <rect class="client" x="40" y="80" width="160" height="80"/>
   <text x="120" y="105" text-anchor="middle" class="label">Client</text>
-  <text x="120" y="125" text-anchor="middle" class="small">调用方 · 必须带 Bearer sk-...</text>
+  <text x="120" y="125" text-anchor="middle" class="small">带 Bearer sk-…</text>
 
-  <!-- Auth middleware -->
   <rect class="middleware" x="240" y="72" width="200" height="96"/>
-  <text x="340" y="97" text-anchor="middle" class="label">require_api_key 闸门</text>
-  <text x="340" y="117" text-anchor="middle" class="small">本章要写 · 读 Bearer + 查 key + 挂 Principal</text>
+  <text x="340" y="97" text-anchor="middle" class="label">require_api_key</text>
+  <text x="340" y="117" text-anchor="middle" class="small">查 key + 挂 Principal</text>
 
-  <!-- Relay (gateway) -->
   <rect class="gateway" x="480" y="72" width="200" height="96"/>
   <text x="580" y="97" text-anchor="middle" class="label">/v1/chat/completions</text>
-  <text x="580" y="117" text-anchor="middle" class="small">chat 路由 · 闸门已放行,跑转发 (s04)</text>
+  <text x="580" y="117" text-anchor="middle" class="small">闸过 · 跑转发</text>
 
-  <!-- Request flow client -> auth (with bearer) -->
   <line class="arrow" x1="200" y1="116" x2="238" y2="116"/>
-  <text x="219" y="111" text-anchor="middle" class="small">Bearer</text>
+  <text x="219" y="111" text-anchor="middle" class="small">头</text>
 
-  <!-- Auth -> gateway (principal passed) -->
   <line class="arrow" x1="440" y1="116" x2="478" y2="116"/>
-  <text x="459" y="111" text-anchor="middle" class="small">+ Principal</text>
+  <text x="459" y="111" text-anchor="middle" class="small">过</text>
 
-  <!-- 401 reject path (dashed red) -->
+  <line class="arrowR" x1="478" y1="146" x2="442" y2="146"/>
+  <line class="arrowR" x1="238" y1="146" x2="202" y2="146"/>
+  <text x="340" y="141" text-anchor="middle" class="small">返</text>
+
   <line stroke="#c5221f" stroke-width="1.2" fill="none" stroke-dasharray="4 3"
         x1="340" y1="170" x2="340" y2="220"/>
   <line stroke="#c5221f" stroke-width="1.2" fill="none" stroke-dasharray="4 3"
