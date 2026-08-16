@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="monospace">
   <style>
     .client   { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway  { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
@@ -16,52 +16,47 @@
     </marker>
   </defs>
 
-  <text x="400" y="22" text-anchor="middle" class="title">s03: 一个字一个字流出去</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s03: stream=true 时,转发第一个字节就开始推</text>
 
   <!-- Client -->
-  <rect class="client" x="40" y="100" width="160" height="80"/>
-  <text x="120" y="130" text-anchor="middle" class="label">Client</text>
-  <text x="120" y="148" text-anchor="middle" class="small">stream:true</text>
-  <text x="120" y="166" text-anchor="middle" class="small">curl -N / SDK stream=True</text>
+  <rect class="client" x="40" y="78" width="160" height="104"/>
+  <text x="120" y="106" text-anchor="middle" class="label">Client (流式调用方)</text>
+  <text x="120" y="128" text-anchor="middle" class="small">请求里带 stream:true</text>
+  <text x="120" y="144" text-anchor="middle" class="small">curl -N / SDK stream=True</text>
+  <text x="120" y="162" text-anchor="middle" class="small">逐 token 渲染到屏幕</text>
+  <text x="120" y="178" text-anchor="middle" class="small">首字延迟几百毫秒</text>
 
   <!-- Relay (gateway) -->
-  <rect class="gateway" x="280" y="100" width="220" height="80"/>
-  <text x="390" y="128" text-anchor="middle" class="label">Relay</text>
-  <text x="390" y="146" text-anchor="middle" class="small">StreamingResponse</text>
-  <text x="390" y="164" text-anchor="middle" class="small">async for chunk in aiter_bytes()</text>
-  <text x="390" y="182" text-anchor="middle" class="small">cache-control: no-cache + x-accel-buffering: no</text>
+  <rect class="gateway" x="260" y="70" width="200" height="120"/>
+  <text x="360" y="96" text-anchor="middle" class="label">Relay (流式分支)</text>
+  <text x="360" y="116" text-anchor="middle" class="small">if req.stream: StreamingResponse</text>
+  <text x="360" y="134" text-anchor="middle" class="small">httpx.AsyncClient.stream(...) 上下文</text>
+  <text x="360" y="150" text-anchor="middle" class="small">async for chunk in aiter_bytes()</text>
+  <text x="360" y="166" text-anchor="middle" class="small">拿到一个字节就 yield 一个字节</text>
+  <text x="360" y="184" text-anchor="middle" class="small">非流式分支走 s02 JSON 路径</text>
 
   <!-- Upstream -->
-  <rect class="upstream" x="580" y="100" width="160" height="80"/>
-  <text x="660" y="130" text-anchor="middle" class="label">Upstream (SSE)</text>
-  <text x="660" y="148" text-anchor="middle" class="small">text/event-stream</text>
-  <text x="660" y="166" text-anchor="middle" class="small">data: {chunk}\n\n ...</text>
+  <rect class="upstream" x="520" y="78" width="160" height="104"/>
+  <text x="600" y="106" text-anchor="middle" class="label">Upstream (SSE)</text>
+  <text x="600" y="128" text-anchor="middle" class="small">Content-Type: text/event-stream</text>
+  <text x="600" y="144" text-anchor="middle" class="small">data: {...}\n\n 一帧接一帧</text>
+  <text x="600" y="162" text-anchor="middle" class="small">最后是 data: [DONE]\n\n</text>
+  <text x="600" y="178" text-anchor="middle" class="small">逐 token 推 HTTP 长连接</text>
 
-  <!-- Request flow (top, single line) -->
-  <line class="arrow" x1="200" y1="130" x2="278" y2="130"/>
-  <line class="arrow" x1="500" y1="130" x2="578" y2="130"/>
-  <text x="239" y="125" text-anchor="middle" class="small">POST {stream:true}</text>
-  <text x="539" y="125" text-anchor="middle" class="small">forwarded</text>
+  <!-- Request flow (top) -->
+  <line class="arrow" x1="200" y1="114" x2="258" y2="114"/>
+  <text x="229" y="109" text-anchor="middle" class="small">stream:true</text>
+  <line class="arrow" x1="460" y1="114" x2="518" y2="114"/>
+  <text x="489" y="109" text-anchor="middle" class="small">开 HTTP 长连接</text>
 
-  <!-- SSE chunk 1 -->
-  <line class="arrowR" x1="578" y1="142" x2="500" y2="142"/>
-  <line class="arrowR" x1="278" y1="142" x2="200" y2="142"/>
-  <text x="539" y="138" text-anchor="middle" class="small">data: hello\n\n</text>
-  <text x="239" y="138" text-anchor="middle" class="small">data: hello\n\n</text>
+  <!-- Response flow (bottom) -->
+  <line class="arrowR" x1="518" y1="156" x2="462" y2="156"/>
+  <line class="arrowR" x1="258" y1="156" x2="202" y2="156"/>
+  <text x="360" y="151" text-anchor="middle" class="small">首个 chunk 立刻吐</text>
 
-  <!-- SSE chunk 2 -->
-  <line class="arrowR" x1="578" y1="156" x2="500" y2="156"/>
-  <line class="arrowR" x1="278" y1="156" x2="200" y2="156"/>
-  <text x="539" y="172" text-anchor="middle" class="small">data: world\n\n</text>
-  <text x="239" y="172" text-anchor="middle" class="small">data: world\n\n</text>
-
-  <!-- SSE DONE -->
-  <line class="arrowR" x1="578" y1="170" x2="500" y2="170"/>
-  <line class="arrowR" x1="278" y1="170" x2="200" y2="170"/>
-  <text x="539" y="166" text-anchor="middle" class="small">data: [DONE]\n\n</text>
-  <text x="239" y="166" text-anchor="middle" class="small">data: [DONE]\n\n</text>
-
-  <!-- Caption -->
-  <text x="400" y="240" text-anchor="middle" class="small">StreamingResponse:转发第一个字节就开始往客户端 flush,不等整个 body</text>
-  <text x="400" y="258" text-anchor="middle" class="small">req.stream ? aiter_bytes passthrough : s02 JSON 路径</text>
+  <!-- Caption: WHY this chapter exists -->
+  <text x="360" y="222" text-anchor="middle" class="small">s02 等整个 body 才回: 200 token × 30 tok/s, 客户端盯 7 秒空白屏, 生产聊天 UX 不可接受</text>
+  <text x="360" y="240" text-anchor="middle" class="small">本章只做一件事: stream=true 时切换到 httpx 流式 + StreamingResponse, 拿到字节就推</text>
+  <text x="360" y="268" text-anchor="middle" class="small">后续 s04 在这条流式通道下挂 Claude / Gemini 适配器, 各家 SSE 帧形态差异由那一章解决</text>
+  <text x="360" y="286" text-anchor="middle" class="small">s08 会接进客户端断连检测, 中途挂断时同步关掉上游连接</text>
 </svg>
