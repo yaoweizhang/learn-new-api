@@ -28,18 +28,15 @@
   <!-- ============ TOP-LEFT: s05 chat 路径 参考框 (上一章, 本章不变, 双轨对照) ============ -->
 
   <rect class="reference" x="20" y="50" width="210" height="92"/>
-  <text x="125" y="70" text-anchor="middle" class="small" fill="#555">s05 chat 路径 (复习)</text>
-  <text x="125" y="90" text-anchor="middle" class="refsmall">require_api_key 闸门 + chat 路由</text>
-  <text x="125" y="108" text-anchor="middle" class="refsmall">Bearer sk-... → Principal</text>
-  <text x="125" y="126" text-anchor="middle" class="refsmall">本章不动, 双轨其一</text>
+  <text x="125" y="80" text-anchor="middle" class="small" fill="#555">s05 chat 路径 (复习)</text>
+  <text x="125" y="105" text-anchor="middle" class="refsmall">require_api_key + Bearer → Principal</text>
 
   <!-- ============ TOP-RIGHT: signup/login + /me (s09 主路径) ============ -->
 
   <!-- Client -->
   <rect class="client" x="250" y="56" width="130" height="80"/>
-  <text x="315" y="81" text-anchor="middle" class="label">Client</text>
-  <text x="315" y="101" text-anchor="middle" class="small">浏览器 / curl</text>
-  <text x="315" y="121" text-anchor="middle" class="small">email + pwd → JWT</text>
+  <text x="315" y="86" text-anchor="middle" class="label">Client</text>
+  <text x="315" y="111" text-anchor="middle" class="small">浏览器 / curl · email + pwd → JWT</text>
 
   <!-- /auth/signup · /auth/login -->
   <rect class="gateway" x="410" y="52" width="160" height="96"/>
