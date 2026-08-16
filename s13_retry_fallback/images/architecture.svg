@@ -51,12 +51,9 @@
   <text x="450" y="206" text-anchor="middle" class="small">fail → mark + 下一条</text>
 
   <!-- channels pool (storage) -->
-  <rect class="storage" x="570" y="140" width="130" height="104"/>
-  <text x="635" y="166" text-anchor="middle" class="label">channels pool</text>
-  <text x="635" y="184" text-anchor="middle" class="small" fill="#228b22">c1 pri=0 健</text>
-  <text x="635" y="200" text-anchor="middle" class="small" fill="#c5221f">c2 pri=0 挂</text>
-  <text x="635" y="216" text-anchor="middle" class="small" fill="#228b22">c3 pri=1 健</text>
-  <text x="635" y="234" text-anchor="middle" class="small">mark 即时生效</text>
+  <rect class="storage" x="570" y="160" width="130" height="64"/>
+  <text x="635" y="186" text-anchor="middle" class="label">channels pool</text>
+  <text x="635" y="206" text-anchor="middle" class="small">c1 c2 c3 · mark_unhealthy 即时</text>
 
   <!-- ============ ARROWS: client → s13 → for-loop → pool ============ -->
 
@@ -88,7 +85,7 @@
   <text x="380" y="265" text-anchor="middle" class="small" fill="#c5221f">失败</text>
 
   <!-- mark_unhealthy back to pool — Round-8 fix preserved: polyline up c2 column -->
-  <polyline class="arrowR" points="300,340 300,260 635,244" stroke="#c5221f"/>
+  <polyline class="arrowR" points="300,340 300,260 635,224" stroke="#c5221f"/>
   <text x="310" y="280" text-anchor="start" class="small" fill="#c5221f">mark_unhealthy(c2) 即时</text>
 
   <!-- Attempt 3: c3 (fallback success) -->

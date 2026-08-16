@@ -51,12 +51,9 @@
   <text x="400" y="206" text-anchor="middle" class="small">POST + GET · 增 + 列</text>
 
   <!-- channels pool (memory dict + Lock) -->
-  <rect class="storage" x="510" y="140" width="190" height="104"/>
-  <text x="605" y="166" text-anchor="middle" class="label">channels pool</text>
-  <text x="605" y="184" text-anchor="middle" class="small">c1 primary  pri=0 w=100</text>
-  <text x="605" y="200" text-anchor="middle" class="small">c2 backup   pri=1 w=50</text>
-  <text x="605" y="216" text-anchor="middle" class="small">c3 unhealthy pri=0 (skip)</text>
-  <text x="605" y="234" text-anchor="middle" class="small">dict + Lock · 即时生效</text>
+  <rect class="storage" x="510" y="160" width="190" height="64"/>
+  <text x="605" y="186" text-anchor="middle" class="label">channels pool</text>
+  <text x="605" y="206" text-anchor="middle" class="small">c1/c2/c3 · dict + Lock · 即时生效</text>
 
   <!-- Admin CRUD chain: client -> gate -> handler -> pool -->
   <line class="arrow" x1="140" y1="190" x2="168" y2="190"/>
@@ -79,8 +76,8 @@
   <text x="325" y="305" text-anchor="middle" class="small">pick_channel_for(model) · 过滤 → 档 → weight</text>
 
   <!-- arrows: pool -> pick (diagonal across) -->
-  <line class="arrow" x1="605" y1="244" x2="325" y2="288"/>
-  <text x="465" y="265" text-anchor="middle" class="small">读池</text>
+  <line class="arrow" x1="605" y1="224" x2="325" y2="288"/>
+  <text x="465" y="255" text-anchor="middle" class="small">读池</text>
 
   <!-- ============ s09 参考框 → s10 主路径 的"接力"虚线 ============ -->
 
