@@ -16,26 +16,26 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s01: 把 URL 和 key 藏到中继进程</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s01: URL/key 藏中继</text>
 
   <rect class="client" x="40" y="80" width="160" height="80"/>
   <text x="120" y="105" text-anchor="middle" class="label">Client</text>
-  <text x="120" y="125" text-anchor="middle" class="small">调用方 · 以前人肉复制 key</text>
+  <text x="120" y="125" text-anchor="middle" class="small">人肉复制 key</text>
 
   <rect class="gateway" x="260" y="72" width="200" height="96"/>
   <text x="360" y="97" text-anchor="middle" class="label">Relay</text>
-  <text x="360" y="117" text-anchor="middle" class="small">本章要写 · 接住 + 替填 key + 原样回吐</text>
+  <text x="360" y="117" text-anchor="middle" class="small">接住→替填→回吐</text>
 
   <rect class="upstream" x="520" y="80" width="160" height="80"/>
   <text x="600" y="105" text-anchor="middle" class="label">Upstream</text>
-  <text x="600" y="125" text-anchor="middle" class="small">LLM 服务 · 只见中继</text>
+  <text x="600" y="125" text-anchor="middle" class="small">只见中继</text>
 
   <line class="arrow" x1="200" y1="116" x2="258" y2="116"/>
-  <text x="229" y="111" text-anchor="middle" class="small">JSON</text>
+  <text x="229" y="111" text-anchor="middle" class="small">求</text>
   <line class="arrow" x1="460" y1="116" x2="518" y2="116"/>
-  <text x="489" y="111" text-anchor="middle" class="small">+ Bearer 头</text>
+  <text x="489" y="111" text-anchor="middle" class="small">头</text>
 
   <line class="arrowR" x1="518" y1="146" x2="462" y2="146"/>
   <line class="arrowR" x1="258" y1="146" x2="202" y2="146"/>
-  <text x="360" y="141" text-anchor="middle" class="small">原样回吐</text>
+  <text x="360" y="141" text-anchor="middle" class="small">返</text>
 </svg>
