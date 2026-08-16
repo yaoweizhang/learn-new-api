@@ -33,7 +33,11 @@
 
 一个进程:接住请求、转发出去、再把答复送回来。说白了就是一个针对入站 HTTP 请求的 `while True` 循环,循环体里只做一件事——转发。
 
-下图给出一幅全局鸟瞰——图里有 `Client`、本章要写的 `Relay` 进程、以及远处的 `Upstream` 三个角色。请求箭头从 `Client` 走到 `Relay` 再走到 `Upstream`,响应则反向沿两条路回来;中间那一块 `Relay` 是本章要写的进程:
+`## 问题` 提了三件痛:每个调用方各拿一把 key (问题 #1)、各自把厂商 URL 写死 (问题 #2)、各自复制调度逻辑 (问题 #3)。这三件事里**任何一件都没有靠"客户端配合"能解决**——必须有一个独立进程隔离掉它们。下面这幅图把这三件事各放到一个角色里:
+
+- **`Client` (调用方)** —— 在我们装上中继之前,这是干所有三件痛的角色;装上之后,这事就被中继隔走了,Client 只剩"我想调一次 LLM"。
+- **`Relay` (本章要写的进程)** —— 把 #1 #2 #3 三件事的解决动作集中放在这里:接住 Client 的请求、藏好 key 与 URL、按 Client 要的形态回吐。Client 看不见 key,Upstream 看不见 Client。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。它从来不直接跟 Client 对话,只跟中继对话——中继带 key 来、中继带请求来。
 
 ![architecture](images/architecture.svg)
 
@@ -48,9 +52,9 @@ Client  ──POST /relay──▶  Relay  ──POST FORWARD_TARGET──▶  U
 
 ## 工作原理
 
-整个内核由三块组成。
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按方法和路径挑出对应处理器 → 处理器用 schema 校验请求体 → 处理器构造出站请求转发给上游 → 等待上游回包 → 把上游回包按原样吐回客户端。整章所有部件都为这条主线服务。
 
-**1. 一个存活探针路由。** 零依赖,后续每章都会用到(包括 s15 中 Docker 的健康检查——s15 又额外加了一条 `/healthz` 深检路由,这里 `/health` 维持最朴素的"进程在跑"语义):
+**1. 一条 health 端点 (`GET /health`)** —— 零依赖探针, 后续每章沿用 (包括 s15 中 Docker 的健康检查)。
 
 ```python
 @app.get("/health")
@@ -58,7 +62,7 @@ def health() -> dict:
     return {"status": "ok"}
 ```
 
-**2. 一个请求形态。** Pydantic（数据校验库：用 Python 类型注解定义结构、自动校验入参）在我们花一次网络往返之前先校验请求体。本章只强制要求 `model` 和 `messages`;s02 才会把它变成真正的 OpenAI schema:
+**2. 一个 request schema (Pydantic `RelayRequest`)** —— 在花一次网络往返之前先校验 body 格式。本章只强制要求 `model` 和 `messages`;s02 才会把它变成真正的 OpenAI schema:
 
 ```python
 class RelayRequest(BaseModel):
@@ -66,7 +70,7 @@ class RelayRequest(BaseModel):
     messages: list[dict]
 ```
 
-**3. 转发起。** 这里用的是 `httpx.AsyncClient`(支持异步的 HTTP 客户端库,与同步 requests 对应)——`requests` 的异步版本。异步不是装饰,是硬需求:中继几乎所有时长都花在等待上游上,阻塞式客户端每条在飞的请求都会占一个 OS 线程,吞吐几乎立刻见顶。
+**3. 一个 forwarder handler (`POST /relay`)** —— 实际跑"原理"那条主线。这里用的是 `httpx.AsyncClient`(支持异步的 HTTP 客户端库,与同步 requests 对应)——`requests` 的异步版本。异步不是装饰,是硬需求:中继几乎所有时长都花在等待上游上,阻塞式客户端每条在飞的请求都会占一个 OS 线程,吞吐几乎立刻见顶。
 
 ```python
 @app.post("/relay")
@@ -105,7 +109,7 @@ cd s01_minimal_relay
 PORT=8001 python code.py
 ```
 
-确认活着:
+确认服务起好了没?打这个 curl——能返回 `{"status":"ok"}` 说明 FastAPI 进程在响应,中继逻辑也加载到内存了:
 
 ```sh
 curl http://localhost:8001/health
@@ -128,16 +132,22 @@ curl -X POST http://localhost:8001/relay \
 
 新版本把这个单一路由泛化成 `Adaptor` 接口(`relay/channel/openai/adaptor.go`——按 channel 的适配器,负责构造出站请求并解析回包),每个厂商一套实现。s04 我们会走到同样的设计。
 
-## 取舍
+## 本章不做什么
 
-明确**没有**做的事:
+- **没有鉴权** (任何能访问端口的人就能花你的 key)——任何能访问 8001 端口的人都能花你的 key。→ s05 在 chat 路由前加闸门。
+- **没有流式** (逐 token 输出)——`r.json()` 等整个响应回来, 逐 token 输出做不到。→ s03 切 httpx 流式。
+- **没有协议转换** (请求体原样转发)——请求体原样转发, 调用方必须自己会说上游方言。→ s02、s04。
+- **没有配额 / 日志 / 指标** (按用户计费 / 调用历史 / 监控)——没法按用户计费、看不到调用历史、没有监控。→ s07、s11、s16。
 
-- **没有鉴权**。能访问端口的人就能花你的 key。→ s05。
-- **没有流式**。`r.json()` 等整个响应回来,逐 token 输出不可能。→ s03。
-- **单上游**。一个 `FORWARD_TARGET`,没有 channel 表、没有权重、没有故障切换。→ s10、s13。
-- **没有协议转换**。请求体原样转发,所以调用方必须已经会说上游方言。→ s02、s04。
-- **没有配额/日志/指标**。→ s07、s11、s16。
-- **每次新建连接池**。正确,但慢;长连接客户端才是生产答案。
+## 已知限制
+
+- **每请求新建连接池** (connection pool, client 复用的 TCP 连接集合)——`async with httpx.AsyncClient()` 每次都重连, 高并发下握手成本可观; 长连接客户端是生产答案。→ s10 修掉这点。
+- **单上游** (单一上游厂商, 没有 channel 表 / 权重 / 故障切换)——`FORWARD_TARGET` 写死, 厂商挂了整套就挂。→ s10、s13。
+
+## 设计选择
+
+- **用 `except httpx.HTTPError` → 502 而非 500** ——传输失败是上游问题不是调用方问题, 502 比 500 更准确。
+- **`r.status_code >= 400` 原样透传** ——OpenAI 返回 429 客户端应看到 429, 不洗成 500。
 
 ## 下章预告
 

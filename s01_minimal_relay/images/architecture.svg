@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" font-family="monospace">
   <style>
     .client   { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway  { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .upstream { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
-    .title    { font-size: 15px; font-weight: bold; fill: #222; }
+    .title    { font-size: 14px; font-weight: bold; fill: #222; }
     .label    { font-size: 13px; fill: #222; }
     .small    { font-size: 11px; fill: #555; }
     .arrow    { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
@@ -16,44 +16,26 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s01: 中间站一个程序,把网址和密钥藏起来</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s01: 把 URL 和 key 藏到中继进程</text>
 
-  <!-- Client -->
-  <rect class="client" x="40" y="88" width="160" height="88"/>
-  <text x="120" y="116" text-anchor="middle" class="label">Client (调用方)</text>
-  <text x="120" y="136" text-anchor="middle" class="small">不知道该往哪个网址发</text>
-  <text x="120" y="152" text-anchor="middle" class="small">不知道厂商给的密钥</text>
-  <text x="120" y="168" text-anchor="middle" class="small">(密钥类似账号密码)</text>
+  <rect class="client" x="40" y="80" width="160" height="80"/>
+  <text x="120" y="105" text-anchor="middle" class="label">Client</text>
+  <text x="120" y="125" text-anchor="middle" class="small">调用方 · 以前人肉复制 key</text>
 
-  <!-- Relay (gateway) -->
-  <rect class="gateway" x="260" y="80" width="200" height="100"/>
-  <text x="360" y="106" text-anchor="middle" class="label">Relay (本章要写)</text>
-  <text x="360" y="124" text-anchor="middle" class="small">记着该往哪个网址发</text>
-  <text x="360" y="140" text-anchor="middle" class="small">替调用方填上密钥</text>
-  <text x="360" y="156" text-anchor="middle" class="small">接住 → 转发 → 原样吐回</text>
-  <text x="360" y="172" text-anchor="middle" class="small">2 routes: /health, /relay</text>
+  <rect class="gateway" x="260" y="72" width="200" height="96"/>
+  <text x="360" y="97" text-anchor="middle" class="label">Relay</text>
+  <text x="360" y="117" text-anchor="middle" class="small">本章要写 · 接住 + 替填 key + 原样回吐</text>
 
-  <!-- Upstream -->
-  <rect class="upstream" x="520" y="88" width="160" height="88"/>
-  <text x="600" y="116" text-anchor="middle" class="label">Upstream (LLM 服务)</text>
-  <text x="600" y="136" text-anchor="middle" class="small">只看到中继, 看不到调用方</text>
-  <text x="600" y="152" text-anchor="middle" class="small">密钥由中继带过来</text>
-  <text x="600" y="168" text-anchor="middle" class="small">跟调用方完全隔绝</text>
+  <rect class="upstream" x="520" y="80" width="160" height="80"/>
+  <text x="600" y="105" text-anchor="middle" class="label">Upstream</text>
+  <text x="600" y="125" text-anchor="middle" class="small">LLM 服务 · 只见中继</text>
 
-  <!-- Request flow (top) -->
-  <line class="arrow" x1="200" y1="120" x2="258" y2="120"/>
-  <text x="229" y="115" text-anchor="middle" class="small">JSON</text>
-  <line class="arrow" x1="460" y1="120" x2="518" y2="120"/>
-  <text x="489" y="115" text-anchor="middle" class="small">+ 一行密码头</text>
+  <line class="arrow" x1="200" y1="116" x2="258" y2="116"/>
+  <text x="229" y="111" text-anchor="middle" class="small">JSON</text>
+  <line class="arrow" x1="460" y1="116" x2="518" y2="116"/>
+  <text x="489" y="111" text-anchor="middle" class="small">+ Bearer 头</text>
 
-  <!-- Response flow (bottom) -->
-  <line class="arrowR" x1="518" y1="150" x2="462" y2="150"/>
-  <line class="arrowR" x1="258" y1="150" x2="202" y2="150"/>
-  <text x="360" y="145" text-anchor="middle" class="small">原样回吐</text>
-
-  <!-- Caption: WHY this chapter exists -->
-  <text x="360" y="222" text-anchor="middle" class="small">没有中继: 每个调用方各拿一把密钥, 换厂商 / 轮 key / 看流量都得改 N 份代码</text>
-  <text x="360" y="240" text-anchor="middle" class="small">有了中继: 调用方只认中继, 网址和密钥都在中继里, 上面三件事改中继一处即可</text>
-  <text x="360" y="268" text-anchor="middle" class="small">本章只做这一件事: 转发 + 替调用方填密钥。鉴权 / 限流 / 配额 / 多渠道都不做 (见取舍节)</text>
-  <text x="360" y="286" text-anchor="middle" class="small">后续 16 章都在这个内核上往外加东西</text>
+  <line class="arrowR" x1="518" y1="146" x2="462" y2="146"/>
+  <line class="arrowR" x1="258" y1="146" x2="202" y2="146"/>
+  <text x="360" y="141" text-anchor="middle" class="small">原样回吐</text>
 </svg>
