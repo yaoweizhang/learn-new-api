@@ -48,6 +48,14 @@ s10 解决了挑通道，但每次调用有没有发生、在哪失败、谁打�
 
 ## 方案
 
+`## 问题` 提了三件痛:看不到用量 (痛点 #1)、出了问题无法排查 (痛点 #2)、没法做对账 (痛点 #3)。这三件事**任何一件都没法靠"客户端按请求自行记账"或"运营去上游控制台翻历史"能解决**——必须由网关在 chat 端点上一条路径记一行、异步落盘、再开一个只读接口露给管理员。下面这幅图把这三件事各放到一个角色里:
+
+- **`Client` (调用方)** —— 在装上日志中间件之前,这是干"每条调用走完就忘"的角色;装上之后,这事被中间件隔走——客户端发完请求就完了,落日志是网关内部的事,客户端看不见。
+- **`LogMiddleware` (本章要写的中间件)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:`@app.middleware("http")` 装在自己 app 上、包裹挂载链,在 `/v1/chat/completions` 返回 200 时把 `{"path", "ts", "status", "model"}` 一行塞进 `log_store.enqueue`。中间件对所有 chat 调用一视同仁,不依赖任何具体 handler,s13 之后改了挂载结构也照样能看到。
+- **`LogStore` (`_buffer` + `_flushed` 双队列)** —— 本章引入的运行时日志存储。写入端是 `_buffer: deque[dict]`(塞一行加一行),读取端是 `_flushed: list[dict]`(`/admin/logs` 直接读);中间由后台 `flush_loop` 每 100ms 整段搬运一次,锁是 `threading.Lock` 串两条路。Client 不直接触碰 LogStore,Admin 也不直接写——只读。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。中间件只关心响应状态码是不是 200,是 200 就落一条——上游协议变化只影响这条日志的字段,不影响落日志这件事。
+- **`Admin` (管理员)** —— 痛点 #1 #2 #3 的查看方。`GET /admin/logs` 读 `_flushed` 看每条调用的明细、`GET /admin/stats` 按 model 聚合返回总数——把"看不到用量 / 没法排查 / 不能对账"这三件事的答案都收口在这两个端点上。
+
 引入两个最小部件:
 
 - **`s11_call_logs/log_store.py`** —— `LogStore` 协议 + `InMemoryLogStore` 默认实现。`LogStore` 是个 `Protocol`（Python 的结构性子类型，仅靠方法签名匹配），只有 `enqueue` / `list` / `reset` / `drain_now` 四个方法——这四条是这个抽象对外的全部契约。实现是一个 `threading.Lock` + `deque` 缓冲 + `list` 落盘列表:`enqueue` 把一行塞进缓冲,后台 `flush_loop` 每 100ms 把整段搬到 `list`。重置用 `reset_logs()`。模块层保留 `enqueue`/`list_logs` 等 thin wrapper 转发到一个 `_default` 实例,方便测试用 `set_default(rec)` 注入假实现。
@@ -64,6 +72,14 @@ GET  /admin/stats                                                         -> 200
 `/admin/logs` 和 `/admin/stats` 不挂 `_require_admin`(管理员闸门依赖,验证 token 是否带 is_admin=true)——和 s10 一样留到后续章节统一收紧(取舍里展开)。
 
 ## 工作原理
+
+**原理**: 一个 chat 请求穿过来之后,网关在三个动作上为它产生一行日志: `LogMiddleware` (在 `call_next` 返回后探 200 响应) 把 `{"path", "ts", "status", "model"}` 一行塞进 `log_store.enqueue` → 这一行先落在进程内 `_buffer: deque` (写入端,瞬时内存队列) 中,由后台 `flush_loop` (每秒 10 次的异步搬运循环) 每 100ms 整段搬到 `_flushed: list` (落盘列表,被 `/admin/logs` 读取);两个端点 `/admin/logs` 和 `/admin/stats` 直接读 `_flushed` 给管理员。整章所有部件都为"边接住调用边异步落日志、运营能看到"这条主线服务。
+
+**1. 一个 `LogMiddleware` (`code.py`, `@app.middleware("http")` 装在自己 app 上包裹挂载链)** ——`dispatch` 在 `call_next(request)` 拿到 `response` 后判断:`response.status_code == 200` 且路径以 `/v1/chat/completions` 结尾,就把 `{path, ts, status, model}` 一行塞进 `log_store.enqueue`。**为什么用 BaseHTTPMiddleware (Starlette 的"包整个 app 的可注入钩子") 而非在 chat handler 里直接 enqueue**:中间件对所有 chat 调用一视同仁(不依赖具体 handler 实现),后续 s13 改了挂载结构也照样能看到。
+
+**2. 一个 `LogStore` (`log_store.py`,进程内双队列 + 周期 flush 协议接口)** ——`LogStore` 是 `typing.Protocol` (Python 的结构性子类型——只检查方法签名,不强制继承) 接口,只有 `enqueue / list / reset / drain_now` 四方法——这是抽象对外的全部契约。默认实现 `InMemoryLogStore` 用 `threading.Lock` 串两条路:`_buffer: deque[dict]` 写入端 + `_flushed: list[dict]` 读取端。**为什么抽 Protocol**:测试用 `set_default(rec)` 注入 duck-typed fake 验证中间件走的是注入路径;v2 切 SQLite 时只换构造 `_default` 的语句,对外契约不变。
+
+**3. 一个 `flush_loop` 后台搬运任务 (`@app.on_event("startup")` 启动,100ms tick)** ——`while not stop_event: await asyncio.sleep(0.1); drain_now()`,`drain_now()` 把 `_buffer` 整段搬到 `_flushed`。**为什么不直接同步写**:单条 chat 调用几百 ms 瓶颈在等上游,落日志不能阻塞这条调用,100ms 批量 flush 把"每条调用写一次"的 IO 成本摊到"每 100ms 写一次"。shutdown 时再同步 drain 一次,兼容 TestClient 退出 `with` 块时事件循环已停、最后一批不能留在 buffer 里。
 
 ### `log_store.py`:Protocol + InMemory 实现
 
@@ -225,15 +241,25 @@ curl -s http://localhost:8011/admin/stats
 
 > Windows 文件系统不分大小写,本地 IDE 里看着像 `Log.go` 不少见;部署到 Linux/macOS 时按实际的小写路径访问。
 
-## 取舍
+## 本章不做什么
 
-- **纯内存存储,进程一重启日志全丢** —— YAGNI。生产里调用日志是高频写入 + 需要长期查询的数据,必须走数据库;v2 切 Postgres 时把 `enqueue` 改成 `INSERT ... RETURNING id`,`list_logs` 改成带分页的 `SELECT`。教学版先保证"看得见、能聚合"。
-- **没有流式(SSE)调用的日志** —— 中间件里 `body_iterator` 替换对流式响应会破坏流(迭代器只能读一次,我们读完后塞回的那份已经丢失了"分块"语义)。本章测试只覆盖非流式路径,**SSE 流式调用不会进日志**——这是已知缺口,README 和测试都标了出来。v2 要么用 FastAPI 的 `add_event_handler` 在流式响应结束时钩一次,要么干脆放弃中间件、改在 chat_completions 函数体里直接 `enqueue`——当前 s11 链上 s08 是这条 handler 的最终注册点,以后的章节里(s13 等)如果把 chat 路由提到本地,就在本地那个 chat_with_retry 里 enqueue。
-- **`model` 通过 `request.state.model` 传递** —— Brief 原本写的是 `request.query_params.get("model", "?")`,永远是 `"?"` 因为 model 在 body 里。本章的修正手法是:中间件先 `await request.body()` 读出原始 bytes、解出 model 写到 `request.state.model`,再用一个新的 `receive()` 把同一份 bytes 喂回去给下游 FastAPI。这是 Starlette 标准做法;副作用是 body 会被读两次(小开销,kilobytes 级),换来干净的"中间件读 model"语义。
-- **没有 `_require_admin` 闸门** —— `/admin/logs`、`/admin/stats` 当前对所有能访问的人开放。生产里必须收紧,但"管理员能看自己的调用日志"和"调用方能看到自己的用量"是两个不同的产品决策(前者运维、后者用户控制台),先分开再讨论统一鉴权。
-- **`time.sleep(0.2)` 是已知的时序依赖** —— 见"测试"一节。Brief 原本就是这么设计的;这是"异步 + 周期 flush"的固有特性。v2 改成事件驱动后就消除。
-- **`on_event("startup")` 已弃用** —— FastAPI 0.110+ 推荐用 lifespan context manager。本章沿用 brief 的写法保持一致;后续章节统一升级时一起改。
+- **没有流式 (SSE, Server-Sent Events——逐 token 推送的响应形态) 调用的日志** —— 中间件里 `body_iterator` 替换对流式响应会破坏流(响应迭代器只能读一次)。本章测试只覆盖非流式路径,**SSE 流式调用不会进日志**——这是已知缺口,README 和测试都标了出来。v2 要么在流式响应结束时钩一次、要么干脆在 chat_completions 函数体里直接 `enqueue`。→ s13 chat 路由提到本地后,在那个 chat_with_retry 里 enqueue 是更自然的接法。
+- **没有持久化数据库** —— 进程一重启日志全丢。YAGNI:生产里调用日志必须走数据库,高频写入 + 长期查询。v2 切 Postgres 时把 `enqueue` 改成 `INSERT ... RETURNING id`、`list_logs` 改成带分页的 `SELECT`。→ s_full 接 Postgres 后一并迁。
+- **没有 `_require_admin` 闸门** —— `/admin/logs`、`/admin/stats` 当前对所有能访问的人开放。生产里必须收紧,但"管理员能看自己的调用日志"和"调用方能看到自己的用量"是两个不同的产品决策(前者运维,后者用户控制台),先分开再讨论统一鉴权。→ s14 dashboard 已有自己的 cookie session,但 `/admin/logs` 走 HTTP 闸门不在本章范围。
+- **没有 prompt/completion tokens、quota 消耗、成功率、p99 时延** —— 单纯是"调用没发生过"的问题:先把"日志有这件事"做了,字段扩留给后续章节 + 数据库迁移一并做。→ s16 加 Prom 指标时一并把"延迟 / 状态分布"补到 `/metrics`,s_full 接 DB 时把 `tokens / quota` 字段加进表。
+
+## 已知限制
+
+- **`time.sleep(0.2)` 是已知的时序依赖** —— 测试要在 enqueue 后等 100ms tick 才会到 `_flushed`。这是"异步 + 周期 flush"的固有特性。v2 改成事件驱动后就消除。生产里这条不影响——异步本来就该被缓冲,运营查日志是离线动作,延迟 100ms 可忽略。
+- **`on_event("startup")` 已弃用** —— FastAPI 0.110+ 推荐用 lifespan context manager。本章沿用 brief 的写法保持一致;后续章节统一升级时一起改。代码里 `code.py` 已配 `@app.on_event("shutdown")` 同步 drain,升级到 lifespan 时记得把 drain 也搬进去。
 - **shutdown 钩子做同步 drain** —— 见上文 `code.py` 注释。直接动机是 TestClient:测试退出 `with` 块时事件循环停掉,async flush 不再 tick,最后一批会留在 `_buffer` 里没出来;同步 drain 把这一批强制落 `_flushed`。生产 uvicorn 关闭流程里 asyncio 自然会让最后一次 tick 跑完,同步 drain 仍然是无害的双保险。
+- **本地 chat 路由被 s13 提到本地后,s11 日志中间件就读不到 chat body 了** —— s13 把 chat 端点提到本地挡 mount,请求不再经过 s11 的中间件。这意味着 s13 之后 chat 调用的日志丢了。本章故意不动——s13 是韧性章,日志问题留给后续章节决定是否把 LogMiddleware 也提到本地。
+
+## 设计选择
+
+- **`model` 通过 `request.state.model` 传递** —— Brief 原本写的是 `request.query_params.get("model", "?")`,永远是 `"?"` 因为 model 在 body 里(`request.query_params` 只看 URL 查询串,不读请求体)。本章的修正手法是:中间件先 `await request.body()` 读出原始 bytes、解出 model 写到 `request.state.model`,再用一个新的 `receive()` 把同一份 bytes 喂回去给下游 FastAPI。这是 Starlette 标准做法;副作用是 body 会被读两次(小开销,kilobytes 级),换来干净的"中间件读 model"语义。
+- **抽 `LogStore` Protocol (Python 的结构性子类型,只检查方法签名) 而不是直接用 `InMemoryLogStore` 类** —— 两件事今天就受益:(1) 测试可以用 `set_default(fake)` 注入 duck-typed 的 fake,验证中间件真的不直接读模块全局;(2) 日后切 SQLite 实现时只换一个构造模块层 `_default` 的语句,对外契约不变。→ s_full 切 Postgres 时直接换构造,业务代码不动。
+- **只在 `response.status_code == 200` 时记** —— 4xx/5xx 不算"成功调用",s07 的配额结算失败、s08 的 429 限速、s10/s13 的渠道故障是另一类观测信号,留到 s16 才统一处理。**不记不等于不算**:失败调用也要对账——失败整笔 `refund` 在 s07 已经做了,不依赖本中间件。
 
 ## 下章预告
 
