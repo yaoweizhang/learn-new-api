@@ -24,63 +24,56 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s10: 渠道表 + 按 model+weight 选路, 动态配多账号</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s10: 渠道表+三步选路,管理员 CRUD</text>
 
-  <!-- ============ TOP-LEFT: s09 参考框 (前置, 本章接力) ============ -->
-
-  <rect class="reference" x="20" y="50" width="260" height="80"/>
-  <text x="150" y="78" text-anchor="middle" class="small" fill="#555">s09 用户系统 (前置)</text>
-  <text x="150" y="100" text-anchor="middle" class="refsmall">JWT + is_admin → 闸门</text>
-  <text x="150" y="118" text-anchor="middle" class="refsmall">不重写, 复用挂 /admin/*</text>
-
-  <!-- ============ MAIN FLOW: admin 写渠道表 ============ -->
+  <!-- s09 用户系统 参考框 (前置) -->
+  <rect class="reference" x="20" y="50" width="200" height="50"/>
+  <text x="120" y="76" text-anchor="middle" class="small" fill="#555">s09 用户系统</text>
+  <text x="120" y="94" text-anchor="middle" class="refsmall">JWT + is_admin</text>
 
   <!-- Admin client -->
-  <rect class="client" x="20" y="160" width="120" height="64"/>
-  <text x="80" y="186" text-anchor="middle" class="label">Admin Client</text>
-  <text x="80" y="206" text-anchor="middle" class="small">+ Bearer &lt;admin&gt;</text>
+  <rect class="client" x="20" y="150" width="120" height="60"/>
+  <text x="80" y="178" text-anchor="middle" class="label">Admin</text>
+  <text x="80" y="198" text-anchor="middle" class="small">Bearer</text>
 
   <!-- _require_admin gate -->
-  <rect class="middleware" x="170" y="160" width="120" height="64"/>
-  <text x="230" y="186" text-anchor="middle" class="label">_require_admin</text>
-  <text x="230" y="206" text-anchor="middle" class="small">is_admin → OK</text>
+  <rect class="middleware" x="170" y="150" width="120" height="60"/>
+  <text x="230" y="178" text-anchor="middle" class="label">_require_admin</text>
+  <text x="230" y="198" text-anchor="middle" class="small">is_admin</text>
 
   <!-- /admin/channels handlers -->
-  <rect class="gateway" x="320" y="160" width="160" height="64"/>
-  <text x="400" y="186" text-anchor="middle" class="label">/admin/channels</text>
-  <text x="400" y="206" text-anchor="middle" class="small">POST + GET · 增 + 列</text>
+  <rect class="gateway" x="320" y="150" width="160" height="60"/>
+  <text x="400" y="178" text-anchor="middle" class="label">/admin/channels</text>
+  <text x="400" y="198" text-anchor="middle" class="small">POST + GET</text>
 
-  <!-- channels pool (memory dict + Lock) -->
-  <rect class="storage" x="510" y="160" width="190" height="64"/>
-  <text x="605" y="186" text-anchor="middle" class="label">channels pool</text>
-  <text x="605" y="206" text-anchor="middle" class="small">c1/c2/c3 · dict + Lock · 即时生效</text>
+  <!-- channels pool (Round-9 fix be65e8e: ≤ 2 lines preserved) -->
+  <rect class="storage" x="510" y="150" width="190" height="60"/>
+  <text x="605" y="178" text-anchor="middle" class="label">channels pool</text>
+  <text x="605" y="198" text-anchor="middle" class="small">dict + Lock</text>
 
-  <!-- Admin CRUD chain: client -> gate -> handler -> pool -->
-  <line class="arrow" x1="140" y1="190" x2="168" y2="190"/>
-  <text x="154" y="185" text-anchor="middle" class="small">jwt</text>
+  <!-- chain arrows -->
+  <line class="arrow" x1="140" y1="180" x2="168" y2="180"/>
+  <text x="154" y="175" text-anchor="middle" class="small">jwt</text>
 
-  <line class="arrow" x1="290" y1="190" x2="318" y2="190"/>
-  <text x="304" y="185" text-anchor="middle" class="small">OK</text>
+  <line class="arrow" x1="290" y1="180" x2="318" y2="180"/>
+  <text x="304" y="175" text-anchor="middle" class="small">过</text>
 
-  <line class="arrow" x1="480" y1="190" x2="508" y2="190"/>
-  <text x="494" y="185" text-anchor="middle" class="small">写</text>
+  <line class="arrow" x1="480" y1="180" x2="508" y2="180"/>
+  <text x="494" y="175" text-anchor="middle" class="small">写</text>
 
-  <!-- 201 back to admin (dashed, routed BELOW row to avoid crossing) -->
-  <polyline class="arrowR" points="320,224 320,272 80,272 80,224"/>
-  <text x="200" y="267" text-anchor="middle" class="small">201 + {id, name}</text>
+  <!-- 201 back to admin (dashed, routed BELOW) -->
+  <polyline class="arrowR" points="320,210 320,250 80,250 80,210"/>
+  <text x="200" y="245" text-anchor="middle" class="small">201</text>
 
-  <!-- ============ LOWER PATH: pick_channel_for ============ -->
+  <!-- pick_channel_for (lower band) -->
+  <rect class="middleware" x="170" y="270" width="310" height="22"/>
+  <text x="325" y="285" text-anchor="middle" class="small">pick_channel_for · 过滤→档→weight</text>
 
-  <!-- pick_channel_for box -->
-  <rect class="middleware" x="170" y="290" width="310" height="22"/>
-  <text x="325" y="305" text-anchor="middle" class="small">pick_channel_for(model) · 过滤 → 档 → weight</text>
+  <!-- pool -> pick -->
+  <line class="arrow" x1="605" y1="210" x2="325" y2="268"/>
+  <text x="465" y="240" text-anchor="middle" class="small">读</text>
 
-  <!-- arrows: pool -> pick (diagonal across) -->
-  <line class="arrow" x1="605" y1="224" x2="325" y2="288"/>
-  <text x="465" y="255" text-anchor="middle" class="small">读池</text>
-
-  <!-- ============ s09 参考框 → s10 主路径 的"接力"虚线 ============ -->
-
-  <line class="arrowRef" x1="280" y1="132" x2="280" y2="158"/>
-  <text x="286" y="150" text-anchor="start" class="refsmall">接力</text>
+  <!-- s09 参考 → s10 主路径 的"接力"虚线 -->
+  <line class="arrowRef" x1="220" y1="100" x2="220" y2="148"/>
+  <text x="226" y="140" text-anchor="start" class="refsmall">接力</text>
 </svg>

@@ -6,27 +6,6 @@
 
 > **Layer**：L4 路由与韧性
 
-## 本章要做什么
-
-之前所有章节里,上游都是写死在代码里的:一个 `FORWARD_TARGET`,一个 `UPSTREAM_OPENAI_KEY`,渠道是"运维改代码"级别的资产。换一家上游、加一个 Azure 部署、做主备切换——都得到代码里翻找、加分支、重启进程。
-
-要解决这个,把这层配置搬到一张**管理员可改的内存渠道表**——多渠道 + 选路,同一客户端就能跨多账号。本章把这张表和选路算法写出来:
-
-1. **写一张内存渠道表 `channels.py` —— 为什么是内存表先于数据库**: `Channel` 是 `@dataclass`,字段 `id / name / provider / base_url / weight / priority / enabled / healthy`;`_channels: dict[int, Channel]` + `threading.Lock` 保护并发读写;公开函数只有 `reset_channels / create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for`。**为什么不先接 SQLite**:渠道是低频变更的运营数据,先用进程内 dict 把"注册即生效"的契约做出来,等 s12 切到持久化一并迁移——先把"动态配置"这件事讲透,不要让数据库分心。
-2. **`pick_channel_for(model_name)` 三步算法 —— 为什么是 priority 优先于 weight**: 先按 `enabled and healthy and provider == _provider_for_model(model_name)` 过滤;然后取最小 `priority`(数字越小越优先,`priority=0` 是最高档);最后在档内按 `weight` 做 `random.choices(..., k=1)[0]` 加权随机。**为什么 priority 先于 weight**: priority 是"主备层级",weight 是"同档内分摊"——主账号全挂之前,备用账号即使 weight=1000 也不该接流量;反过来同档内若按 first-fit,所有请求都会落到最高 weight 那条,其它渠道闲着。
-3. **挂两条管理员路由 `/admin/channels` —— 为什么先 CRUD 不接转发**: `POST /admin/channels` 注册渠道、`GET /admin/channels` 列出。**为什么不直接接 `/v1/chat/completions`**:本章要演示的是"动态注册 + 选路算法",把转发层一起拉进来会让 diff 翻倍,选路 bug 和转发 bug 会混在一起排查——`pick_channel_for` 的契约和"用这条渠道去打上游"的契约分开讲更清楚。
-4. **鉴权闸门 `_require_admin` —— 为什么用 `dependencies=[...]` 列表形式**: 沿用 s09 的 JWT,自己额外要求 `claims["is_admin"]` 必须为 True,否则 403。**为什么不用 typed parameter**: `_require_admin` 自己完成"读 header → 解码 → is_admin 检查"一整条链路,handler 函数本身只关心业务——闸门用法挂在 `dependencies=[Depends(_require_admin)]` 上更干净,也跟 s08 之前 `request.state.principal` 的模式保持分离。
-
-成品:`POST /admin/channels` 注册 `openai-primary`(weight=100, priority=0)和 `openai-backup`(weight=50, priority=1),后续 `pick_channel_for("gpt-4o-mini")` 会先把 `provider="openai"` 滤出来,再挑最低 priority 档(`openai-primary`),档内按 weight 加权随机(全 weight=0 时回退 round-robin,避免 `random.choices` 全零报错);`mark_unhealthy(cid)` 立即让该渠道被选路跳过。后续 s11 在每次请求时调 `pick_channel_for` 把调用日志落到渠道名;s13 把失败和 `mark_unhealthy` 接成"自动回血"回路。
-
-## 上一章复盘
-
-s09 有真用户,网关只有一条 OpenAI 通道。出问题就 502。
-
-## 在整体中的位置
-
-多通道路由的"调度表"——s13 的失败回落从这里选下一渠道,s04 的厂商适配器按这里的 model 命名。
-
 ## 问题
 
 之前所有章节里,我们的上游都是写死在代码里的:要么 `s04_multi_provider` 里用一个简单的 if/elif 把 `model` 前缀映射到 base_url,要么 `s05` 用一张内存表把 API key 和用户绑死。一旦系统要对外服务,立刻就遇到三个问题:
@@ -36,6 +15,17 @@ s09 有真用户,网关只有一条 OpenAI 通道。出问题就 502。
 3. **没法区分优先级**。生产里同一个模型通常有多个上游(主账号 + 备用账号、Azure + 自建),它们的优先级和配额权重各不相同;写死的代码表达不了。
 
 所以需要一张"渠道表"（每个 `channel`（new-api 里的"上游通道"：一条独立的 LLM 厂商接入配置））:每个渠道记录 provider、base_url、`weight`（权重：同优先级内越大越优先）、`priority`（优先级：数字越小越优先），由管理员通过 HTTP 增删改查,注册后立刻生效;路由层在调用上游前从这张表里"按规则选一个"。
+
+## 本章要做什么
+
+要解决这个,把这层配置搬到一张**管理员可改的内存渠道表**——多渠道 + 选路,同一客户端就能跨多账号。本章把这张表和选路算法写出来:
+
+1. **写一张内存渠道表 `channels.py` —— 为什么是内存表先于数据库**: `Channel` 是 `@dataclass`,字段 `id / name / provider / base_url / weight / priority / enabled / healthy`;`_channels: dict[int, Channel]` + `threading.Lock` 保护并发读写;公开函数只有 `reset_channels / create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for`。**为什么不先接 SQLite**:渠道是低频变更的运营数据,先用进程内 dict 把"注册即生效"的契约做出来,等 s12 切到持久化一并迁移——先把"动态配置"这件事讲透,不要让数据库分心。
+2. **`pick_channel_for(model_name)` 三步算法 —— 为什么是 priority 优先于 weight**: 先按 `enabled and healthy and provider == _provider_for_model(model_name)` 过滤;然后取最小 `priority`(数字越小越优先,`priority=0` 是最高档);最后在档内按 `weight` 做 `random.choices(..., k=1)[0]` 加权随机。**为什么 priority 先于 weight**: priority 是"主备层级",weight 是"同档内分摊"——主账号全挂之前,备用账号即使 weight=1000 也不该接流量;反过来同档内若按 first-fit,所有请求都会落到最高 weight 那条,其它渠道闲着。
+3. **挂两条管理员路由 `/admin/channels` —— 为什么先 CRUD 不接转发**: `POST /admin/channels` 注册渠道、`GET /admin/channels` 列出。**为什么不直接接 `/v1/chat/completions`**:本章要演示的是"动态注册 + 选路算法",把转发层一起拉进来会让 diff 翻倍,选路 bug 和转发 bug 会混在一起排查——`pick_channel_for` 的契约和"用这条渠道去打上游"的契约分开讲更清楚。
+4. **鉴权闸门 `_require_admin` —— 为什么用 `dependencies=[...]` 列表形式**: 沿用 s09 的 JWT,自己额外要求 `claims["is_admin"]` 必须为 True,否则 403。**为什么不用 typed parameter**: `_require_admin` 自己完成"读 header → 解码 → is_admin 检查"一整条链路,handler 函数本身只关心业务——闸门用法挂在 `dependencies=[Depends(_require_admin)]` 上更干净,也跟 s08 之前 `request.state.principal` 的模式保持分离。
+
+成品:`POST /admin/channels` 注册 `openai-primary`(weight=100, priority=0)和 `openai-backup`(weight=50, priority=1),后续 `pick_channel_for("gpt-4o-mini")` 会先把 `provider="openai"` 滤出来,再挑最低 priority 档(`openai-primary`),档内按 weight 加权随机(全 weight=0 时回退 round-robin,避免 `random.choices` 全零报错);`mark_unhealthy(cid)` 立即让该渠道被选路跳过。后续 s11 在每次请求时调 `pick_channel_for` 把调用日志落到渠道名;s13 把失败和 `mark_unhealthy` 接成"自动回血"回路。
 
 ## 方案
 
