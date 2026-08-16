@@ -8,7 +8,19 @@
 
 ## 本章要做什么
 
-把整个 s01-s15 链路打包进 `python:3.11-slim` 单容器;`HEALTHCHECK` 探活,`/healthz` 路由做业务级深检。学完用一条 `docker compose up` 拉起完整网关（单进程 in-memory，没有 redis / mysql 依赖）。
+到 s14,FastAPI 应用在开发机上跑得通:`python s14_admin_dashboard/code.py` 一开浏览器就能看到仪表盘。但"在我机器上能跑"不等于"上生产能跑"——具体差在四件事:Python 版本可能不一样、`requirements.txt` 装出来不一致、进程挂了没人拉起、上游突然改了协议没人知道。光把代码 `scp` 到服务器不够。
+
+要解决这个,把整个 s01-s14 链路打包进 `python:3.11-slim` 单容器,用 `docker compose up` 一条命令拉起完整网关(单进程 in-memory,没有 redis / mysql 依赖);`HEALTHCHECK` 探活,`/healthz` 路由做业务级深检——深检现在是个桩(永远 `ok=True`),生产里换 DB 读 + upstream HEAD。本章把这套部署形态写出来:
+
+1. **写一个 `Dockerfile` —— 为什么单阶段不写多阶段**: `FROM python:3.11-slim` + `WORKDIR /app` + `COPY requirements.txt .` + `RUN pip install --no-cache-dir` + `COPY . .`。**为什么不写多阶段**: 多阶段出 ~20MB 镜像,单阶段 ~150MB;镜像大小对教学无所谓,多阶段需要 Go 工具链那一套思路(我们纯 Python 不需要);**为什么 `requirements.txt` 在 `COPY . .` 之前**: 镜像分层缓存——代码改了只重 build 最后一层,依赖层不动。
+
+2. **加一条 `HEALTHCHECK` + `/healthz` 深检路由 —— 为什么不是简单 `curl /health`**: `HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD python -c "import httpx; print(httpx.get('http://localhost:8015/healthz').status_code)"`。`/healthz` 在 s15 这层 app 上先注册、`app.mount("/", s14_app)` 之后挂载,Starlette 按注册顺序匹配,所以 `/healthz` 命中 s15 本地路由不落到 s14。**为什么是深检不是存活探针**: s01 的 `/health` 是零依赖存活探针;`/healthz` 是业务级深检,生产里要真去 (1) 调 `find_by_email('healthcheck@example.com')` 验证 SQLite 可读 (2) `httpx.get('https://api.openai.com', timeout=2.0)` 验证外网可达。任一异常 `checks[...] = False`,`all(...)` 失败整个 `ok` 才 `False`。**为什么当前是桩**: 测试环境不能真去戳 DB 或访问 OpenAI,这里只搭骨架。
+
+3. **写一份 `docker-compose.yml` —— 为什么单容器不拆 gateway + worker**: `services.gateway.build: .`、`ports: 8015:8015`、`env_file: ../.env`、`healthcheck:` 跟 Dockerfile 同步。**为什么不拆**: new-api 在生产里通常把 HTTP 网关和后台任务(对账、清理、统计)拆成两个进程;**故意没拆**——s15 是教学的最后一章,我们的代码量还小,把全部 s01-s14 链路放在一个进程里才便于读懂;**本章也不依赖 redis / mysql**: 全部状态都是进程内 in-memory,生产化(≥ 万 QPS 或有重后台任务)时再拆 + 加外部依赖。**为什么 `env_file: ../.env`**: docker-compose 的 env_file 解析以 compose 文件所在目录为相对基准,本章 compose 用 `env_file: ../.env`,所以需要先把 `.env.example` 复制到仓库根的 `.env`。
+
+4. **`/healthz` 路由先注册,`app.mount("/", s14_app)` 最后 —— 为什么这个顺序不能错**: Starlette 按注册顺序迭代路由,本地路由先匹配、挂在最后面的 `Mount("/")` 是兜底。`/healthz` 在 s15 本地命中,根本不会落进 s14。**为什么测试不用 Docker**: `code.py` 里的 `app` 就是一个普通 FastAPI 实例,直接用 `TestClient` 跑——同时验证关键约束:`/healthz` 必须出现在 s14 mount 之前,否则返回的是 s14 的 404。
+
+成品: `docker compose -f s15_docker_deployment/docker-compose.yml up -d --build` 拉起容器,`docker compose ps` 看到 `gateway 状态 Up (healthy)`(/healthz 在 30s 内返回 200 后才 healthy);`curl localhost:8015/dashboard/login` 浏览器仍可达。后续 s16 加 Prometheus + trace_id,s_full 真接 Postgres + Redis + 反向代理。
 
 ## 上一章复盘
 
@@ -84,26 +96,6 @@ cp .env.example .env  # 仅首次需要;之后改 .env 不用再 cp
 docker compose -f s15_docker_deployment/docker-compose.yml ps
 # 预期:gateway 状态是 "Up (healthy)" —— /healthz 在 30s 内返回 200 之后才是 healthy
 ```
-
-## 测试
-
-`tests/test_s15_docker_deployment.py` 一条用例:
-
-```python
-def test_healthz_deep_check():
-    with TestClient(app) as c:
-        r = c.get("/healthz")
-    assert r.status_code == 200
-    assert r.json()["ok"] is True
-```
-
-跑:
-
-```bash
-python -m pytest tests/test_s15_docker_deployment.py -v
-```
-
-预期 `1 passed`。注意:这条用例**不需要 Docker** —— `code.py` 里的 `app` 就是一个普通的 FastAPI 实例,直接用 `TestClient` 跑。同时它验证了关键约束:`/healthz` 必须出现在 s14 mount 之前,否则返回的是 s14 的 404。
 
 ## → new-api 源码
 

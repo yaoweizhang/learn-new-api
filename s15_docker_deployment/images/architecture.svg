@@ -1,100 +1,129 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 480" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
     .title      { font-size: 15px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
+    .refsmall   { font-size: 11px; fill: #777; }
     .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
     .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+    .arrowRef   { stroke: #888; stroke-width: 1;   fill: none; marker-end: url(#arrowRef); stroke-dasharray: 3 2; }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
     </marker>
+    <marker id="arrowRef" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+    </marker>
   </defs>
 
-  <text x="400" y="22" text-anchor="middle" class="title">s15: compose 一行拉起</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s15: Compose + healthcheck, 一行起服务, 部署等于本地</text>
 
-  <!-- Docker host outer box -->
-  <rect x="14" y="50" width="772" height="370" fill="none" stroke="#888" stroke-width="1.5"/>
-  <text x="30" y="68" class="small" fill="#555">Docker host</text>
+  <!-- ============ TOP-LEFT: s01-s14 参考框 (前置章节, 本章接力) ============ -->
 
-  <!-- ============ Container: gateway ============ -->
+  <rect class="reference" x="20" y="52" width="320" height="100"/>
+  <text x="180" y="74" text-anchor="middle" class="small" fill="#555">s01-s14 整条链路 (前置)</text>
+  <text x="180" y="92" text-anchor="middle" class="refsmall">/v1/chat/completions · /admin/* · /dashboard/*</text>
+  <text x="180" y="108" text-anchor="middle" class="refsmall">日志 / 渠道 / 缓存 / 限速 / 鉴权 全套</text>
+  <text x="180" y="124" text-anchor="middle" class="refsmall">本章不重写, 全部装进一个容器</text>
+  <text x="180" y="140" text-anchor="middle" class="refsmall">对比: 不是 K8s, 不是多阶段, 不是 cluster</text>
 
-  <!-- Container boundary -->
-  <rect x="40" y="90" width="500" height="310" fill="none" stroke="#1a73e8" stroke-width="2"/>
-  <text x="58" y="108" class="small" fill="#1a73e8" font-weight="bold">Container: gateway</text>
-  <text x="200" y="108" class="small" fill="#555">FROM python:3.11-slim · WORKDIR /app</text>
+  <!-- ============ HOST (left): docker compose CLI ============ -->
+
+  <!-- docker host box (left, machine outside) -->
+  <rect x="20" y="200" width="160" height="100" fill="none" stroke="#888" stroke-width="1.5"/>
+  <text x="100" y="220" text-anchor="middle" class="small" fill="#555" font-weight="bold">Docker host</text>
+
+  <rect class="client" x="40" y="230" width="120" height="50"/>
+  <text x="100" y="248" text-anchor="middle" class="label">CLI</text>
+  <text x="100" y="262" text-anchor="middle" class="small">docker compose up</text>
+
+  <!-- ============ Container (gateway) ============ -->
+
+  <rect x="200" y="180" width="500" height="280" fill="none" stroke="#1a73e8" stroke-width="2"/>
+  <text x="218" y="200" class="small" fill="#1a73e8" font-weight="bold">Container: gateway</text>
+  <text x="380" y="200" class="small" fill="#555">FROM python:3.11-slim · WORKDIR /app</text>
 
   <!-- /healthz route -->
-  <rect class="gateway" x="60" y="130" width="200" height="64"/>
-  <text x="160" y="152" text-anchor="middle" class="label">GET /healthz</text>
-  <text x="160" y="170" text-anchor="middle" class="small">s15 本地路由 · mount 之前</text>
-  <text x="160" y="186" text-anchor="middle" class="small">深检 {ok, checks{db, upstream}}</text>
+  <rect class="gateway" x="220" y="220" width="180" height="60"/>
+  <text x="310" y="240" text-anchor="middle" class="label">GET /healthz</text>
+  <text x="310" y="256" text-anchor="middle" class="small">s15 本地路由 · mount 之前</text>
+  <text x="310" y="272" text-anchor="middle" class="small">深检桩 {ok, checks{db, upstream}}</text>
 
   <!-- s14 mount -->
-  <rect class="gateway" x="290" y="130" width="230" height="64"/>
-  <text x="405" y="152" text-anchor="middle" class="label">s14 mount</text>
-  <text x="405" y="170" text-anchor="middle" class="small">/dashboard/* · /auth/* · /admin/*</text>
-  <text x="405" y="186" text-anchor="middle" class="small">app.mount("/", s14_app)</text>
+  <rect class="gateway" x="420" y="220" width="260" height="60"/>
+  <text x="550" y="240" text-anchor="middle" class="label">s14 mount (链路)</text>
+  <text x="550" y="256" text-anchor="middle" class="small">/dashboard/* · /auth/* · /admin/*</text>
+  <text x="550" y="272" text-anchor="middle" class="small">app.mount("/", s14_app)</text>
 
-  <!-- s13 chained mount -->
-  <rect class="gateway" x="60" y="220" width="460" height="56"/>
-  <text x="290" y="240" text-anchor="middle" class="label">s13 / s12 / s11 / s10 / s09 / s08 链路</text>
-  <text x="290" y="258" text-anchor="middle" class="small">/v1/chat/completions · /admin/cache/stats · ...</text>
+  <!-- chained mount / chat endpoint -->
+  <rect class="gateway" x="220" y="300" width="460" height="50"/>
+  <text x="450" y="318" text-anchor="middle" class="label">s13/s12/s11/s10/s09/s08 链路</text>
+  <text x="450" y="334" text-anchor="middle" class="small">/v1/chat/completions · /admin/cache · /admin/stats</text>
 
   <!-- uvicorn -->
-  <rect class="middleware" x="60" y="296" width="460" height="40"/>
-  <text x="290" y="316" text-anchor="middle" class="label">Uvicorn : 0.0.0.0:8015</text>
-  <text x="290" y="332" text-anchor="middle" class="small">CMD ["python","s15_docker_deployment/code.py"]</text>
+  <rect class="middleware" x="220" y="370" width="460" height="36"/>
+  <text x="450" y="386" text-anchor="middle" class="label">Uvicorn : 0.0.0.0:8015</text>
+  <text x="450" y="400" text-anchor="middle" class="small">CMD ["python","s15_docker_deployment/code.py"]</text>
 
   <!-- HEALTHCHECK -->
-  <rect class="middleware" x="60" y="350" width="460" height="40"/>
-  <text x="290" y="370" text-anchor="middle" class="label">HEALTHCHECK</text>
-  <text x="290" y="386" text-anchor="middle" class="small">interval=30s timeout=5s start=10s retries=3</text>
+  <rect class="middleware" x="220" y="420" width="460" height="36"/>
+  <text x="450" y="436" text-anchor="middle" class="label">HEALTHCHECK</text>
+  <text x="450" y="450" text-anchor="middle" class="small">interval=30s timeout=5s start=10s retries=3</text>
 
-  <!-- arrows inside container: /healthz -> s14 mount -->
-  <line class="arrow" x1="260" y1="158" x2="288" y2="158"/>
-  <line class="arrow" x1="405" y1="194" x2="290" y2="218"/>
-  <text x="345" y="208" text-anchor="middle" class="small">mount</text>
+  <!-- ============ build files (right) ============ -->
 
-  <!-- Probe arrow (DOCKER -> /healthz) from outside top-left -->
-  <line class="arrowR" x1="160" y1="50" x2="160" y2="128" stroke="#1a73e8"/>
-  <text x="50" y="100" class="small" fill="#1a73e8">curl /healthz</text>
+  <rect x="20" y="320" width="160" height="160" fill="none" stroke="#888" stroke-dasharray="4 3" stroke-width="1"/>
+  <text x="38" y="338" class="small" fill="#555" font-weight="bold">build files</text>
 
-  <!-- ============ Dockerfile / docker-compose panel ============ -->
-  <rect x="560" y="90" width="220" height="310" fill="none" stroke="#888" stroke-dasharray="4 3" stroke-width="1"/>
-  <text x="578" y="108" class="small" fill="#555" font-weight="bold">build files</text>
+  <rect class="storage" x="36" y="350" width="128" height="58"/>
+  <text x="100" y="368" text-anchor="middle" class="label">Dockerfile</text>
+  <text x="100" y="382" text-anchor="middle" class="small">FROM python:3.11-slim</text>
+  <text x="100" y="396" text-anchor="middle" class="small">COPY req · pip install</text>
 
-  <!-- Dockerfile -->
-  <rect class="storage" x="572" y="120" width="200" height="120"/>
-  <text x="672" y="142" text-anchor="middle" class="label">Dockerfile</text>
-  <text x="672" y="160" text-anchor="middle" class="small">FROM python:3.11-slim</text>
-  <text x="672" y="176" text-anchor="middle" class="small">COPY requirements.txt .</text>
-  <text x="672" y="192" text-anchor="middle" class="small">RUN pip install ...</text>
-  <text x="672" y="208" text-anchor="middle" class="small">COPY . . · EXPOSE 8015</text>
-  <text x="672" y="224" text-anchor="middle" class="small">HEALTHCHECK CMD</text>
+  <rect class="storage" x="36" y="416" width="128" height="58"/>
+  <text x="100" y="434" text-anchor="middle" class="label">compose.yml</text>
+  <text x="100" y="448" text-anchor="middle" class="small">services: gateway</text>
+  <text x="100" y="462" text-anchor="middle" class="small">build: . · 8015:8015</text>
 
-  <!-- docker-compose -->
-  <rect class="storage" x="572" y="256" width="200" height="130"/>
-  <text x="672" y="278" text-anchor="middle" class="label">docker-compose.yml</text>
-  <text x="672" y="296" text-anchor="middle" class="small">services:</text>
-  <text x="672" y="312" text-anchor="middle" class="small">  gateway:</text>
-  <text x="672" y="328" text-anchor="middle" class="small">    build: .</text>
-  <text x="672" y="344" text-anchor="middle" class="small">    ports: "8015:8015"</text>
-  <text x="672" y="360" text-anchor="middle" class="small">    healthcheck: from Dockerfile</text>
-  <text x="672" y="376" text-anchor="middle" class="small">单容器,无外部依赖</text>
+  <!-- ============ HEALTHCHECK LOOP (right side) ============ -->
 
-  <!-- docker host -> compose/dockerfile -->
-  <line class="arrowR" x1="520" y1="380" x2="570" y2="380"/>
-  <text x="525" y="376" class="small">docker compose up</text>
+  <rect class="middleware" x="560" y="320" width="120" height="50"/>
+  <text x="620" y="338" text-anchor="middle" class="label">probe loop</text>
+  <text x="620" y="352" text-anchor="middle" class="small">30s 一次</text>
 
-  <!-- Caption -->
-  <text x="400" y="448" text-anchor="middle" class="small">Dockerfile + docker-compose · 单容器 · HEALTHCHECK 走 /healthz(s05+)</text>
-  <text x="400" y="466" text-anchor="middle" class="small">深检桩 ok=True · 生产里换 db.read + upstream HEAD;Compose 不依赖 redis/mysql</text>
+  <!-- probe to /healthz (loopback) -->
+  <line class="arrow" x1="558" y1="345" x2="402" y2="248" stroke="#1a73e8"/>
+  <text x="460" y="296" text-anchor="start" class="small" fill="#1a73e8">/healthz</text>
+
+  <!-- restart on fail (dashed red loop) -->
+  <polyline class="arrowR" points="618,370 618,400 540,400 540,250" stroke="#c5221f"/>
+  <text x="540" y="416" text-anchor="start" class="small" fill="#c5221f">restart on fail</text>
+
+  <!-- ============ ARROWS: docker CLI -> container ============ -->
+
+  <line class="arrow" x1="160" y1="256" x2="218" y2="256" stroke="#1a73e8"/>
+  <text x="170" y="250" text-anchor="start" class="small" fill="#1a73e8">docker compose up</text>
+
+  <!-- docker CLI reads build files (build context) -->
+  <line class="arrowR" x1="100" y1="280" x2="100" y2="348"/>
+  <text x="106" y="320" text-anchor="start" class="small">build context</text>
+
+  <!-- ============ s01-s14 参考框 → s15 主路径 的"接力"虚线 ============ -->
+
+  <line class="arrowRef" x1="240" y1="152" x2="310" y2="218"/>
+  <text x="240" y="190" text-anchor="start" class="refsmall">接力</text>
+
+  <!-- ============ Caption: WHY → 本章做了啥 → 后续接力 ============ -->
+
+  <text x="360" y="486" text-anchor="middle" class="small">没有 s15: "在我机器上能跑" ≠ "上生产能跑", Python 版本 / 依赖版本 / 进程死了没人拉 / 上游协议变了没人知, 四件事全悬</text>
+  <text x="360" y="504" text-anchor="middle" class="small">本章做了啥: python:3.11-slim 单容器 + HEALTHCHECK 探 /healthz (本地路由挡 mount), compose 一行起, 30s 探一次, 失败 restart on fail</text>
+  <text x="360" y="522" text-anchor="middle" class="small">后续接力: s16 加 Prometheus + trace_id 跨调用拉一条线, 生产再上多阶段构建 + K8s + 反向代理 + 真 DB / Redis / 多 worker 拆分</text>
 </svg>
