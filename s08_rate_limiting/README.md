@@ -39,7 +39,24 @@ s07 的配额控制的是**花费**——一个余额很足的用户仍可能把
 
 默认值是 60 令牌突发、每秒 1 令牌的补充——一个新用户能突发打满 60 条,之后稳定在约 1 req/s。这套默认值放在那里主要为了让"普通用户"和"故意刷接口的用户"看起来不一样,后者会立刻撞到 429。
 
+`## 问题` 提了 1 件痛:s07 防住"算钱",但一个余额充足的用户仍可 1 秒打 100 次,把同代理上其它租户的延迟都拖下水——配额说"能花多少",我们还得说"能以这个速率花"。这件事**没法靠"客户端自觉"或"配额收紧"能解决**——必须由网关在闸门之后插一条按用户的限速带。下面这幅图把这件事各放到四个角色里:
+
+- **`Client` (调用方)** —— 在装 s08 之前,这是"余额充足就拼命打"的角色;装上之后,这事被中继解了——Client 只管发请求,令牌耗尽时 `429 Too Many Requests` 直接打回来,根本不到预扣这一步。
+- **`Relay` (本章要写的令牌桶闸门)** —— 把痛的解决动作集中放在这里:handler 在闸门通过后第一时间调 `bucket.take(uid)`——按流逝时间补 token 到 `capacity`、不足返 `False`、足够就扣减。`take` 整段在 `threading.Lock` 下原子。返回 `False` 直接 `raise HTTPException(429)`。
+- **`Bucket` (进程内 `dict` + Lock,`bucket.py`)** —— 本章新引入的进程内存储。`_buckets: dict[uid → (tokens, ts)]`,每个用户一份桶;`take(uid, cost=1.0) → bool` 整段原子(补 token + 检查 + 扣减在同一锁里),耗尽返 `False`。进程一重启桶重置为默认 60,s_full 接 Redis `INCR` + `EXPIRE` 多 worker 共享。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。本章对上游透明——令牌耗尽的请求根本到不了 upstream;通到 upstream 的请求已经过闸门、限速、配额三道,上游见到的是"被限速过的"流量。
+
 ## 工作原理
+
+**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: handler 在 `Depends(require_api_key)` 通过后第一时间调 `bucket.take(uid)` → `_refill(uid)` 按流逝时间补 token 至 `capacity` → 检查 `tokens < cost` 不够直接返 `False` → 够就 `_buckets[uid] = (tokens - cost, now)` 扣减——整段在 `threading.Lock` 下原子。返回 `False` 抛 `429`,通过则进 s07 预扣 / 调上游 / 结算。整章所有部件都为这条主线服务。
+
+**1. 一个 token bucket storage (`bucket.py`,进程内 `dict` + `threading.Lock`)** —— `_buckets: dict[uid → (tokens, ts)]` 存每个用户的桶状态;`reset_buckets()` / `configure(uid, capacity, refill_per_sec)` / `take(uid, cost=1.0) → bool` 三个公开函数。`_refill` 按流逝时间补 token 至 `cap`,所有写操作在同一锁里。
+
+**2. 一个 take handler (`bucket.take`,整段原子)** —— `_refill(uid)`(按流逝时间补 token 至 `cap`)→ 检查 `tokens < cost` 不够返 `False` → 够就 `_buckets[uid] = (tokens - cost, now)` 扣减——三步合在 `threading.Lock` 下。同一用户并发请求不能"读到的都是刚补到位的 token、然后都被扣过",拆开必双花。
+
+**3. 一个 refill-on-demand 循环 (`bucket._refill`,隐式由 `take` 触发)** —— 不开后台线程,每次 `take` 时按 `now - ts` 计算"该补多少 token",`min(refilled, capacity)` 截断;桶状态由 `take` 自身推进,简单、无调度开销。
+
+**4. 一个 chat route handler (`POST /v1/chat/completions`,带 `Depends(require_api_key)`)** —— 闸门通过后第一时间 `if not take(p.user_id): raise HTTPException(429)`——`429` 在闸门后、预扣前;之后接 s07 的预扣 / 调上游 / 结算路径。
 
 `s08_rate_limiting/bucket.py` 暴露令牌桶:
 
@@ -91,18 +108,34 @@ for i in 1 2 3; do
 done
 ```
 
+确认限流能挡连续请求?打上面这条 `for` 循环 curl——前两条 `200`、第三条 `429 rate limited`(桶里 0 枚时 `take` 返 `False`),说明 `bucket.py` 的 `_refill` + 检查 + 扣减整段原子都在跑,闸门后限速带到位:
+
 `PORT`(默认 8008)和 `RATE_PER_TOKEN`(默认 1)都可由环境变量覆盖。
 
 ## → new-api 源码
 
 - `middleware/rate-limit.go` —— 用 Redis 计数器做按用户限速的中间件。这里我们把它内联成一个函数调用,契约更直观。
 
-## 取舍
+## 本章不做什么
 
-- **进程内桶是单进程的**。每个 worker 有自己的计数器,所以多 worker 部署下用户实际能拿到 `N_workers × capacity` 的突发。真实部署要把桶挪到 Redis,用 `INCR` + `EXPIRE` 让所有 worker 共享状态——但那是后续章节重写的事,本章是单进程 in-memory。
-- **默认限制是全局的**。生产从数据库读每用户限制(tier、channel、plan)。本章把 60/1 写死——重点是算法,不是策略。
-- **没有 `Retry-After` 头**。真实实现会加这个让礼貌的客户端知道何时退避;我们保持响应 body 极简。
-- **按用户,不是按 token**。限速作用于 API key 持有者,而不是按上游模型分。多租户的模型级配额会把桶再按 `(user_id, model)` 拆。
+- **没有按 channel / model 的限速** (每个上游或模型单独限速)——本章桶只按 `user_id` 拆,所有模型共用同一桶。→ s_full 接 `(uid, model)` 多桶,让贵模型走更严的限速。
+- **没有 `Retry-After` 响应头** (告诉客户端何时可以重试的标准 HTTP 头)——本章 `429` 响应 body 极简,不返回 `Retry-After`,礼貌客户端无法自动退避。→ s_full 加这个头。
+- **没有滑动窗口 / leaky bucket 备选算法** ——只暴露 token bucket;fixed window 在窗口切换瞬间会出现两倍突发,leaky bucket 强制恒定速率不适合吸收突发——都不在本章选。
+- **没有按 tier 的差异化配置** (免费 / 付费 / 企业用户不同 cap 与 refill)——所有用户共用 `60 + 1/s`。→ s_full 接 DB 按 user tier 读限制。
+
+## 已知限制
+
+- **进程内桶是单进程的** (`_buckets` 是进程内 `dict[uid → (tokens, ts)]`,每个 worker 各持一份)——多 worker 部署下用户实际能拿到 `N_workers × capacity` 的突发。真实部署要把桶挪到 Redis,用 `INCR` + `EXPIRE` 让所有 worker 共享状态——但那是后续章节重写的事,本章是单进程 in-memory。
+- **默认限制是全局的** (所有用户共用 60/1 写死配置)——生产从数据库读每用户限制(tier、channel、plan)。本章把 60/1 写死——重点是算法,不是策略。
+- **`threading.Lock` 不跨 worker** (单进程锁,多 worker 进程下不互斥)——`asyncio` 单 worker 部署够用,但多 worker 时每个 worker 各持一份桶,同 user 并发请求可能拿到超额令牌;上 Redis `INCR` + `EXPIRE` 共享是后续优化项。
+- **桶状态进程重启即重置为默认 60** ——进程一重启 `_buckets` 清空,所有用户回到满桶状态;无持久化。
+
+## 设计选择
+
+- **token bucket 而不是 fixed window** (按时间窗累计计数 / vs 桶里装令牌按速率补充)——桶里天然带"突发量 + 按时间线性补"两层语义,允许"先冲一波然后稳定速率",且不会在窗口切换瞬间出现两倍突发;代价是要维护 `(tokens, ts)` 元组,代码比 fixed window 复杂一点点。
+- **refill-on-demand 而不是后台 refill_loop** (每次 take 时按流逝时间补 / vs 起一个定时线程)——不开后台线程,`take` 自身按 `now - ts` 计算"该补多少 token",简单、无调度开销;代价是桶状态推进依赖请求触发,空闲用户的桶永远停在最后一次 take 的状态。
+- **`429` 先于预扣 (`402`)** ——令牌耗尽说明用户对当前速率负责,不该让他继续预扣再失败退款——浪费配额表的写,也防止被 `take` 拒掉的请求再扣一笔预扣。
+- **`threading.Lock` 而不是 `asyncio.Lock`** (同步锁 / vs 异步锁)——桶算式是纳秒级,加锁开销忽略,`asyncio.Lock` 在 await 点会让出反而误事;多 worker 时锁不共享,生产上 Redis 原子脚本更合适。
 
 ## 下章预告
 
