@@ -24,11 +24,11 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s16: trace_id 串请求 + Prom 拉指标 + structlog</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s16: trace · 指标 · 日志</text>
 
   <rect class="reference" x="20" y="50" width="260" height="64"/>
   <text x="150" y="76" text-anchor="middle" class="small" fill="#555">s15 docker + s11 logs (前置)</text>
-  <text x="150" y="100" text-anchor="middle" class="refsmall">/v1/chat 已能转发 + 落日志</text>
+  <text x="150" y="100" text-anchor="middle" class="refsmall">chat 已转 + 落日志</text>
 
   <rect class="client" x="20" y="150" width="120" height="60"/>
   <text x="80" y="178" text-anchor="middle" class="label">Client</text>
@@ -47,14 +47,14 @@
   <text x="590" y="196" text-anchor="middle" class="small">200 JSON</text>
 
   <line class="arrow" x1="140" y1="180" x2="158" y2="180"/>
-  <text x="149" y="175" text-anchor="middle" class="small">next</text>
+  <text x="149" y="175" text-anchor="middle" class="small">求</text>
 
   <line class="arrow" x1="340" y1="180" x2="358" y2="180"/>
-  <text x="349" y="175" text-anchor="middle" class="small">HTTP</text>
+  <text x="349" y="175" text-anchor="middle" class="small">req</text>
 
   <line class="arrowR" x1="358" y1="200" x2="342" y2="200"/>
   <line class="arrowR" x1="158" y1="200" x2="142" y2="200"/>
-  <text x="250" y="195" text-anchor="middle" class="small">200 + trace_id</text>
+  <text x="250" y="195" text-anchor="middle" class="small">返 + tid</text>
 
   <rect class="storage" x="160" y="240" width="160" height="60"/>
   <text x="240" y="268" text-anchor="middle" class="label">REQUESTS Counter</text>

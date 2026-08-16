@@ -6,9 +6,17 @@
 
 > **Layer**：L5 运维与可观测
 
-## 本章要做什么
+## 问题
 
-到 s15,我们只能回答两类问题:"服务有没有起来"(看 `/healthz`)、"请求成功没有"(看 HTTP 状态码)。如果用户报"今天 chat 很慢",你需要每分钟请求数、错误率、P50/P99 延迟、按模型分桶的能力、把入口日志 + 出口日志 + 上游调用日志串起来的 `trace_id`——这些都没有。报障只能问"大概几点打的"。
+到 s15 为止,我们只能回答两类问题:"服务有没有起来"(看 `/healthz`)、"请求成功没有"(看 HTTP 状态码)。如果用户报告"今天 chat 很慢",我们需要:
+
+- 每分钟请求数、错误率、P50/P99 延迟——现在没有指标。
+- 按模型(`gpt-4` / `claude-3-5-sonnet` / ...)分桶的能力——现在只能去翻日志。
+- 把一次请求的入口日志、出口日志、上游调用日志串起来——现在没有 `trace_id`。
+
+`/healthz` 是深检查(Docker `HEALTHCHECK` 友好),但**指标**(Prometheus 抓取)和**日志**(grep / 聚合到 Loki)是两类独立的可观测性支柱。本章补齐这两类。
+
+## 本章要做什么
 
 要解决这个,引入三件套:Prometheus `/metrics` 暴露计数器和直方图、`structlog` 把日志重写成 JSON 一行一条、`x-trace-id` 在中间件读 / 回写并塞进每条日志。学完一次请求的入口 + 出口 + 上游三段日志能用 `trace_id` 串起来,Prometheus 拉指标给你看错误率 / 延迟 / 按模型分桶。本章把这套可观测性最小骨架写出来:
 
@@ -21,24 +29,6 @@
 4. **`x-trace-id` 透传 —— 为什么是 header 不是 contextvar**: 读 `request.headers.get("x-trace-id")`、没有就 `uuid.uuid4().hex` 生成;`request.state.trace_id = trace_id` 让下游 handler 拿得到;响应头写 `x-trace-id` 让客户端能看到、能把同一个 id 带到下一条请求;每条 `log.info("request", trace_id=..., ...)` 都带它。**为什么是 header 不是 contextvar**: 跨服务透传靠 header(nginx / envoy 不认 contextvar),客户端传的 `x-trace-id` 跟服务端生成的 id 同一种格式;**为什么是 `uuid4().hex` 不是雪花算法**: 教学范围内不需要时序、32 字符 hex 够识别一次请求;**为什么中间件读 body 解 model**: 跟 s11 同一手法——`await request.body()` 读出原始 bytes、`json.loads` 解出 `model` 写到 `request.state.model`;Starlette 在 `BaseHTTPMiddleware` 内部把 bytes 缓存到 `request._body`,下游 handler 重读 body 拿到的是同一份 bytes。
 
 成品: `curl localhost:8016/metrics` 看 Prometheus 文本(每行样本带 model label);发起一次 chat,再看 `/metrics` 出现 `model="gpt-4o-mini"` 样本;`docker logs` 看每条请求一行 JSON 包含 `trace_id / path / status / elapsed`。后续 s_full 把指标接到告警规则,trace_id 接到 Loki / Tempo 持久化。
-
-## 上一章复盘
-
-s15 部署稳了,但用户报障只能问"大概几点打的"。
-
-## 在整体中的位置
-
-可观测性的"出口"——trace-id 贯穿所有 16 章,从此一处故障可端到端追踪。
-
-## 问题
-
-到 s15 为止,我们只能回答两类问题:"服务有没有起来"(看 `/healthz`)、"请求成功没有"(看 HTTP 状态码)。如果用户报告"今天 chat 很慢",我们需要:
-
-- 每分钟请求数、错误率、P50/P99 延迟——现在没有指标。
-- 按模型(`gpt-4` / `claude-3-5-sonnet` / ...)分桶的能力——现在只能去翻日志。
-- 把一次请求的入口日志、出口日志、上游调用日志串起来——现在没有 `trace_id`。
-
-`/healthz` 是深检查(Docker `HEALTHCHECK` 友好),但**指标**(Prometheus 抓取)和**日志**(grep / 聚合到 Loki)是两类独立的可观测性支柱。本章补齐这两类。
 
 ## 方案
 
