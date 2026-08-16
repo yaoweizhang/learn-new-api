@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" font-family="monospace">
   <style>
     .client   { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway  { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .upstream { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
-    .title    { font-size: 15px; font-weight: bold; fill: #222; }
+    .title    { font-size: 14px; font-weight: bold; fill: #222; }
     .label    { font-size: 13px; fill: #222; }
     .small    { font-size: 11px; fill: #555; }
     .arrow    { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
@@ -18,45 +18,24 @@
 
   <text x="360" y="22" text-anchor="middle" class="title">s02: 对外说 OpenAI 那条路径,客户端零修改</text>
 
-  <!-- Client -->
-  <rect class="client" x="40" y="78" width="160" height="104"/>
-  <text x="120" y="106" text-anchor="middle" class="label">Client (任何 OpenAI 客户端)</text>
-  <text x="120" y="128" text-anchor="middle" class="small">OpenAI 官方 SDK / LangChain</text>
-  <text x="120" y="144" text-anchor="middle" class="small">LlamaIndex / curl</text>
-  <text x="120" y="162" text-anchor="middle" class="small">默认朝 OpenAI 路径发</text>
-  <text x="120" y="178" text-anchor="middle" class="small">不知道我们存在</text>
+  <rect class="client" x="40" y="80" width="160" height="80"/>
+  <text x="120" y="105" text-anchor="middle" class="label">Client</text>
+  <text x="120" y="125" text-anchor="middle" class="small">OpenAI 客户端 · 默认朝 /v1/chat 发</text>
 
-  <!-- Relay (gateway) -->
-  <rect class="gateway" x="260" y="70" width="200" height="120"/>
-  <text x="360" y="96" text-anchor="middle" class="label">OpenAI 形态的 API</text>
-  <text x="360" y="116" text-anchor="middle" class="small">路径: /v1/chat/completions</text>
-  <text x="360" y="134" text-anchor="middle" class="small">入参: model + messages + 可选</text>
-  <text x="360" y="150" text-anchor="middle" class="small">出参: choices + usage 校验</text>
-  <text x="360" y="166" text-anchor="middle" class="small">剥掉 None, 不发明字段</text>
-  <text x="360" y="184" text-anchor="middle" class="small">转发循环本身一字未改</text>
+  <rect class="gateway" x="260" y="72" width="200" height="96"/>
+  <text x="360" y="97" text-anchor="middle" class="label">OpenAI 形态 API</text>
+  <text x="360" y="117" text-anchor="middle" class="small">本章要写 · 换路径 + 收窄 schema</text>
 
-  <!-- Upstream -->
-  <rect class="upstream" x="520" y="78" width="160" height="104"/>
-  <text x="600" y="106" text-anchor="middle" class="label">Upstream (LLM 服务)</text>
-  <text x="600" y="128" text-anchor="middle" class="small">只看到 OpenAI 形态调用</text>
-  <text x="600" y="144" text-anchor="middle" class="small">FORWARD_TARGET (s01 同款)</text>
-  <text x="600" y="162" text-anchor="middle" class="small">响应仍走 OpenAI schema</text>
-  <text x="600" y="178" text-anchor="middle" class="small">不感知外面换了路径名</text>
+  <rect class="upstream" x="520" y="80" width="160" height="80"/>
+  <text x="600" y="105" text-anchor="middle" class="label">Upstream</text>
+  <text x="600" y="125" text-anchor="middle" class="small">LLM 服务 · 只见中继, 形态不变</text>
 
-  <!-- Request flow (top) -->
-  <line class="arrow" x1="200" y1="114" x2="258" y2="114"/>
-  <text x="229" y="109" text-anchor="middle" class="small">OpenAI JSON</text>
-  <line class="arrow" x1="460" y1="114" x2="518" y2="114"/>
-  <text x="489" y="109" text-anchor="middle" class="small">原样转发</text>
+  <line class="arrow" x1="200" y1="116" x2="258" y2="116"/>
+  <text x="229" y="111" text-anchor="middle" class="small">OpenAI JSON</text>
+  <line class="arrow" x1="460" y1="116" x2="518" y2="116"/>
+  <text x="489" y="111" text-anchor="middle" class="small">原样转发</text>
 
-  <!-- Response flow (bottom) -->
-  <line class="arrowR" x1="518" y1="156" x2="462" y2="156"/>
-  <line class="arrowR" x1="258" y1="156" x2="202" y2="156"/>
-  <text x="360" y="151" text-anchor="middle" class="small">过完 schema 再吐</text>
-
-  <!-- Caption: WHY this chapter exists -->
-  <text x="360" y="222" text-anchor="middle" class="small">s01 走的是自创的 /relay: 每个 SDK 都要学一遍我们的方言, LLM 生态没人认</text>
-  <text x="360" y="240" text-anchor="middle" class="small">本章只做一件事: 改路径名 + 收窄 JSON 到 OpenAI schema, 客户端零修改</text>
-  <text x="360" y="268" text-anchor="middle" class="small">后续 s03 在这条路径上加 stream=true, 首字延迟降到几百毫秒</text>
-  <text x="360" y="286" text-anchor="middle" class="small">s04 在这条路径下挂多厂商 adaptor, OpenAI/Claude/Gemini 共用一条入口</text>
+  <line class="arrowR" x1="518" y1="146" x2="462" y2="146"/>
+  <line class="arrowR" x1="258" y1="146" x2="202" y2="146"/>
+  <text x="360" y="141" text-anchor="middle" class="small">过 schema 再吐</text>
 </svg>

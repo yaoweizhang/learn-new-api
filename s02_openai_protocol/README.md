@@ -42,7 +42,13 @@ s01 验证了"中继"最少要有什么(自定义 `/relay` + 透传 JSON)。但�
 
 转发循环本身逐字节不变。唯一改的是我们"在外头叫什么"。
 
-下面这张 ASCII 流程图把本章的形态压成一行——图里有 `Client`、本章要写的 OpenAI 形态 API、远端 `Upstream` 三个角色,箭头方向 = 请求/响应走向(`▶` 发请求、`◀` 回 JSON),中间那一块就是本章要写的 OpenAI 形态 API(重命名路由 + 收窄 schema):
+`## 问题` 提了两件痛:每个客户端都得学一遍自创方言 (痛点 #1)、LLM 生态没人认这套私有格式 (痛点 #2)。这两件事**任何一件**都不是客户端自己改一下能解决——必须由网关换对外形态。下面这幅图把这两件事各放到一个角色里:
+
+- **`Client` (任何 OpenAI 客户端)** —— 装上 OpenAI 路径之前,这是客户端要被迫改代码的角色;装上之后,这事就被网关解了——SDK 默认就朝 `/v1/chat/completions` 发,零修改。
+- **`OpenAI 形态 API` (本章要写的网关入站面)** —— 把痛点 #1 #2 的解决动作集中放在这里:把路径换 OpenAI 的、用 OpenAI schema 收紧 body、按 OpenAI schema 校验响应。Client 一行不改,Upstream 一行不动。
+- **`Upstream` (LLM 服务)** —— 服务提供方。它看到的还是 s01 那条 `FORWARD_TARGET`,请求体形态没变——只是中间那层网关对外换了名字。
+
+下面这张 ASCII 流程图把本章的形态压成一行,作为上面的对照——图里仍是 `Client / OpenAI 形态 API / Upstream` 三角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块就是本章要写的 OpenAI 形态 API(重命名路由 + 收窄 schema):
 
 ```
 Client ──POST /v1/chat/completions──▶  OpenAI 形态的 API  ──POST FORWARD_TARGET──▶  Upstream
@@ -55,7 +61,13 @@ Client ──POST /v1/chat/completions──▶  OpenAI 形态的 API  ──POS
 
 ## 工作原理
 
-Pydantic 模型承担 schema;处理器通过 `common/json` 工具做编解码(marshal / unmarshal_str:s02 唯一入口,前者输出紧凑 UTF-8 字节,后者通过 Pydantic 模型解线包),保证 JSON 来回的规矩和别的章节完全一致:
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器用 OpenAI schema 校验请求体 (model + messages) → 处理器用 `exclude_none=True` 剥掉可选空字段 → 转发给上游 FORWARD_TARGET → 等待上游回包 → 用 `response_model=ChatCompletionResponse` 把上游回包过一遍 OpenAI schema → 把校验后的 JSON 吐回客户端。整章所有部件都为这条主线服务。
+
+**1. 一个 chat handler (`POST /v1/chat/completions`, `response_model=ChatCompletionResponse`)** —— 把 s01 的 `/relay` 路径换成 OpenAI 生态统一认的 `/v1/chat/completions`,所有 SDK 默认就朝这里发。`response_model`(FastAPI 装饰器参数,声明响应类型做自动校验)让回包也走 schema 校验,任何字段缺失/形态错都会在网关边界就拦住。
+
+**2. 一个 OpenAI request schema (Pydantic `ChatCompletionRequest` + `ChatMessage`)** —— 在花一次网络往返之前先按 OpenAI 的字段集校验 body 格式。`Field(min_length=1)` (Pydantic 字段约束,列表至少 1 条) 强制 `messages` 不能传空数组;`exclude_none=True` (序列化时剥掉 None 字段,避免空字段落到线上) 在序列化前剥掉可空字段,所以不传 `temperature` 的调用方不会在线上传出一个空的 JSON 键——OpenAI 把"省略"理解为"用服务端默认",`null` 是"强制传 null 覆盖默认",两种语义不能混。
+
+**3. 一个 marshal/unmarshal 入口 (`common/json.py`)** —— 业务代码唯一允许使用的 JSON 入口:`marshal` 输出紧凑 UTF-8 字节(无空格、`ensure_ascii=False`);`unmarshal_str` 通过 Pydantic 模型解析线包,边界处的响应校验就完成了。对齐 new-api 的 `common/json.go` 规则。
 
 ```python
 class ChatMessage(BaseModel):
@@ -70,8 +82,6 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: int | None = None
     stream: bool = False
 ```
-
-路由就是把 `s01` 的 relay 换了个 URL,加了个类型化的 body。`model_dump(exclude_none=True)` (`exclude_none=True`：序列化时剥掉 None 字段,避免空字段落到线上)在序列化前剥掉可空字段,所以不传 `temperature` 的调用方不会在线上传出一个空的 JSON 键。`response_model=ChatCompletionResponse` (response_model:FastAPI 装饰器参数,声明响应类型做自动校验) 让响应同样走 schema 校验:
 
 ```python
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
@@ -90,9 +100,22 @@ async def chat_completions(req: ChatCompletionRequest) -> dict:
     return unmarshal_str(r.text, ChatCompletionResponse).model_dump()
 ```
 
-`common/json.py` 的 `marshal` 和 `unmarshal_str` 是业务代码唯一允许使用的 JSON 入口:`marshal` 输出紧凑 UTF-8 字节(无空格、`ensure_ascii=False`);`unmarshal_str` 通过 Pydantic 模型解析线包,边界处的响应校验就完成了。把它们集中到一个模块,正好对齐 new-api 的 `common/json.go` 规则。
+逐行看:
 
-为什么要 `exclude_none=True`?OpenAI 的 API 把"省略的可选字段"理解为"服务端用默认"。`temperature: null` 是另一种请求——它强制传 `null`,从而绕过上游默认。剥掉字段才能保住调用方的本意。
+- `headers = ... if UPSTREAM_KEY else {}` —— 中继负责注入厂商 key。调用方永远看不到。这正是网关存在最重要的单一原因。
+- `timeout=30.0` —— 别继承一个无限大的默认值。挂住的上游不能反过来挂住中继。
+- `except httpx.HTTPError` → **502**。传输层失败是我们上游的锅,不是调用方的;`502 Bad Gateway` 把这件事说得很清楚。
+- `if r.status_code >= 400` —— 把上游的状态码原样透传。OpenAI 返回 429,调用方就应该看到 429,而不是被洗成 500。
+- `response_model=ChatCompletionResponse` —— 上行回包按 OpenAI schema 再过一遍。任何字段缺失/形态错都会在网关边界就拦住,而不是被原样吐回、进了客户端才报错。
+- 每次请求都用 `async with` 关闭客户端(及其连接池(client 复用的 TCP 连接集合))。简单,但确实是浪费——s10 用一个共享连接池修掉这点。
+
+配置全部走环境变量,所以任何一章都不用动代码就能切换目标:
+
+```python
+PORT           = int(os.getenv("PORT", "8002"))
+FORWARD_TARGET = os.getenv("FORWARD_TARGET", "https://api.openai.com/v1/chat/completions")
+UPSTREAM_KEY   = os.getenv("UPSTREAM_OPENAI_KEY", "")
+```
 
 ## 运行
 
@@ -101,7 +124,7 @@ cd s02_openai_protocol
 PORT=8002 python code.py
 ```
 
-确认活着:
+确认 OpenAI schema 端点能不能响应?打这条 curl——能拿到 `{"status":"ok"}` 说明 FastAPI 进程在响应、`ChatCompletionRequest`/`ChatCompletionResponse` 两个 schema 都加载到内存里了:
 
 ```sh
 curl http://localhost:8002/health
@@ -121,20 +144,28 @@ curl -X POST http://localhost:8002/v1/chat/completions \
 | 这里 | new-api |
 |---|---|
 | `ChatCompletionRequest` 模型 | `relay/channel/openai/adaptor.go` —— OpenAI 线协议和内部 `relay` 结构之间的入参/响应 DTO 转换 |
-| `chat_completions` 路由 | `controller/relay.go` —— 把入站请求派发到 OpenAI 的 `Adaptor`（new-api 术语：厂商适配器接口） |
+| `chat_completions` 路由 | `controller/relay.go` —— 把入站请求派发到 OpenAI 的 `Adaptor`(new-api 术语:厂商适配器接口) |
 | `model_dump(exclude_none=True)` | `relay/channel/openai/adaptor.go` 的 `ConvertOpenAIRequest` + `dto` 各包 —— 转发前每个 channel adaptor 把自己家厂商的请求转成内部 `dto.GeneralOpenAIRequest`,Go 端用 `omitempty` JSON tag 实现"丢空字段";`relay/constant/relay_mode.go` 里只放 `RelayModeChatCompletions` 之类的模式枚举 |
 
 new-api 把这套模式抽象成 `Adaptor` 接口(`relay/channel/openai/adaptor.go`),每个厂商一个实现。s04 我们会走到同样的设计。
 
-## 取舍
+## 本章不做什么
 
-明确**没有**做的事:
+- **没有 Claude / Gemini 的协议转换** (把 OpenAI 之外的厂商方言翻成 OpenAI 形态给客户端)——请求体还是 OpenAI 形态, Claude 风格的 `system` 块、或 Gemini 的 `contents` 数组都会被原样转发、再被上游拒绝。→ s04。
+- **没有流式** (逐 token 输出)——`r.json()` 等完整 body, 逐 token 输出不可能。→ s03。
+- **没有鉴权** (任何能访问端口的人就能调网关)——任何能访问 8002 端口的人都能打中继。→ s05 在 chat 路由前加闸门。
+- **没有配额 / 日志 / 指标** (按用户计费 / 调用历史 / 监控)——没法按用户计费、看不到调用历史、没有监控。→ s07、s11、s16。
 
-- **没有 Claude / Gemini 的协议转换**。请求体还是 OpenAI 形态,所以 Claude 风格的 `system` 块、或 Gemini 的 `contents` 数组都会被原样转发、再被上游拒绝。→ s04。
-- **没有流式**。`r.json()` 等完整 body,逐 token 输出不可能。→ s03。
-- **没有鉴权、配额、日志、指标**。→ s05、s07、s11、s16。
-- **每请求新建一个连接池**。正确,但慢;长连接客户端才是生产答案。→ s10。
-- **没有重试和退避**。一次短暂的上游抖动会以 502 暴露给调用方。→ s13。
+## 已知限制
+
+- **每请求新建连接池** (connection pool, client 复用的 TCP 连接集合)——`async with httpx.AsyncClient()` 每次都重连, 高并发下握手成本可观; 长连接客户端是生产答案。→ s10 修掉这点。
+- **单上游** (单一上游厂商, 没有 channel 表 / 权重 / 故障切换)——`FORWARD_TARGET` 写死, 厂商挂了整套就挂。→ s10、s13。
+- **没有重试和退避** ——一次短暂的上游抖动会以 502 暴露给调用方。→ s13。
+
+## 设计选择
+
+- **路径改名不留 `/relay` 兼容口** ——留两条等于让中继长期维护两套契约;SDK 默认配置过来还是撞到 OpenAI 形态,统一走一条,所有客户端零修改。
+- **`response_model=ChatCompletionResponse` 在边界过 schema** ——让回包也在网关边界被校验一次, 字段缺失/形态错不会绕过网关才到客户端才报错。
 
 ## 下章预告
 
