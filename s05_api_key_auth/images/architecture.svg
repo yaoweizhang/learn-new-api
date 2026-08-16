@@ -1,56 +1,57 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" font-family="monospace">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 320" font-family="monospace">
+  <style>
+    .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
+    .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
+    .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
+    .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .title      { font-size: 15px; font-weight: bold; fill: #222; }
+    .label      { font-size: 13px; fill: #222; }
+    .small      { font-size: 11px; fill: #555; }
+    .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+  </style>
   <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
-    </marker>
-    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
-    </marker>
-    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
     </marker>
   </defs>
 
+  <text x="360" y="22" text-anchor="middle" class="title">s05: Bearer 一行拦住所有人</text>
+
   <!-- Client -->
-  <rect x="10" y="100" width="80" height="50" fill="#eee" stroke="#333"/>
-  <text x="50" y="125" text-anchor="middle">Client</text>
-  <text x="50" y="140" text-anchor="middle" font-size="9">+ Bearer</text>
+  <rect class="client" x="40" y="100" width="140" height="80"/>
+  <text x="110" y="130" text-anchor="middle" class="label">Client</text>
+  <text x="110" y="148" text-anchor="middle" class="small">+ Bearer &lt;key&gt;</text>
+  <text x="110" y="166" text-anchor="middle" class="small">Authorization header</text>
 
-  <!-- Bearer check -->
-  <rect x="160" y="60" width="170" height="130" fill="#cfc" stroke="#333"/>
-  <text x="245" y="85" text-anchor="middle" font-size="13">require_api_key</text>
-  <text x="245" y="105" text-anchor="middle" font-size="10">Authorization</text>
-  <text x="245" y="120" text-anchor="middle" font-size="10">Bearer &lt;key&gt;</text>
-  <text x="245" y="145" text-anchor="middle" font-size="10">is_blocked(key)?</text>
-  <text x="245" y="160" text-anchor="middle" font-size="10">lookup_key(key)</text>
-  <text x="245" y="180" text-anchor="middle" font-size="10">-&gt; Principal</text>
+  <!-- Auth middleware -->
+  <rect class="middleware" x="220" y="100" width="200" height="80"/>
+  <text x="320" y="128" text-anchor="middle" class="label">require_api_key</text>
+  <text x="320" y="146" text-anchor="middle" class="small">is_blocked? / lookup_key</text>
+  <text x="320" y="164" text-anchor="middle" class="small">-&gt; Principal (user_id, scopes)</text>
+  <text x="320" y="182" text-anchor="middle" class="small">挂在 request.state</text>
 
-  <!-- Provider dispatch -->
-  <rect x="400" y="60" width="160" height="130" fill="#fed" stroke="#a6a" stroke-width="2"/>
-  <text x="480" y="85" text-anchor="middle" font-size="13">Provider dispatch</text>
-  <text x="480" y="110" text-anchor="middle" font-size="10">/v1/chat/completions</text>
-  <text x="480" y="130" text-anchor="middle" font-size="10">pick_provider(model)</text>
-  <text x="480" y="150" text-anchor="middle" font-size="10">to_upstream / from_upstream</text>
-  <text x="480" y="175" text-anchor="middle" font-size="10">httpx.AsyncClient.post</text>
+  <!-- Relay (gateway) -->
+  <rect class="gateway" x="460" y="100" width="220" height="80"/>
+  <text x="570" y="130" text-anchor="middle" class="label">/v1/chat/completions</text>
+  <text x="570" y="148" text-anchor="middle" class="small">Depends(require_api_key)</text>
+  <text x="570" y="166" text-anchor="middle" class="small">upstream forward</text>
 
-  <!-- Upstream -->
-  <rect x="630" y="100" width="80" height="50" fill="#eee" stroke="#333"/>
-  <text x="670" y="125" text-anchor="middle">Upstream</text>
-  <text x="670" y="140" text-anchor="middle" font-size="9">(OpenAI/Claude/Gemini)</text>
+  <!-- Request flow client -> auth -->
+  <line class="arrow" x1="180" y1="130" x2="218" y2="130"/>
+  <text x="199" y="125" text-anchor="middle" class="small">POST + Bearer</text>
 
-  <!-- Client -> Bearer check -->
-  <line x1="90" y1="125" x2="160" y2="125" stroke="#333" marker-end="url(#a)"/>
-  <text x="125" y="118" text-anchor="middle" font-size="10">POST + Bearer</text>
+  <!-- 401 reject path (dashed red back to client) -->
+  <line class="arrowR" x1="320" y1="180" x2="320" y2="260" stroke="#c5221f"/>
+  <line class="arrowR" x1="320" y1="260" x2="110" y2="260" stroke="#c5221f"/>
+  <line class="arrowR" x1="110" y1="260" x2="110" y2="182" stroke="#c5221f"/>
+  <text x="320" y="240" text-anchor="middle" class="small" fill="#c5221f">missing / unknown / blocked -&gt; 401</text>
 
-  <!-- Bearer check -> Provider dispatch (allowed) -->
-  <line x1="330" y1="125" x2="400" y2="125" stroke="#2a7" marker-end="url(#g)" stroke-width="1.5"/>
-  <text x="365" y="118" text-anchor="middle" font-size="10" fill="#2a7">Principal OK</text>
+  <!-- Auth -> gateway (allowed) -->
+  <line class="arrow" x1="420" y1="130" x2="458" y2="130"/>
+  <text x="439" y="125" text-anchor="middle" class="small">Principal</text>
 
-  <!-- Provider dispatch -> Upstream -->
-  <line x1="560" y1="125" x2="630" y2="125" stroke="#333" marker-end="url(#a)"/>
-  <text x="595" y="118" text-anchor="middle" font-size="10">HTTP</text>
-
-  <!-- 401 reject branch -->
-  <line x1="245" y1="190" x2="245" y2="240" stroke="#a33" marker-end="url(#r)" stroke-width="1.5"/>
-  <text x="245" y="258" text-anchor="middle" font-size="10" fill="#a33">missing / unknown / blocked -&gt; 401</text>
+  <!-- Caption -->
+  <text x="360" y="304" text-anchor="middle" class="small">Authorization: Bearer &lt;key&gt; -&gt; 401 if missing / unknown / blocked · 自定义 401 JSON body</text>
 </svg>

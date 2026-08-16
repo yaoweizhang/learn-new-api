@@ -1,93 +1,92 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 380" font-family="monospace">
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" font-family="monospace">
+  <style>
+    .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
+    .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
+    .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
+    .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
+    .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .title      { font-size: 15px; font-weight: bold; fill: #222; }
+    .label      { font-size: 13px; fill: #222; }
+    .small      { font-size: 11px; fill: #555; }
+    .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
+    .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+  </style>
   <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
-    </marker>
-    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2a7"/>
-    </marker>
-    <marker id="rl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#c80"/>
-    </marker>
-    <marker id="p" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#a6a"/>
-    </marker>
-    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0,0 L10,5 L0,10 z" fill="#a33"/>
     </marker>
   </defs>
 
+  <text x="400" y="22" text-anchor="middle" class="title">s08: 桶里取 token</text>
+
   <!-- Client -->
-  <rect x="10" y="170" width="80" height="50" fill="#eee" stroke="#333"/>
-  <text x="50" y="195" text-anchor="middle">Client</text>
-  <text x="50" y="210" text-anchor="middle" font-size="9">+ Bearer</text>
+  <rect class="client" x="20" y="120" width="120" height="80"/>
+  <text x="80" y="148" text-anchor="middle" class="label">Client</text>
+  <text x="80" y="166" text-anchor="middle" class="small">+ Bearer</text>
+  <text x="80" y="184" text-anchor="middle" class="small">POST /v1/chat/completions</text>
 
   <!-- Auth (s05) -->
-  <rect x="120" y="110" width="120" height="150" fill="#cfc" stroke="#333"/>
-  <text x="180" y="130" text-anchor="middle" font-size="12">s05 auth</text>
-  <text x="180" y="150" text-anchor="middle" font-size="9">require_api_key</text>
-  <text x="180" y="170" text-anchor="middle" font-size="9">-&gt; Principal</text>
-  <text x="180" y="245" text-anchor="middle" font-size="9" fill="#2a7">200 / 401</text>
+  <rect class="middleware" x="160" y="120" width="100" height="80"/>
+  <text x="210" y="146" text-anchor="middle" class="label">s05</text>
+  <text x="210" y="164" text-anchor="middle" class="small">require_api_key</text>
+  <text x="210" y="182" text-anchor="middle" class="small">-&gt; Principal</text>
 
   <!-- Token bucket (NEW) -->
-  <rect x="270" y="20" width="200" height="150" fill="#ffd" stroke="#c80" stroke-width="2"/>
-  <text x="370" y="40" text-anchor="middle" font-size="13" fill="#c80">s08 bucket.py</text>
-  <text x="370" y="60" text-anchor="middle" font-size="10">_buckets: dict + Lock</text>
-  <text x="370" y="78" text-anchor="middle" font-size="10">configure(uid, cap, refill)</text>
-  <text x="370" y="96" text-anchor="middle" font-size="10">_refill: tokens += dt * refill</text>
-  <text x="370" y="114" text-anchor="middle" font-size="10">take(uid) -&gt; bool (atomic)</text>
-  <text x="370" y="132" text-anchor="middle" font-size="10">default: cap=60, refill=1.0/s</text>
-  <text x="370" y="155" text-anchor="middle" font-size="10" fill="#c80">thread-safe in-memory</text>
+  <rect class="middleware" x="280" y="40" width="160" height="100"/>
+  <text x="360" y="62" text-anchor="middle" class="label">bucket.py</text>
+  <text x="360" y="80" text-anchor="middle" class="small">_buckets: dict + Lock</text>
+  <text x="360" y="98" text-anchor="middle" class="small">cap=60, refill=1.0/s</text>
+  <text x="360" y="116" text-anchor="middle" class="small">take(uid) -&gt; bool</text>
+  <text x="360" y="134" text-anchor="middle" class="small">atomic, in-memory</text>
 
-  <!-- Quota store (s07) -->
-  <rect x="270" y="200" width="200" height="120" fill="#fdf" stroke="#a6a"/>
-  <text x="370" y="220" text-anchor="middle" font-size="12">s07 quota</text>
-  <text x="370" y="240" text-anchor="middle" font-size="10">deduct / refund / settle</text>
-  <text x="370" y="258" text-anchor="middle" font-size="10">atomic under Lock</text>
+  <!-- Relay handler -->
+  <rect class="gateway" x="280" y="170" width="160" height="80"/>
+  <text x="360" y="194" text-anchor="middle" class="label">Relay</text>
+  <text x="360" y="212" text-anchor="middle" class="small">if !take(uid): 429</text>
+  <text x="360" y="230" text-anchor="middle" class="small">+ Retry-After header</text>
 
-  <!-- Provider dispatch + handler -->
-  <rect x="500" y="120" width="160" height="200" fill="#fed" stroke="#333"/>
-  <text x="580" y="140" text-anchor="middle" font-size="12">handler</text>
-  <text x="580" y="160" text-anchor="middle" font-size="10">if !take(uid): 429</text>
-  <text x="580" y="178" text-anchor="middle" font-size="10">estimate = (pt + 256)*RATE</text>
-  <text x="580" y="196" text-anchor="middle" font-size="10">if !deduct(est): 402</text>
-  <text x="580" y="214" text-anchor="middle" font-size="10">pick_provider / upstream</text>
-  <text x="580" y="232" text-anchor="middle" font-size="10">on fail: refund(est)</text>
-  <text x="580" y="250" text-anchor="middle" font-size="10">on ok: settle(est, actual)</text>
-  <text x="580" y="295" text-anchor="middle" font-size="9" fill="#2a7">200 + quota_charged</text>
+  <!-- Upstream -->
+  <rect class="upstream" x="480" y="170" width="160" height="80"/>
+  <text x="560" y="198" text-anchor="middle" class="label">Upstream</text>
+  <text x="560" y="216" text-anchor="middle" class="small">OpenAI / Claude / Gemini</text>
+  <text x="560" y="234" text-anchor="middle" class="small">httpx post</text>
 
-  <!-- Client -> Auth -->
-  <line x1="90" y1="195" x2="120" y2="195" stroke="#333" marker-end="url(#a)"/>
-  <text x="105" y="188" text-anchor="middle" font-size="9">POST</text>
+  <!-- Quota (s07, after pass) -->
+  <rect class="storage" x="660" y="170" width="120" height="80"/>
+  <text x="720" y="194" text-anchor="middle" class="small">s07</text>
+  <text x="720" y="212" text-anchor="middle" class="small">deduct /</text>
+  <text x="720" y="230" text-anchor="middle" class="small">settle</text>
+
+  <!-- Chain arrows (left to right) -->
+  <line class="arrow" x1="140" y1="150" x2="158" y2="150"/>
+  <line class="arrow" x1="260" y1="150" x2="278" y2="150"/>
+  <text x="269" y="145" text-anchor="middle" class="small">uid</text>
 
   <!-- Auth -> handler (allowed) -->
-  <line x1="240" y1="155" x2="500" y2="180" stroke="#c80" marker-end="url(#rl)" stroke-width="1.5"/>
-  <text x="370" y="155" text-anchor="middle" font-size="9" fill="#c80">Principal</text>
+  <line class="arrow" x1="260" y1="180" x2="278" y2="195"/>
 
-  <!-- Auth -> handler (reject 401) -->
-  <line x1="240" y1="215" x2="500" y2="260" stroke="#a33" stroke-width="1.5" stroke-dasharray="4 3"/>
-  <text x="370" y="240" text-anchor="middle" font-size="9" fill="#a33">401</text>
+  <!-- 401 reject (s05) dashed red back -->
+  <line class="arrowR" x1="210" y1="200" x2="210" y2="270" stroke="#c5221f"/>
+  <line class="arrowR" x1="210" y1="270" x2="80" y2="270" stroke="#c5221f"/>
+  <line class="arrowR" x1="80" y1="270" x2="80" y2="202" stroke="#c5221f"/>
+  <text x="210" y="262" text-anchor="middle" class="small" fill="#c5221f">401</text>
 
-  <!-- handler -> bucket (take) -->
-  <line x1="540" y1="170" x2="470" y2="110" stroke="#c80" marker-end="url(#rl)" stroke-width="1.5"/>
-  <text x="490" y="135" font-size="9" fill="#c80">take(uid)</text>
+  <!-- Bucket -> handler (take) -->
+  <line class="arrow" x1="360" y1="142" x2="360" y2="168"/>
 
-  <!-- bucket -> handler (denied) -->
-  <line x1="430" y1="120" x2="500" y2="225" stroke="#a33" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#r)"/>
-  <text x="420" y="175" font-size="9" fill="#a33" text-anchor="end">exhausted -&gt; 429</text>
+  <!-- 429 reject path (dashed amber) from handler back to client -->
+  <line class="arrowR" x1="280" y1="210" x2="100" y2="80" stroke="#b58900"/>
+  <line class="arrowR" x1="100" y1="80" x2="80" y2="118" stroke="#b58900"/>
+  <text x="190" y="85" text-anchor="middle" class="small" fill="#b58900">exhausted -&gt; 429 + Retry-After</text>
 
-  <!-- handler -> quota (pre-deduct) -->
-  <line x1="540" y1="240" x2="470" y2="260" stroke="#a6a" marker-end="url(#p)" stroke-width="1.5"/>
-  <text x="510" y="255" font-size="9" fill="#a6a">deduct(est)</text>
+  <!-- Handler -> Upstream -->
+  <line class="arrow" x1="440" y1="200" x2="478" y2="200"/>
+  <text x="459" y="195" text-anchor="middle" class="small">HTTP</text>
 
-  <!-- quota -> handler (insufficient) -->
-  <line x1="430" y1="280" x2="500" y2="290" stroke="#a33" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#r)"/>
-  <text x="420" y="305" font-size="9" fill="#a33" text-anchor="end">insufficient -&gt; 402</text>
+  <!-- Upstream -> quota (settle) -->
+  <line class="arrowR" x1="640" y1="210" x2="658" y2="210"/>
 
-  <!-- handler -> quota (settle) -->
-  <line x1="540" y1="270" x2="470" y2="300" stroke="#a6a" stroke-dasharray="4 3" stroke-width="1.5" marker-end="url(#p)"/>
-  <text x="520" y="320" font-size="9" fill="#a6a">settle / refund</text>
-
-  <!-- Footer -->
-  <text x="390" y="365" text-anchor="middle" font-size="9" fill="#666">auth -&gt; rate-limit (429) -&gt; quota (402) -&gt; upstream -&gt; settle (estimate - actual refunded)</text>
+  <!-- Caption -->
+  <text x="400" y="304" text-anchor="middle" class="small">60 tokens burst,refill 1/s · 拒第 61 个请求 -&gt; 429 + Retry-After · 同一用户并发原子</text>
 </svg>
