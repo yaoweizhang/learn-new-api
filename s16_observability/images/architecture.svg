@@ -1,122 +1,140 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 520" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 580" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
     .title      { font-size: 15px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
+    .refsmall   { font-size: 11px; fill: #777; }
     .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
     .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+    .arrowRef   { stroke: #888; stroke-width: 1;   fill: none; marker-end: url(#arrowRef); stroke-dasharray: 3 2; }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
     </marker>
+    <marker id="arrowRef" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+    </marker>
   </defs>
 
-  <text x="460" y="22" text-anchor="middle" class="title">s16: trace_id 串,Prometheus 拉</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s16: Prometheus + trace_id, 一处故障端到端追踪</text>
 
-  <!-- ============ Top row: request flow ============ -->
+  <!-- ============ TOP-LEFT: s15 + s11 参考框 (前置章节, 本章接力) ============ -->
+
+  <rect class="reference" x="20" y="52" width="320" height="100"/>
+  <text x="180" y="74" text-anchor="middle" class="small" fill="#555">s15 docker + s11 logs (前置)</text>
+  <text x="180" y="92" text-anchor="middle" class="refsmall">/v1/chat/completions 已能转发 + 落日志</text>
+  <text x="180" y="108" text-anchor="middle" class="refsmall">本章不重写, 加 TraceAndMetricsMiddleware</text>
+  <text x="180" y="124" text-anchor="middle" class="refsmall">对比: 不是 OpenTelemetry (YAGNI)</text>
+  <text x="180" y="140" text-anchor="middle" class="refsmall">对比: 不是 CollectorRegistry 分组</text>
+
+  <!-- ============ MAIN FLOW ROW (本章主路径) ============ -->
 
   <!-- Client -->
-  <rect class="client" x="20" y="80" width="140" height="64"/>
-  <text x="90" y="104" text-anchor="middle" class="label">Client</text>
-  <text x="90" y="122" text-anchor="middle" class="small">x-trace-id: abc-123</text>
-  <text x="90" y="138" text-anchor="middle" class="small">POST /v1/chat/completions</text>
+  <rect class="client" x="20" y="200" width="120" height="80"/>
+  <text x="80" y="226" text-anchor="middle" class="label">Chat Client</text>
+  <text x="80" y="244" text-anchor="middle" class="small">x-trace-id: 自带 / 自动</text>
+  <text x="80" y="262" text-anchor="middle" class="small">POST /v1/chat/completions</text>
 
-  <!-- TraceAndMetricsMiddleware (NEW, BEFORE the mount chain) -->
-  <rect class="middleware" x="200" y="60" width="240" height="100"/>
-  <text x="320" y="84" text-anchor="middle" class="label">TraceAndMetricsMiddleware</text>
-  <text x="320" y="102" text-anchor="middle" class="small">trace_id = hdr or uuid4().hex</text>
-  <text x="320" y="118" text-anchor="middle" class="small">t0 = perf_counter()</text>
-  <text x="320" y="134" text-anchor="middle" class="small">structlog.info(trace_id, elapsed, ...)</text>
-  <text x="320" y="150" text-anchor="middle" class="small">response.headers["x-trace-id"]</text>
+  <!-- TraceAndMetricsMiddleware (NEW) -->
+  <rect class="middleware" x="160" y="200" width="180" height="80"/>
+  <text x="250" y="226" text-anchor="middle" class="label">TraceAndMetricsMiddleware</text>
+  <text x="250" y="244" text-anchor="middle" class="small">trace_id (uuid4) 注入</text>
+  <text x="250" y="262" text-anchor="middle" class="small">perf_counter · 计时</text>
 
   <!-- s15 mount -->
-  <rect class="gateway" x="480" y="60" width="220" height="100"/>
-  <text x="590" y="84" text-anchor="middle" class="label">s15 mount (链路)</text>
-  <text x="590" y="102" text-anchor="middle" class="small">/v1/chat/completions</text>
-  <text x="590" y="118" text-anchor="middle" class="small">s14 -&gt; s13 -&gt; ... -&gt; s08</text>
-  <text x="590" y="134" text-anchor="middle" class="small">call_next(trace_id 已在 ctx)</text>
-  <text x="590" y="150" text-anchor="middle" class="small">request.state.model 透传</text>
+  <rect class="gateway" x="360" y="200" width="160" height="80"/>
+  <text x="440" y="226" text-anchor="middle" class="label">s15 mount (链路)</text>
+  <text x="440" y="244" text-anchor="middle" class="small">/v1/chat/completions</text>
+  <text x="440" y="262" text-anchor="middle" class="small">s14 → s13 → ... → 上游</text>
 
   <!-- Upstream -->
-  <rect class="upstream" x="740" y="60" width="160" height="100"/>
-  <text x="820" y="84" text-anchor="middle" class="label">Upstream</text>
-  <text x="820" y="118" text-anchor="middle" class="small">OpenAI / ...</text>
-  <text x="820" y="134" text-anchor="middle" class="small">httpx post</text>
+  <rect class="upstream" x="540" y="200" width="100" height="80"/>
+  <text x="590" y="226" text-anchor="middle" class="label">Upstream</text>
+  <text x="590" y="244" text-anchor="middle" class="small">返回</text>
+  <text x="590" y="262" text-anchor="middle" class="small">200 JSON</text>
 
   <!-- request flow arrows -->
-  <line class="arrow" x1="160" y1="100" x2="198" y2="100"/>
-  <text x="179" y="95" text-anchor="middle" class="small">x-trace-id</text>
-  <line class="arrow" x1="440" y1="100" x2="478" y2="100"/>
-  <text x="459" y="95" text-anchor="middle" class="small">call_next</text>
-  <line class="arrow" x1="700" y1="100" x2="738" y2="100"/>
-  <text x="719" y="95" text-anchor="middle" class="small">HTTP</text>
+  <line class="arrow" x1="140" y1="240" x2="158" y2="240"/>
+  <text x="149" y="235" text-anchor="middle" class="small">x-trace-id (uuid4)</text>
 
-  <!-- response back with x-trace-id echoed -->
-  <line class="arrowR" x1="738" y1="120" x2="702" y2="120"/>
-  <line class="arrowR" x1="478" y1="120" x2="442" y2="120"/>
-  <line class="arrowR" x1="198" y1="120" x2="162" y2="120"/>
-  <text x="460" y="115" text-anchor="middle" class="small">200 + x-trace-id: abc-123</text>
+  <line class="arrow" x1="340" y1="240" x2="358" y2="240"/>
+  <text x="349" y="235" text-anchor="middle" class="small">call_next</text>
 
-  <!-- ============ Metrics row ============ -->
+  <line class="arrow" x1="520" y1="240" x2="538" y2="240"/>
+  <text x="529" y="235" text-anchor="middle" class="small">HTTP</text>
+
+  <!-- 200 + x-trace-id response back to client -->
+  <line class="arrowR" x1="538" y1="260" x2="522" y2="260"/>
+  <line class="arrowR" x1="358" y1="260" x2="342" y2="260"/>
+  <line class="arrowR" x1="158" y1="260" x2="142" y2="260"/>
+  <text x="320" y="255" text-anchor="middle" class="small">200 + x-trace-id</text>
+
+  <!-- ============ Metrics + Logs row (本章三件套) ============ -->
 
   <!-- REQUESTS counter -->
-  <rect class="storage" x="200" y="200" width="180" height="80"/>
-  <text x="290" y="222" text-anchor="middle" class="label">REQUESTS (Counter)</text>
-  <text x="290" y="240" text-anchor="middle" class="small">labels: model, status</text>
-  <text x="290" y="256" text-anchor="middle" class="small">.inc() on chat path</text>
-  <text x="290" y="272" text-anchor="middle" class="small">process-internal</text>
+  <rect class="storage" x="60" y="320" width="160" height="80"/>
+  <text x="140" y="346" text-anchor="middle" class="label">REQUESTS (Counter)</text>
+  <text x="140" y="364" text-anchor="middle" class="small">labels: model, status</text>
+  <text x="140" y="380" text-anchor="middle" class="small">.inc() on chat path</text>
+  <text x="140" y="396" text-anchor="middle" class="small">prom counter (进程内)</text>
 
   <!-- LATENCY histogram -->
-  <rect class="storage" x="400" y="200" width="180" height="80"/>
-  <text x="490" y="222" text-anchor="middle" class="label">LATENCY (Histogram)</text>
-  <text x="490" y="240" text-anchor="middle" class="small">labels: model</text>
-  <text x="490" y="256" text-anchor="middle" class="small">.observe(elapsed)</text>
-  <text x="490" y="272" text-anchor="middle" class="small">P50/P99 from buckets</text>
+  <rect class="storage" x="240" y="320" width="160" height="80"/>
+  <text x="320" y="346" text-anchor="middle" class="label">LATENCY (Histogram)</text>
+  <text x="320" y="364" text-anchor="middle" class="small">labels: model</text>
+  <text x="320" y="380" text-anchor="middle" class="small">.observe(elapsed)</text>
+  <text x="320" y="396" text-anchor="middle" class="small">P50/P99 from buckets</text>
 
-  <!-- structlog -->
-  <rect class="middleware" x="600" y="200" width="180" height="80"/>
-  <text x="690" y="222" text-anchor="middle" class="label">structlog</text>
-  <text x="690" y="240" text-anchor="middle" class="small">JSON 一行一条</text>
-  <text x="690" y="256" text-anchor="middle" class="small">trace_id · path · status · elapsed</text>
-  <text x="690" y="272" text-anchor="middle" class="small">stdout -&gt; docker logs</text>
+  <!-- structlog JSON -->
+  <rect class="middleware" x="420" y="320" width="180" height="80"/>
+  <text x="510" y="346" text-anchor="middle" class="label">structlog (JSON)</text>
+  <text x="510" y="364" text-anchor="middle" class="small">trace_id · path · status · elapsed</text>
+  <text x="510" y="380" text-anchor="middle" class="small">stdout (JSON 一行一条)</text>
+  <text x="510" y="396" text-anchor="middle" class="small">docker logs / Loki</text>
 
-  <!-- arrows: middleware -> metrics + structlog -->
-  <line class="arrow" x1="290" y1="160" x2="290" y2="198"/>
-  <line class="arrow" x1="490" y1="160" x2="490" y2="198"/>
-  <line class="arrow" x1="690" y1="160" x2="690" y2="198"/>
-  <text x="480" y="190" text-anchor="middle" class="small">on /v1/chat/completions</text>
+  <!-- arrows: middleware -> metrics + structlog (on chat path) -->
+  <polyline class="arrow" points="250,280 140,280 140,318" stroke="#228b22"/>
+  <polyline class="arrow" points="250,290 320,290 320,318" stroke="#228b22"/>
+  <polyline class="arrow" points="250,300 510,300 510,318" stroke="#228b22"/>
+  <text x="380" y="298" text-anchor="middle" class="small" fill="#228b22">on /v1/chat/completions</text>
 
-  <!-- ============ /metrics scrape ============ -->
+  <!-- ============ /metrics scrape (Prometheus) ============ -->
 
-  <!-- /metrics endpoint -->
-  <rect class="gateway" x="280" y="320" width="200" height="64"/>
-  <text x="380" y="342" text-anchor="middle" class="label">GET /metrics</text>
-  <text x="380" y="360" text-anchor="middle" class="small">text/plain; v=1.0.0; charset=utf-8</text>
-  <text x="380" y="376" text-anchor="middle" class="small">注册在 s15 mount 之前</text>
+  <rect class="gateway" x="180" y="430" width="200" height="60"/>
+  <text x="280" y="450" text-anchor="middle" class="label">GET /metrics</text>
+  <text x="280" y="466" text-anchor="middle" class="small">text/plain; v=1.0.0</text>
+  <text x="280" y="482" text-anchor="middle" class="small">注册在 mount 之前</text>
 
-  <!-- Prometheus scraper -->
-  <rect class="client" x="540" y="320" width="200" height="64"/>
-  <text x="640" y="342" text-anchor="middle" class="label">Prometheus</text>
-  <text x="640" y="360" text-anchor="middle" class="small">scrape every 15s</text>
-  <text x="640" y="376" text-anchor="middle" class="small">拉取 text/plain</text>
+  <rect class="client" x="440" y="430" width="200" height="60"/>
+  <text x="540" y="450" text-anchor="middle" class="label">Prometheus</text>
+  <text x="540" y="466" text-anchor="middle" class="small">scrape every 15s</text>
+  <text x="540" y="482" text-anchor="middle" class="small">/metrics scrape (拉模式)</text>
 
-  <!-- REQUESTS + LATENCY -> /metrics -->
-  <line class="arrow" x1="290" y1="282" x2="380" y2="318"/>
-  <line class="arrow" x1="490" y1="282" x2="380" y2="318"/>
-  <text x="320" y="304" text-anchor="middle" class="small">read</text>
+  <!-- metrics counters + latency -> /metrics -->
+  <line class="arrow" x1="140" y1="400" x2="240" y2="428" stroke="#1a73e8"/>
+  <line class="arrow" x1="320" y1="400" x2="320" y2="428" stroke="#1a73e8"/>
+  <text x="220" y="420" text-anchor="middle" class="small" fill="#1a73e8">read</text>
 
   <!-- Prometheus scrape /metrics -->
-  <line class="arrow" x1="538" y1="352" x2="482" y2="352"/>
-  <text x="510" y="347" text-anchor="middle" class="small">scrape</text>
+  <line class="arrow" x1="438" y1="460" x2="382" y2="460" stroke="#1a73e8"/>
+  <text x="410" y="455" text-anchor="middle" class="small" fill="#1a73e8">scrape</text>
 
-  <!-- Caption -->
-  <text x="460" y="448" text-anchor="middle" class="small">x-trace-id 注入 + 转发 · Prometheus 拉 /metrics · 错误率 / 延迟 / 请求 / 失败</text>
-  <text x="460" y="466" text-anchor="middle" class="small">labels=model(status) 高基数,生产需采样 · structlog JSON -&gt; Loki</text>
+  <!-- ============ s15 + s11 参考框 → s16 主路径 的"接力"虚线 ============ -->
+
+  <line class="arrowRef" x1="240" y1="152" x2="240" y2="198"/>
+  <text x="246" y="178" text-anchor="start" class="refsmall">接力</text>
+
+  <!-- ============ Caption: WHY → 本章做了啥 → 后续接力 ============ -->
+
+  <text x="360" y="518" text-anchor="middle" class="small">没有 s16: 报障只能问 "大概几点打的", 每分钟请求数 / 错误率 / P99 延迟 / 按模型分桶 都没指标, 一次请求入口 + 出口 + 上游日志串不起来</text>
+  <text x="360" y="536" text-anchor="middle" class="small">本章做了啥: TraceAndMetricsMiddleware 注入 trace_id (uuid4) + 计时 + 写指标, REQUESTS / LATENCY 进程内 prom counter + LATENCY Histogram, structlog JSON 一行一条日志</text>
+  <text x="360" y="554" text-anchor="middle" class="small">后续接力: s_full 接 Prometheus alerting rules + Loki / Tempo 持久化 trace_id + OpenTelemetry (真分布式追踪), 模型 label 改采样避免高基数</text>
 </svg>

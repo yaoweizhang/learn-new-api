@@ -8,7 +8,19 @@
 
 ## 本章要做什么
 
-引入三件套:Prometheus(`/metrics`)、`structlog` JSON 行日志、`x-trace-id` 透传。中间件在 chat 端点读 body 解 model、写指标、回写 trace 头。学完一处故障可端到端追踪。
+到 s15,我们只能回答两类问题:"服务有没有起来"(看 `/healthz`)、"请求成功没有"(看 HTTP 状态码)。如果用户报"今天 chat 很慢",你需要每分钟请求数、错误率、P50/P99 延迟、按模型分桶的能力、把入口日志 + 出口日志 + 上游调用日志串起来的 `trace_id`——这些都没有。报障只能问"大概几点打的"。
+
+要解决这个,引入三件套:Prometheus `/metrics` 暴露计数器和直方图、`structlog` 把日志重写成 JSON 一行一条、`x-trace-id` 在中间件读 / 回写并塞进每条日志。学完一次请求的入口 + 出口 + 上游三段日志能用 `trace_id` 串起来,Prometheus 拉指标给你看错误率 / 延迟 / 按模型分桶。本章把这套可观测性最小骨架写出来:
+
+1. **挂一个 `TraceAndMetricsMiddleware` —— 为什么用中间件而不在 handler 里调**: `@app.middleware("http")` 装在 s16 这层 app 上,包裹下面 s15 → s14 → ... 整条挂载链。`dispatch` 流程: `trace_id = request.headers.get("x-trace-id") or uuid.uuid4().hex` → 写到 `request.state.trace_id` → `start = perf_counter()` → `await call_next(request)` → `elapsed = perf_counter() - start` → 若 chat 路径就 `REQUESTS.labels(model, status).inc()` + `LATENCY.labels(model).observe(elapsed)` → `log.info("request", trace_id=..., ...)` → 响应头写 `x-trace-id`。**为什么用中间件**: 一处定义全局生效,装饰器要给每个 handler 加 `@track_metrics` 易漏;**为什么只匹配 `/v1/chat/completions` 打指标**: `/healthz`、`/metrics` 也走中间件,但只有 chat 路径打 label——避免 `/healthz`、`/metrics` 把 Prometheus 基数撑爆。
+
+2. **Prometheus `Counter` + `Histogram` 在进程内 —— 为什么不是 OTLP / CollectorRegistry**: `metrics.py` 里 `REQUESTS = Counter("learn_new_api_requests_total", ..., ["model", "status"])`,`LATENCY = Histogram("learn_new_api_request_latency_seconds", ..., ["model"])`。`/metrics` 路由用 `generate_latest()` 暴露成 `text/plain; version=1.0.0; charset=utf-8`,Prometheus 抓取。**为什么是进程内 Counter 而不直接 OTLP 上报**: 教学范围内 YAGNI——Prometheus 拉模式是工业标准,scrape 一次 15s、延迟可接受;OTLP 要起 collector,工作量 +1 天;**为什么不分组 CollectorRegistry**: 教程里所有指标在一起,生产需要按子系统分组(才能禁用单个子系统);**为什么 `model` 是 label 不是 metric**: 用户关心"gpt-4 慢还是 claude 慢",`model` 是维度不是值——但高基数会爆 Prometheus,生产里需要采样。
+
+3. **`structlog` JSON 行日志 —— 为什么不是 `logging.info`**: `configure_logging()` 把 `logging` 输出经 `structlog.processors.JSONRenderer()` 重写成 JSON。**为什么是 JSON 不是普通字符串**: `docker logs | jq` 能直接 `jq 'select(.trace_id=="abc-123")'` 过滤;Loki / Vector / Fluent Bit 天然吃 JSON;普通字符串要写正则才能结构化。**为什么不直接用 `print(json.dumps(...))`**: `structlog` 沿用 `logging` 体系,跟 uvicorn / FastAPI 自带日志同条管道,handler 用 `logging` 也会被 JSONRenderer 包成 JSON;`print` 跟 logging 走两条路,混用会让 Loki 看到两种格式混杂。
+
+4. **`x-trace-id` 透传 —— 为什么是 header 不是 contextvar**: 读 `request.headers.get("x-trace-id")`、没有就 `uuid.uuid4().hex` 生成;`request.state.trace_id = trace_id` 让下游 handler 拿得到;响应头写 `x-trace-id` 让客户端能看到、能把同一个 id 带到下一条请求;每条 `log.info("request", trace_id=..., ...)` 都带它。**为什么是 header 不是 contextvar**: 跨服务透传靠 header(nginx / envoy 不认 contextvar),客户端传的 `x-trace-id` 跟服务端生成的 id 同一种格式;**为什么是 `uuid4().hex` 不是雪花算法**: 教学范围内不需要时序、32 字符 hex 够识别一次请求;**为什么中间件读 body 解 model**: 跟 s11 同一手法——`await request.body()` 读出原始 bytes、`json.loads` 解出 `model` 写到 `request.state.model`;Starlette 在 `BaseHTTPMiddleware` 内部把 bytes 缓存到 `request._body`,下游 handler 重读 body 拿到的是同一份 bytes。
+
+成品: `curl localhost:8016/metrics` 看 Prometheus 文本(每行样本带 model label);发起一次 chat,再看 `/metrics` 出现 `model="gpt-4o-mini"` 样本;`docker logs` 看每条请求一行 JSON 包含 `trace_id / path / status / elapsed`。后续 s_full 把指标接到告警规则,trace_id 接到 Loki / Tempo 持久化。
 
 ## 上一章复盘
 
@@ -101,18 +113,6 @@ curl -s localhost:8016/metrics | grep learn_new_api_requests_total
 ```
 
 Docker 镜像下,这行 JSON 直接进 `docker logs`;K8s 下进 stdout,由 Fluent Bit / Vector 采集。
-
-## 测试
-
-```bash
-python -m pytest tests/test_s16_observability.py -v
-```
-
-三个用例:
-
-- `test_metrics_endpoint_exposes_counters` —— `/metrics` 返回 200 且文本含 `learn_new_api_requests_total`(counter 名字)。
-- `test_trace_id_propagates_to_response` —— 客户端发的 `x-trace-id` 头出现在响应头里。
-- `test_chat_request_increments_counter` —— 走完一次 chat 调用后,`/metrics` 文本里出现 `model="gpt-4o-mini"` 的样本行(证明中间件从 JSON body 读到 model 并打了 label)。
 
 ## → new-api 源码
 
