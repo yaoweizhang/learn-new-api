@@ -6,6 +6,14 @@
 
 > **Layer**：L1 协议与转发
 
+## 问题
+
+`s02` 和 `s03` 把一份 OpenAI 形态的 JSON body 原样转发。上游就是
+OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`、
+`temperature`、可选的 `stream`)并不是 Anthropic 或 Google 期望的样子。Claude 要 `x-api-key`、`anthropic-version` 请求头,以及每个请求都要的 `max_tokens`。Gemini 要一个 `contents: [{role, parts: [{text}]}]` 数组,以及放在 URL 查询串里的 API key。
+
+如果把 OpenAI 的 JSON 直接透传到 Claude,上游就回 `400 invalid request`;透传到 Gemini 也一样。一个客户端、一套线协议、三个互不兼容的上游——这就是 s04 要解决的问题。
+
 ## 本章要做什么
 
 s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。把 OpenAI 写死在上游,任何一家挂了整条服务就 502。
@@ -17,22 +25,6 @@ s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可
 3. **每个 provider 只翻译"真正不一致的部分" —— 为什么不全量重写**:`model` / `messages` 这种共有字段原样透传,只构造厂商专属的 `system` 字段、`max_tokens` 默认值、`contents[]` 数组形态;**为什么响应也翻**:客户端只认 OpenAI 形态,Claude 响应里的 `content[].text` 必须翻成 `choices[0].message.content`、Gemini 的 `candidates[].content.parts[].text` 也是;否则 s02 的客户端代码就破。
 
 成品:一份 OpenAI 形态客户端代码能同时调 OpenAI / Anthropic / Gemini,客户端零修改,单家挂不影响另外两家。后续 s05 在这一章分派表外面加 API key 鉴权,s07 加按用户配额,s11 把每个 provider 的调用日志分别落表。
-
-## 上一章复盘
-
-s03 把协议窄到 OpenAI 一种 vendor。现在要加 Claude / Gemini,但客户端不应该改。
-
-## 在整体中的位置
-
-网关唯一的"协议多元"出口——前面 3 章只接 OpenAI 形态,从此往后客户端始终用 OpenAI 形态说话,网关按 model 决定用哪家上游。
-
-## 问题
-
-`s02` 和 `s03` 把一份 OpenAI 形态的 JSON body 原样转发。上游就是
-OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`、
-`temperature`、可选的 `stream`)并不是 Anthropic 或 Google 期望的样子。Claude 要 `x-api-key`、`anthropic-version` 请求头,以及每个请求都要的 `max_tokens`。Gemini 要一个 `contents: [{role, parts: [{text}]}]` 数组,以及放在 URL 查询串里的 API key。
-
-如果把 OpenAI 的 JSON 直接透传到 Claude,上游就回 `400 invalid request`;透传到 Gemini 也一样。一个客户端、一套线协议、三个互不兼容的上游——这就是 s04 要解决的问题。
 
 ## 方案
 

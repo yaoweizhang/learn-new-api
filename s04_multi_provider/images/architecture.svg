@@ -16,37 +16,37 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s04: 一个客户端代码,按 model 名分发到三家上游</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s04: 按 model 派三厂</text>
 
   <rect class="client" x="40" y="100" width="160" height="80"/>
   <text x="120" y="125" text-anchor="middle" class="label">Client</text>
-  <text x="120" y="145" text-anchor="middle" class="small">OpenAI 客户端 · model = 路由键</text>
+  <text x="120" y="145" text-anchor="middle" class="small">model 即路由</text>
 
   <rect class="gateway" x="260" y="92" width="200" height="96"/>
   <text x="360" y="117" text-anchor="middle" class="label">Relay</text>
-  <text x="360" y="137" text-anchor="middle" class="small">本章要写 · 按前缀派 + 出入翻译</text>
+  <text x="360" y="137" text-anchor="middle" class="small">按前缀派 + 翻译</text>
 
   <rect class="upstream" x="520" y="48" width="160" height="56"/>
   <text x="600" y="66" text-anchor="middle" class="label">OpenAI</text>
-  <text x="600" y="84" text-anchor="middle" class="small">gpt-* · 透传</text>
+  <text x="600" y="84" text-anchor="middle" class="small">透传</text>
 
   <rect class="upstream" x="520" y="112" width="160" height="56"/>
   <text x="600" y="130" text-anchor="middle" class="label">Claude</text>
-  <text x="600" y="148" text-anchor="middle" class="small">claude-* · 加 system 头</text>
+  <text x="600" y="148" text-anchor="middle" class="small">加 sys 头</text>
 
   <rect class="upstream" x="520" y="176" width="160" height="56"/>
   <text x="600" y="194" text-anchor="middle" class="label">Gemini</text>
-  <text x="600" y="212" text-anchor="middle" class="small">gemini-* · 改 contents</text>
+  <text x="600" y="212" text-anchor="middle" class="small">改 contents</text>
 
   <line class="arrow" x1="200" y1="136" x2="258" y2="136"/>
-  <text x="229" y="131" text-anchor="middle" class="small">OpenAI JSON</text>
+  <text x="229" y="131" text-anchor="middle" class="small">求</text>
 
   <line class="arrow" x1="460" y1="118" x2="518" y2="78"/>
-  <text x="480" y="98" text-anchor="middle" class="small">gpt-*</text>
+  <text x="480" y="98" text-anchor="middle" class="small">gpt</text>
 
   <line class="arrow" x1="460" y1="140" x2="518" y2="140"/>
-  <text x="480" y="135" text-anchor="middle" class="small">claude-*</text>
+  <text x="480" y="135" text-anchor="middle" class="small">cld</text>
 
   <line class="arrow" x1="460" y1="162" x2="518" y2="206"/>
-  <text x="480" y="184" text-anchor="middle" class="small">gemini-*</text>
+  <text x="480" y="184" text-anchor="middle" class="small">gem</text>
 </svg>
