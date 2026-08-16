@@ -62,9 +62,9 @@
   <text x="580" y="244" text-anchor="middle" class="small">回包带真实</text>
   <text x="580" y="262" text-anchor="middle" class="small">usage (pt + ct)</text>
 
-  <!-- 402 reject path (dashed red) from quota back to client -->
-  <line class="arrowR" x1="340" y1="220" x2="140" y2="220" stroke="#c5221f"/>
-  <text x="240" y="215" text-anchor="middle" class="small" fill="#c5221f">estimate > balance → 402 Payment Required</text>
+  <!-- 402 reject path (dashed red) from quota back to client — routed ABOVE the row to avoid crossing handler box -->
+  <polyline class="arrowR" points="420,200 420,190 80,190 80,200" stroke="#c5221f"/>
+  <text x="240" y="184" text-anchor="middle" class="small" fill="#c5221f">estimate > balance → 402 Payment Required</text>
 
   <!-- Chain arrows (left to right) -->
   <line class="arrow" x1="140" y1="240" x2="158" y2="240"/>
@@ -74,13 +74,13 @@
   <line class="arrow" x1="320" y1="220" x2="338" y2="220"/>
   <text x="329" y="215" text-anchor="middle" class="small">先扣 estimate</text>
 
-  <!-- Handler -> upstream: ask -->
-  <line class="arrow" x1="320" y1="260" x2="518" y2="260"/>
-  <text x="419" y="255" text-anchor="middle" class="small">ask</text>
+  <!-- Handler -> upstream: ask — routed BELOW the row to avoid crossing quota box -->
+  <polyline class="arrow" points="240,280 240,332 580,332 580,280"/>
+  <text x="410" y="327" text-anchor="middle" class="small">ask</text>
 
-  <!-- Upstream -> handler: reply with usage -->
-  <line class="arrowR" x1="518" y1="240" x2="322" y2="240"/>
-  <text x="420" y="235" text-anchor="middle" class="small">回包带 usage</text>
+  <!-- Upstream -> handler: reply with usage — routed BELOW the row to avoid crossing quota/handler boxes -->
+  <polyline class="arrowR" points="580,280 580,312 240,312 240,280"/>
+  <text x="410" y="307" text-anchor="middle" class="small">回包带 usage</text>
 
   <!-- Handler -> quota: settle / refund -->
   <line class="arrowR" x1="320" y1="278" x2="338" y2="278" stroke="#228b22"/>
