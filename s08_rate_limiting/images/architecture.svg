@@ -1,92 +1,110 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 320" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 540" font-family="monospace">
   <style>
     .client     { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway    { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .middleware { fill: #fff5d6; stroke: #b58900; stroke-width: 1.5; }
     .storage    { fill: #e6f4ea; stroke: #228b22; stroke-width: 1.5; }
     .upstream   { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
+    .reference  { fill: #f5f5f5; stroke: #888;    stroke-width: 1; stroke-dasharray: 4 3; }
     .title      { font-size: 15px; font-weight: bold; fill: #222; }
     .label      { font-size: 13px; fill: #222; }
     .small      { font-size: 11px; fill: #555; }
+    .refsmall   { font-size: 11px; fill: #777; }
     .arrow      { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
     .arrowR     { stroke: #555; stroke-width: 1;   fill: none; marker-end: url(#arrow); stroke-dasharray: 4 3; }
+    .arrowRef   { stroke: #888; stroke-width: 1;   fill: none; marker-end: url(#arrowRef); stroke-dasharray: 3 2; }
   </style>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
       <path d="M0,0 L10,5 L0,10 z" fill="#333"/>
     </marker>
+    <marker id="arrowRef" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888"/>
+    </marker>
   </defs>
 
-  <text x="400" y="22" text-anchor="middle" class="title">s08: 桶里取 token</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s08: 按用户桶限速,单用户刷不爆上游</text>
+
+  <!-- ============ TOP-LEFT: s05 + s07 参考框 (前置章节, 本章接力) ============ -->
+
+  <rect class="reference" x="20" y="52" width="290" height="120"/>
+  <text x="165" y="74" text-anchor="middle" class="small" fill="#555">s05 auth + s07 配额 (前置)</text>
+  <text x="165" y="94" text-anchor="middle" class="refsmall">require_api_key → Principal (user_id)</text>
+  <text x="165" y="112" text-anchor="middle" class="refsmall">quota.py: estimate / settle / refund</text>
+  <text x="165" y="130" text-anchor="middle" class="refsmall">本章不重写, 在它们之间插一条限速带</text>
+  <text x="165" y="148" text-anchor="middle" class="refsmall">对比: 不是全局 fixed window</text>
+  <text x="165" y="166" text-anchor="middle" class="refsmall">对比: 不是按 (uid, model) 多桶</text>
+
+  <!-- ============ MAIN FLOW (本章主路径) ============ -->
 
   <!-- Client -->
-  <rect class="client" x="20" y="120" width="120" height="80"/>
-  <text x="80" y="148" text-anchor="middle" class="label">Client</text>
-  <text x="80" y="166" text-anchor="middle" class="small">+ Bearer</text>
-  <text x="80" y="184" text-anchor="middle" class="small">POST /v1/chat/completions</text>
+  <rect class="client" x="20" y="200" width="120" height="80"/>
+  <text x="80" y="226" text-anchor="middle" class="label">Chat Client</text>
+  <text x="80" y="244" text-anchor="middle" class="small">+ Bearer</text>
+  <text x="80" y="262" text-anchor="middle" class="small">POST /v1/chat/completions</text>
 
-  <!-- Auth (s05) -->
-  <rect class="middleware" x="160" y="120" width="100" height="80"/>
-  <text x="210" y="146" text-anchor="middle" class="label">s05</text>
-  <text x="210" y="164" text-anchor="middle" class="small">require_api_key</text>
-  <text x="210" y="182" text-anchor="middle" class="small">-&gt; Principal</text>
+  <!-- s05 auth -->
+  <rect class="middleware" x="160" y="200" width="120" height="80"/>
+  <text x="220" y="226" text-anchor="middle" class="label">s05 auth (复习)</text>
+  <text x="220" y="244" text-anchor="middle" class="small">require_api_key</text>
+  <text x="220" y="262" text-anchor="middle" class="small">→ Principal</text>
 
-  <!-- Token bucket (NEW) -->
-  <rect class="middleware" x="280" y="40" width="160" height="100"/>
-  <text x="360" y="62" text-anchor="middle" class="label">bucket.py</text>
-  <text x="360" y="80" text-anchor="middle" class="small">_buckets: dict + Lock</text>
-  <text x="360" y="98" text-anchor="middle" class="small">cap=60, refill=1.0/s</text>
-  <text x="360" y="116" text-anchor="middle" class="small">take(uid) -&gt; bool</text>
-  <text x="360" y="134" text-anchor="middle" class="small">atomic, in-memory</text>
+  <!-- Bucket (NEW — per-user, in-memory) -->
+  <rect class="storage" x="300" y="200" width="160" height="80"/>
+  <text x="380" y="226" text-anchor="middle" class="label">bucket.py (本章 — 内存)</text>
+  <text x="380" y="244" text-anchor="middle" class="small">_buckets: dict[uid → (tokens, ts)]</text>
+  <text x="380" y="262" text-anchor="middle" class="small">cap=60, refill=1.0/s, take(uid) 原子</text>
 
   <!-- Relay handler -->
-  <rect class="gateway" x="280" y="170" width="160" height="80"/>
-  <text x="360" y="194" text-anchor="middle" class="label">Relay</text>
-  <text x="360" y="212" text-anchor="middle" class="small">if !take(uid): 429</text>
-  <text x="360" y="230" text-anchor="middle" class="small">(no Retry-After — README §取舍)</text>
+  <rect class="gateway" x="480" y="200" width="140" height="80"/>
+  <text x="550" y="226" text-anchor="middle" class="label">/v1/chat/completions</text>
+  <text x="550" y="244" text-anchor="middle" class="small">if !take(uid): 429</text>
+  <text x="550" y="262" text-anchor="middle" class="small">→ s07 预扣 + 调上游 + 结算</text>
 
   <!-- Upstream -->
-  <rect class="upstream" x="480" y="170" width="160" height="80"/>
-  <text x="560" y="198" text-anchor="middle" class="label">Upstream</text>
-  <text x="560" y="216" text-anchor="middle" class="small">OpenAI / Claude / Gemini</text>
-  <text x="560" y="234" text-anchor="middle" class="small">httpx post</text>
+  <rect class="upstream" x="640" y="200" width="60" height="80"/>
+  <text x="670" y="226" text-anchor="middle" class="label">上游</text>
+  <text x="670" y="244" text-anchor="middle" class="small">被</text>
+  <text x="670" y="262" text-anchor="middle" class="small">保护</text>
 
-  <!-- Quota (s07, after pass) -->
-  <rect class="storage" x="660" y="170" width="120" height="80"/>
-  <text x="720" y="194" text-anchor="middle" class="small">s07</text>
-  <text x="720" y="212" text-anchor="middle" class="small">deduct /</text>
-  <text x="720" y="230" text-anchor="middle" class="small">settle</text>
+  <!-- Chain arrows (left to right): client -> auth -> bucket -> handler -> upstream -->
+  <line class="arrow" x1="140" y1="240" x2="158" y2="240"/>
+  <text x="149" y="235" text-anchor="middle" class="small">Bearer</text>
 
-  <!-- Chain arrows (left to right) -->
-  <line class="arrow" x1="140" y1="150" x2="158" y2="150"/>
-  <line class="arrow" x1="260" y1="150" x2="278" y2="150"/>
-  <text x="269" y="145" text-anchor="middle" class="small">uid</text>
+  <line class="arrow" x1="280" y1="240" x2="298" y2="240"/>
+  <text x="289" y="235" text-anchor="middle" class="small">uid</text>
 
-  <!-- Auth -> handler (allowed) -->
-  <line class="arrow" x1="260" y1="180" x2="278" y2="195"/>
+  <!-- auth -> bucket: identify user for per-user bucket -->
+  <text x="289" y="222" text-anchor="middle" class="small">按用户取桶</text>
 
-  <!-- 401 reject (s05) dashed red back -->
-  <line class="arrowR" x1="210" y1="200" x2="210" y2="270" stroke="#c5221f"/>
-  <line class="arrowR" x1="210" y1="270" x2="80" y2="270" stroke="#c5221f"/>
-  <line class="arrowR" x1="80" y1="270" x2="80" y2="202" stroke="#c5221f"/>
-  <text x="210" y="262" text-anchor="middle" class="small" fill="#c5221f">401</text>
+  <!-- bucket -> handler: take result -->
+  <line class="arrow" x1="460" y1="240" x2="478" y2="240"/>
+  <text x="469" y="235" text-anchor="middle" class="small">拿 1 token</text>
 
-  <!-- Bucket -> handler (take) -->
-  <line class="arrow" x1="360" y1="142" x2="360" y2="168"/>
+  <!-- handler -> upstream: ask -->
+  <line class="arrow" x1="620" y1="240" x2="638" y2="240"/>
+  <text x="629" y="235" text-anchor="middle" class="small">ask</text>
 
-  <!-- 429 reject path (dashed amber) from handler back to client -->
-  <line class="arrowR" x1="280" y1="210" x2="100" y2="80" stroke="#b58900"/>
-  <line class="arrowR" x1="100" y1="80" x2="80" y2="118" stroke="#b58900"/>
-  <text x="190" y="85" text-anchor="middle" class="small" fill="#b58900">exhausted -&gt; 429 (no Retry-After)</text>
+  <!-- 429 reject path (dashed amber) from handler back to client — bucket exhausted -->
+  <line class="arrowR" x1="480" y1="295" x2="80" y2="295" stroke="#b58900"/>
+  <line class="arrowR" x1="80" y1="295" x2="80" y2="282" stroke="#b58900"/>
+  <text x="280" y="290" text-anchor="middle" class="small" fill="#b58900">桶空 → 429 (no Retry-After)</text>
 
-  <!-- Handler -> Upstream -->
-  <line class="arrow" x1="440" y1="200" x2="478" y2="200"/>
-  <text x="459" y="195" text-anchor="middle" class="small">HTTP</text>
+  <!-- "sleep refill_interval" indicator — bucket self-refills -->
+  <line class="arrowR" x1="300" y1="282" x2="460" y2="282"/>
+  <text x="380" y="277" text-anchor="middle" class="small" fill="#228b22">睡 refill_interval (1.0s) → 桶 +1</text>
 
-  <!-- Upstream -> quota (settle) -->
-  <line class="arrowR" x1="640" y1="210" x2="658" y2="210"/>
+  <!-- ============ s05 + s07 参考框 → s08 主路径 的"接力"虚线 ============ -->
 
-  <!-- Caption -->
-  <text x="400" y="304" text-anchor="middle" class="small">60 tokens burst,refill 1/s · 拒第 61 个请求 -&gt; 429 (no Retry-After) · 同一用户并发原子</text>
+  <line class="arrowRef" x1="240" y1="174" x2="380" y2="198"/>
+  <text x="320" y="190" text-anchor="start" class="refsmall">接力</text>
+
+  <!-- ============ Caption: WHY → 本章做了啥 → 后续接力 ============ -->
+
+  <text x="360" y="362" text-anchor="middle" class="small">没有 s08: 余额充足的用户能 1 秒打 100 次, 把同代理其它租户的延迟都拖下水, s07 防住"算钱"但防不住"打爆"</text>
+  <text x="360" y="380" text-anchor="middle" class="small">本章做了啥: bucket.py 给每个 user_id 一份 (tokens, ts), take 整段原子 (refill + 检查 + 扣) 在 threading.Lock 下, 桶空 → 429 不打上游</text>
+  <text x="360" y="408" text-anchor="middle" class="small">后续接力: s09 把 _buckets 挪进 Redis 用 INCR + EXPIRE 让多 worker 共享状态, s10 给管理员按 channel 限速, s_full 给 (uid, model) 做细粒度桶</text>
+  <text x="360" y="426" text-anchor="middle" class="small">注意 s08 是按用户 (per-user) 不是全局: 桶按 user_id 拆, 一用户打爆不影响其它用户 (对比: 全局 fixed window 会把所有用户绑在一起限速)</text>
+  <text x="360" y="444" text-anchor="middle" class="small">桶状态走的是 bucket.py 进程内 dict[uid → (tokens, ts)], 不是 SQLite — 进程一重启桶重置为默认 60, 多 worker 部署下用户实际能拿到 N_workers × capacity 的突发</text>
 </svg>
