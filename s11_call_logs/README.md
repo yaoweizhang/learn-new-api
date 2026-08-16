@@ -8,7 +8,19 @@
 
 ## 本章要做什么
 
-`LogMiddleware` 在 chat 端点返回 200 时把响应行塞进内存缓冲;后台 `flush_loop` 每 100ms 整段搬到落盘列表,管理员通过 `/admin/logs` 和 `/admin/stats` 看。学完你看到每条调用"在飞 + 已落盘"两条痕迹。
+前 10 章里,每条 `/v1/chat/completions` 走完一遍就消失了:上游返回 200 → FastAPI 把 JSON 塞进响应 → 客户端拿到结果 → 服务端把这次调用忘得一干二净。用户报"刚刚那次调用挂了三秒",你只能凭记忆猜——是配额耗尽、渠道挂了、还是限速?运营问"昨天 gpt-4o-mini 调用了多少次",你只能去上游控制台看。
+
+要解决这个,在请求路径上挂一份"异步落日志":中间件在 chat 端点返回 200 时把一行日志塞进内存缓冲(`_buffer`),后台 `flush_loop` 每 100ms 整段搬到落盘列表(`_flushed`),管理员通过 `/admin/logs` 和 `/admin/stats` 看。学完你看到每条调用"在飞 + 已落盘"两条痕迹:
+
+1. **挂一个 `LogMiddleware` —— 为什么用中间件而不是在 handler 里调函数**: `@app.middleware("http")` 装在 s11 这层 app 上,包裹下面 s10 → s09 → ... 整条挂载链。`dispatch` 在 `call_next(request)` 拿到 `response` 后判断:`response.status_code == 200` 且路径以 `/v1/chat/completions` 结尾,就把 `{"path", "ts", "status", "model"}` 一行塞进 `log_store.enqueue`。**为什么用中间件而非在 chat handler 里直接 enqueue**: 中间件对所有 chat 调用一视同仁(不依赖具体 handler 实现),后续 s13 改了挂载结构也照样能看到;**为什么只在 200 时记**: 4xx/5xx 不算"成功调用",s07 的配额结算失败、s08 的 429 限速、s10 的渠道故障,这些是另一类观测信号,留到 s16 才统一处理。
+
+2. **中间件读 body 拿 model —— 为什么要在中间件解 JSON 而不是 `request.query_params`**: `model` 在请求体里、不在查询串里(Brief 原本写的是 `query_params.get("model")`,永远是 `"?"`——这是已知 bug)。中间件先 `await request.body()` 读出原始 bytes,`json.loads` 解出 `model` 写到 `request.state.model`,再用一个新的 `receive()` 把同一份 bytes 喂回去给下游 FastAPI。**为什么要重放 body**: Starlette/FastAPI 下游 handler 需要重新读 body 才能拿到 `messages`、做转发;不重放就 422。**这是 Starlette 里读取并回放 body 的标准手法**——body 被读两次,小开销换干净的"中间件读 model"语义。
+
+3. **`LogStore` Protocol + `InMemoryLogStore` —— 为什么抽 Protocol 而不直接用类**: `LogStore` 是 `typing.Protocol`(Python 的结构性子类型,只靠方法签名匹配),只有 `enqueue / list / reset / drain_now` 四方法。默认实现是 `InMemoryLogStore`:`_buffer: deque[dict]` 写入端 + `_flushed: list[dict]` 读取端 + `threading.Lock` 串两条路。**为什么抽 Protocol**: (1) 测试可以用 duck-typed fake `set_default(rec)` 注入默认实例,验证中间件走的是注入路径;(2) v2 切 SQLite 时只换构造 `_default` 的语句,对外契约不变;**为什么用 deque+Lock 而非 asyncio.Queue**: 日志条目来自异步中间件,但 `/admin/logs` 可能从同步线程读,deque+Lock 对两种调用方都安全,asyncio.Queue 跨线程就得 `run_coroutine_threadsafe`,对一个内存实现来说重了。
+
+4. **后台 `flush_loop` 每 100ms 搬运 —— 为什么异步搬不直接同步写**: `flush_loop` 在 `@app.on_event("startup")` 启动,`while not stop_event: await asyncio.sleep(0.1); drain_now()`。`drain_now()` 把 `_buffer` 整段搬到 `_flushed`。**为什么不直接同步写**: 单条 chat 调用几百 ms,瓶颈在等上游;落日志不能阻塞这条调用,100ms 批量 flush 把"每条调用写一次"的 IO 成本摊到"每 100ms 写一次";**为什么是 100ms**: 够短让运营不会看到空日志、够长让 IO 开销可忽略;`@app.on_event("shutdown")` 里再同步 drain 一次,兼容 TestClient 退出 `with` 块时事件循环已停、最后一批不能留在 buffer 里。
+
+成品: `curl localhost:8011/v1/chat/completions` 触发一次 chat,等 100ms 后 `curl localhost:8011/admin/logs` 看到 `[{path, ts, status:200, model:"gpt-4o-mini"}]`,`curl localhost:8011/admin/stats` 看到 `{total:1, by_model:{gpt-4o-mini:1}}`。后续 s14 把这两个端点换成 Jinja2 浏览器页面;s16 把这一行的字段扩成 Prometheus 指标 + trace_id。
 
 ## 上一章复盘
 
@@ -203,23 +215,6 @@ curl -s http://localhost:8011/admin/logs
 curl -s http://localhost:8011/admin/stats
 # -> {"total":1,"by_model":{"gpt-4o-mini":1}}
 ```
-
-## 测试
-
-```bash
-pytest tests/test_s11_call_logs.py -v
-```
-
-两个测试覆盖主契约:
-
-| 测试 | 断言 |
-| --- | --- |
-| `test_logs_written_after_call` | 走完一次 chat 调用 200 后,1 条日志出现在落盘列表,model 字段等于请求里写的 `gpt-4o-mini`。 |
-| `test_injected_log_store_observes_calls` | 用 `set_default(rec)` 注入一个 recording fake,请求走完后 fake 里能看到同一行——证明中间件走的是 `_default` 实例而不是直接读模块全局。 |
-
-测试里有一行 `time.sleep(0.2)`——这是已知的、可接受的时序依赖:`flush_loop` 真的是异步循环(`await asyncio.sleep(0.1)` + 加锁搬运),没有 event 就只能靠睡眠让出几个 tick。v2 会把 `_buffer → _flushed` 改成"每条 enqueue 后 fire 一个 Event",测试就能去掉 `time.sleep`。本测试保留睡眠是为了对齐本章节"异步"的语义,并在注释里标出。
-
-`_clean` fixture 额外重置了 `s05_api_key_auth.storage`、`s07_pre_consume_settle.quota`、`s08_rate_limiting.bucket`——这些是 chat 端点所依赖的内部状态,跨测试需要清零,否则会污染 s11 之后的测试。
 
 ## → new-api 源码
 
