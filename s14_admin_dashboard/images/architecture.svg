@@ -24,7 +24,7 @@
     </marker>
   </defs>
 
-  <text x="360" y="22" text-anchor="middle" class="title">s14: Cookie + Jinja2, 浏览器看三个数字</text>
+  <text x="360" y="22" text-anchor="middle" class="title">s14: Cookie + Jinja2</text>
 
   <rect class="reference" x="20" y="50" width="260" height="64"/>
   <text x="150" y="76" text-anchor="middle" class="small" fill="#555">s10 + s11 + s09 (前置)</text>
@@ -63,7 +63,7 @@
   <text x="329" y="255" text-anchor="middle" class="small">Set</text>
 
   <line class="arrow" x1="500" y1="180" x2="518" y2="180"/>
-  <text x="509" y="175" text-anchor="middle" class="small">render</text>
+  <text x="509" y="175" text-anchor="middle" class="small">html</text>
 
   <polyline class="arrowR" points="500,200 510,200 510,290 420,290" stroke="#228b22"/>
   <text x="455" y="285" text-anchor="middle" class="small" fill="#228b22">登录回到</text>

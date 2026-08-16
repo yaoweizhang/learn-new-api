@@ -6,9 +6,20 @@
 
 > **Layer**：L5 运维与可观测
 
-## 本章要做什么
+## 问题
 
-到 s13,网关已经能跑——用户签到、配额扣减、渠道选路 + 重试 + 回退、缓存、日志都接好了。但**所有管理动作全靠 curl**:想看现在跑了多少条渠道?`curl /admin/channels`;想看刚才哪条请求失败了?`curl /admin/logs`;想加一条新渠道?`curl -X POST /admin/channels -d '{...}'`。每次让人拼 curl + 看 JSON + `jq` 才知道"系统现在怎样",运营成本就上来了。
+到 s13,网关已经能跑——用户签到、配额扣减、渠道选路 + 重试 + 回退、缓存、日志都接好了。但**所有管理动作全靠 curl**:
+
+- 想看现在跑了多少条渠道?`curl /admin/channels`
+- 想看刚才哪条请求失败了?`curl /admin/logs`
+- 想加一条新渠道?`curl -X POST /admin/channels -d '{...}'`
+- 想改自己的密码?不好意思,得改库
+
+admin 后台是**人用的界面**,不是给脚本用的。每次让人去拼 curl、看 JSON、再 `jq` 一下才能知道"系统现在怎样",运营成本就上来了。学习项目也希望有一个"看得见"的入口——点开浏览器就能看到系统状态。
+
+new-api 自己有 React 写的完整 Web 后台(`web/` 目录),那是个正经的 SPA,跟 Go 后端走 REST。照搬那个,体量比后端还大——Vue/React 构建工具链、状态管理、路由、组件库、TypeScript 类型定义,光搭起来就够写三章。本章不碰那个体量。
+
+## 本章要做什么
 
 要解决这个,在网关内挂一个**最薄的服务端渲染后台**:浏览器 GET `/dashboard/login` 拿登录表单、POST 凭证拿 Cookie,GET `/dashboard/` 渲染"用户/渠道/日志数"三个数字。学完运营用浏览器就能看到系统状态,不用 curl + jq。本章把这套最小看板写出来:
 
@@ -21,33 +32,6 @@
 4. **数据复用直接 import 内存单例 —— 为什么是"看得到"不是"可编辑"**: 仪表盘三个数字从已有模块读:`channels = len(ch_mod.list_channels())`(s10 内存 dict)、`logs = len(log_store.list_logs())`(s11 异步 flush 后的 list),`users` 硬编码 0 因为 s09 没 `list_all()`。**为什么不写 CRUD UI**: 不展示用户列表、不支持改渠道、不支持分页筛选;那要列表分页 + 搜索 + 批量操作 + 暗色模式 + 表单校验——YAGNI;本章只展示"能看到数字"。**为什么不接数据库**: 进程重启回到初始状态是有意为之,本章是"看得到数字"的最小后台,不是"可编辑的 CRUD 后台"。
 
 成品: 浏览器打开 `localhost:8014/dashboard/login` → 输入 `admin@example.com / admin`(默认本地凭证) → 登录后看到三个数字:Users: 0、Channels: N、Logs: M;老的 `/v1/chat/completions` 仍可达;`curl -i` 看 302 + `Set-Cookie: admin=1; HttpOnly`。后续 s15 把整套 Docker 化,s16 给后台看板加实时指标。
-
-## 上一章复盘
-
-s13 韧性有了,但运营看不到调用历史。
-
-## 在整体中的位置
-
-运维的"双眼"——s11 log_store + s10 渠道表，从此看得见。配额不在 dashboard 范围（只读 logs 和 channels）。
-
-## 问题
-
-走到第 13 章,网关已经能跑了:用户签到、配额扣减、渠道选择 + 重试
-+ 回退、缓存、日志都接好了。但**所有管理动作全靠 curl**——
-
-- 想看现在跑了多少条渠道?`curl /admin/channels`
-- 想看刚才哪条请求失败了?`curl /admin/logs`
-- 想加一条新渠道?`curl -X POST /admin/channels -d '{...}'`
-- 想改自己的密码?不好意思,得改库
-
-admin 后台是**人用的界面**,不是给脚本用的。每次让人去拼 curl、看
-JSON、再 `jq` 一下才能知道"系统现在怎样",运营成本就上来了。学习项
-目也希望有一个"看得见"的入口——点开浏览器就能看到系统状态。
-
-new-api 自己有 React 写的完整 Web 后台(`web/` 目录),那是个正经
-的 SPA,跟 Go 后端走 REST。照搬那个,体量比后端还大——Vue/React
-构建工具链、状态管理、路由、组件库、TypeScript 类型定义,光搭起来
-就够写三章。本章不碰那个体量。
 
 ## 方案
 
