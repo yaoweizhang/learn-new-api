@@ -66,6 +66,15 @@ new-api/
 
 把 s01-s16 的代码**复制**到 `s_full/` 下的清晰子目录里，对外提供**单一** FastAPI app。`s_full` 拥有自己的 routers，不挂载 chapter chain。
 
+`## 问题` 提了三件痛：16 个 chapter 各自是一个独立 FastAPI app、各跑各的端口（痛点 #1）；靠 `app.mount("/", sNN_app)` 串成 s16 → s15 → … → s02 的挂载链（痛点 #2）；每个 chapter 的 routes / services / models 全塞在 `sNN_topic/` 一个扁平目录里，不像真实项目（痛点 #3）。这三件事**没有一件能靠"再多挂一层 mount"解决**——挂载链本身就是病因。本章不画角色图（`s_full` 是整合章，没有新角色，只有装配动作），所以下面直接把每个集成层挑战对到 `s_full` 的解法上：
+
+- **挑战 #1：16 个 app、16 个端口** → **单一 8099 端口的 FastAPI app**。`s_full/code.py` 里只有一个 `app = FastAPI(...)`，16 章的功能全部收拢到它下面。部署方只需要暴露一个进程、一个端口、一份配置，而不是 16 份。
+- **挑战 #2：mount 链让路径被重前缀化** → **`include_router` 替代 `mount`**。`app.include_router(auth.router)` / `admin.router` / `chat.router` 把三个 `APIRouter` 的路由**直接注册进同一张路由表**，路径就是它声明的那个；而 `app.mount("/api/v1", sub_app)` 是把另一个 ASGI app 整体挂到子路径下，挂载点会叠加到子 app 的每条路径上——挂载链有 16 层，某一层忘了改前缀，客户端就是一个要追 16 层的 404。
+- **挑战 #3：路由散落、目录不像真实项目** → **五层子目录 + 一眼可读的 entrypoint**。目录按 `routes / services / models / adapters / middleware` 重组，对齐 `new-api` 的 `Router → Controller → Service → Model → Middleware`；打开 `s_full/code.py` 看到的是全部对外路由的清单（三行 `include_router` + 一行 `add_middleware`），而不是 `app.mount("/", s15_app)` 这种"入口在下一层"的接力。
+- **横切能力怎么办** → **middleware stack 随装配一起搬**。`TraceAndMetricsMiddleware`（s16）挂在 app 层而不是某条路由上，所以 trace_id 和 Prometheus 计数对三个 router 一视同仁——这正是"装配视图"比"挂载链"更能表达的东西：横切关注点属于 app，不属于某一章。
+
+下面这张目录映射表是这套装配的落地形态：
+
 ### 目录映射
 
 下面这张目录映射表把 s_full 的子目录与各自章节来源一一对应——每行是一个文件，注释里写职责 + 来源章节；左列是新目录（`routes/services/models/adapters/middleware` 五层），右列是章节溯源（`← s05` 之类），回答"独立项目该长什么样"。
@@ -99,6 +108,14 @@ s_full/
 ---
 
 ## 工作原理
+
+**原理**: 一个 HTTP 请求打到 8099 端口上唯一那个 FastAPI app, 它的生命周期是: ASGI 服务器先把请求交给 middleware stack (中间件链, 这里只有 `TraceAndMetricsMiddleware`——生成 trace_id + 记 Prometheus 计数) → 路由表按方法和路径挑出对应 handler (路由表的内容是启动时三次 `include_router` 注册进来的) → handler 通过 dependency injection 拿到 `Principal` (鉴权后代表当前调用者的对象) → 依次调 `services/` 层的限流与预扣、`adapters/` 层的协议翻译 → httpx 发出站请求给上游 → 回包翻回 OpenAI 形态 → `services/` 结算配额、`models/log` 入队落盘 → 响应沿 middleware stack 原路吐回客户端。整章所有部件都为这条主线服务, 而且这条主线跟 s01-s16 里逐章写过的**完全是同一份代码**, 只是换了摆放位置。
+
+**1. 一个 application entrypoint (`s_full/code.py`)** —— 三行 `app.include_router(...)` + 一行 `app.add_middleware(...)` + `/health` `/metrics` 两条自带路由, 就是整个应用的对外面貌。读者不需要往下追任何一层就能看全对外路由。
+
+**2. 一个 middleware stack (`app.add_middleware(TraceAndMetricsMiddleware)`)** —— 横切关注点 (cross-cutting concern, 对所有路由一视同仁的能力) 挂在 app 层: trace_id 注入 + Prometheus 指标采集。`/metrics` 的数据唯一来源就是它, 不挂中间件 `/metrics` 就是空响应。
+
+**3. 五层包结构 (`routes / services / models / adapters / middleware`)** —— `routes` 是 APIRouter (路由层)、`services` 是业务逻辑、`models` 是数据层、`adapters` 是厂商协议适配器、`middleware` 是鉴权与观测。依赖方向单向向下: routes → services → models, adapters 只被 routes 调, middleware 谁都不依赖。
 
 ### `/v1/chat/completions` 的请求生命周期
 
@@ -188,7 +205,14 @@ python -m s_full.code
 PORT=8099 python -m s_full.code
 ```
 
-启动后访问：
+启动后确认整合版真的起来了没?打这个 curl——能返回 `{"status":"ok"}` 说明 8099 端口上那个唯一的 FastAPI 进程在响应,而且启动阶段三次 `include_router`(auth / admin / chat,16 章的功能全在这三个 router 里)和 `add_middleware` 都跑完了——只要其中任何一个子模块 import 失败,进程根本起不来,这条 curl 会直接连不上:
+
+```sh
+curl http://localhost:8099/health
+# {"status":"ok"}
+```
+
+起好之后可以访问的端点：
 
 - `GET  /health`             —— 健康检查
 - `GET  /metrics`            —— Prometheus 指标
@@ -235,24 +259,20 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
 
 ---
 
-## 取舍
+## 本章不做什么
 
-### 决策
+- **没有 `Dockerfile` / `docker-compose`** (容器镜像构建文件 + 多容器编排文件)——s15 已经演示过，`s_full` 是同一份代码的目录重整，不是部署示例。→ s15。
+- **没有 Grafana dashboard** (把 Prometheus 指标画成折线图的看板)——s16 演示过，`s_full` 只保证 `/metrics` 有数据可拉。→ s16。
+- **没有 Redis / MySQL** (跨进程共享状态的外部存储；进程内的 dict 一重启就没了、多副本也各存各的)——用 SQLite + `threading.Lock` 替代，对应教程的"in-memory 教学"风格；单进程够用，要横向扩副本就不够。
+- **没有 pytest fixtures 隔离 `app.state`** (fixture：测试之间自动重置进程内状态的固定装置)——每个测试自己 `reset_db()` / `reset_channels()` / `top_up(...)`，显式重置比隐式 fixture 更适合逐章阅读。
+- **没有 lifespan context manager** (FastAPI 0.110+ 推荐的启动/关闭钩子写法，用一个 async 上下文管理器取代两个 `on_event` 回调)——仍用 `@app.on_event("startup"/"shutdown")` 启停日志 flush loop，与 s11/s16 保持一致；教学一致性优先于 API 新旧。
 
-- **复制而不是 import**：s07/s08/s09/s10/s11/s16 的代码被**逐字复制**到 `s_full/` 下的对应位置。**不** `from s07_pre_consume_settle.quota import deduct` 之类的跨章节导入。三个理由：
-  1. tutorial 章节本身要保持自包含可读；
-  2. `s_full` 要展示"如果这是一个**独立**项目，目录应该长什么样"——重新组织就意味着不引用。
-  3. 跨章节 import 在 pytest collection 时容易触发意料之外的初始化副作用。
-- **routers 而不是 mount**：`s_full/code.py` 走 `include_router`，**不**挂载任何 chapter chain。chapter chain 是教学形态（s16 -> s15 -> ... -> s02），`s_full` 是生产形态。
-- **`Principal` 定义在 `middleware/auth.py`**：在 s05/s08/s09 里 Principal 是 `dataclass(user_id, scopes)`；`s_full` 把 `email` 和 `is_admin` 也加进来，因为 JWT 本身带这俩字段。`user_id` 由 `int` 取代 `str`，对齐 s09 的 SQLite 主键类型。
-- **billing.pre_consume 抛 `PermissionError` 而不是 `HTTPException`**：保持 service 层不依赖 HTTP。路由层 catch 后翻译成 402。
+## 已知限制
 
-### 已知限制（与教程目标一致，YAGNI）
-
-- **没有 channel pool 的真实选路**：`_pick(model)` 只按模型前缀选 provider —— s_full 的 `Channel` 模型只保留 `id` + `base_url` + `enabled`,没有 `provider` 字段,`mark_unhealthy` 函数也移除了,因为 s_full 没有 channel pool 选路、所有渠道都按模型前缀直接派发。如果要扩展 channel failover,需要:重新加 `provider` 字段、恢复 `mark_unhealthy`、在 `routes/chat.py` 里加 channel 选路调用。
-- **没有 retry / fallback**（参见 s13）：单次上游调用失败直接 refund + 502。
-- **没有 caching**（参见 s12）：同样的 prompt 不会走 prompt cache。
-- **streaming 部分支持**：客户端发 `stream=true` 时走 `StreamingResponse`
+- **没有 channel pool 的真实选路** (channel pool：同一家上游的多个实例组成的池，按 priority / weight / healthy 自动挑一条并在故障时切换)：`_pick(model)` 只按模型前缀选 provider —— s_full 的 `Channel` 模型只保留 `id` + `base_url` + `enabled`,没有 `provider` 字段,`mark_unhealthy` 函数也移除了,因为 s_full 没有 channel pool 选路、所有渠道都按模型前缀直接派发。如果要扩展 channel failover,需要:重新加 `provider` 字段、恢复 `mark_unhealthy`、在 `routes/chat.py` 里加 channel 选路调用。
+- **没有 retry / fallback** (重试 + 失败后换一条上游再试，把上游抖动挡在客户端之外)（参见 s13）：单次上游调用失败直接 refund + 502。
+- **没有 caching** (prompt cache：相同输入直接命中缓存、不花上游 token)（参见 s12）：同样的 prompt 不会走 prompt cache。
+- **streaming 部分支持** (SSE 流式：上游边生成边推字节，客户端逐 token 看到结果)：客户端发 `stream=true` 时走 `StreamingResponse`
   把上游 SSE 字节原样透传（OpenAI / Claude 已通）。每个 `Provider`
   标了 `supports_streaming: bool` 能力位——`GeminiProvider` 设为
   `False`，因为 Gemini 的 `generateContent` 不原生 SSE，所以
@@ -260,7 +280,7 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
   前扣，stream 正常结束用最后一个 `data:` chunk 的 usage 调 `settle`
   退差额；中途 `BaseException`（含 `GeneratorExit` 客户端断连）走
   `refund` 全额退还。
-- **流式响应在 Starlette 下有"已发头不能再改"的限制**：
+- **流式响应在 Starlette 下有"已发头不能再改"的限制** (HTTP 头一旦写出，status code 就定死了，后面再抛异常也改不了客户端看到的状态码)：
   `StreamingResponse` 在第一个 byte 写出之前就发完 HTTP 头（`status:
   200`），之后再在生成器里 `raise HTTPException` 改不了客户端看到的
   状态码。结果是：上游返回 4xx 且 body 为空时，**客户端拿到 200
@@ -271,24 +291,27 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
   非流式探测（破坏流式语义），要么在第一个 chunk 写出前探测
   upstream status（也就是现在这条路，但只能改 body 改不了 status）。
   教程选后者，简单可读；生产里再权衡。
-- **admin 操作没有审计**：直接改 channel 池，没有记录是谁改的。
-- **错误响应没有结构化**：上游返回 5xx 时，路由直接 `raise HTTPException(502, r.text)`，没有 `{"error": {...}}` 结构。
-- **`require_api_key` 不查 token 黑名单**：s09 在自己的 `_current_user`
+- **admin 操作没有审计** (审计日志：记录谁在什么时候改了哪条 channel，出事后能回溯)：直接改 channel 池，没有记录是谁改的。
+- **错误响应没有结构化** (structured error：`{"error": {...}}` 这种机器可解析的错误体，OpenAI SDK 会去读它)：上游返回 5xx 时，路由直接 `raise HTTPException(502, r.text)`，没有 `{"error": {...}}` 结构。
+- **`require_api_key` 不查 token 黑名单** (blacklist：登出后主动作废的 token 名单；不查就意味着已登出的 token 在过期前仍然能用)：s09 在自己的 `_current_user`
   里加了 token 黑名单（`/auth/logout`），但 s_full 的
   `middleware/auth.py` 走的是 JWT decode-only 路径，不查同一个黑名单。
   这是有意为之：本教程把"撤销 token"作为 s09 这一章单独讲透；跨章
   共享一份黑名单是合并章节的工作。把 s_full 当独立应用跑时，要撤销
   token 直接换 `JWT_SECRET` 让所有未过期 token 集体失效。
 
-### 没做的事（YAGNI）
+## 设计选择
 
-- 没有 `Dockerfile` / `docker-compose`：s15 已经演示过，`s_full` 是同一份代码的目录重整，不是部署示例。
-- 没有 Grafana dashboard：s16 演示过。
-- 没有 Redis / MySQL：用 SQLite + threading.Lock 替代，对应教程的"in-memory 教学"风格。
-- 没有 pytest fixtures 隔离 `app.state`：每个测试自己 `reset_db()` / `reset_channels()` / `top_up(...)`。
-- 没有 lifespan context manager：仍用 `@app.on_event("startup"/"shutdown")`，与 s11/s16 保持一致（虽然 FastAPI 0.110+ 推荐用 lifespan，但教学一致性优先）。
+- **复制而不是 import** (跨章节 `from sNN_topic.x import y` 的替代方案：把代码逐字搬过来)：s07/s08/s09/s10/s11/s16 的代码被**逐字复制**到 `s_full/` 下的对应位置。**不** `from s07_pre_consume_settle.quota import deduct` 之类的跨章节导入。三个理由：
+  1. tutorial 章节本身要保持自包含可读；
+  2. `s_full` 要展示"如果这是一个**独立**项目，目录应该长什么样"——重新组织就意味着不引用。
+  3. 跨章节 import 在 pytest collection 时容易触发意料之外的初始化副作用。
+  代价：同一段逻辑存在两份，改教学章不会自动同步到 `s_full`。
+- **routers 而不是 mount** (`include_router`：把 APIRouter 的路由注册进当前 app 的路由表，路径保持原样；`app.mount`：把另一个 ASGI 子 app 整体挂到某个子路径下，挂载点会叠加到子 app 的每条路径上)：`s_full/code.py` 走 `include_router`，**不**挂载任何 chapter chain。chapter chain 是教学形态（s16 -> s15 -> ... -> s02），`s_full` 是生产形态（装配视图：把功能按职责重新摆放，而不是按讲解顺序层层包裹）。
+- **`Principal` 定义在 `middleware/auth.py`** (Principal：鉴权通过后代表"当前调用者是谁"的对象，往下传给每个 handler)：在 s05/s08/s09 里 Principal 是 `dataclass(user_id, scopes)`；`s_full` 把 `email` 和 `is_admin` 也加进来，因为 JWT 本身带这俩字段。`user_id` 由 `int` 取代 `str`，对齐 s09 的 SQLite 主键类型。
+- **billing.pre_consume 抛 `PermissionError` 而不是 `HTTPException`** (`HTTPException` 是 FastAPI 的 HTTP 错误类型，抛它就等于让 service 层知道自己活在 HTTP 里)：保持 service 层不依赖 HTTP，同一份 service 换个入口（CLI / 定时任务）也能用。路由层 catch 后翻译成 402。
 
-### 与 chapter 链的对应关系
+## 与 chapter 链的对应关系
 
 | 功能                    | chapter(s)       | s_full 文件                         |
 |-------------------------|------------------|-------------------------------------|
