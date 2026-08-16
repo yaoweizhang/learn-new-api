@@ -1,16 +1,25 @@
-# s06: Token 计数 — 调用前估 token,调用后用上游报数,差额结算
+# s06: Token 计数 — 数清每个请求的 token,才知道这一单该收多少钱
 
 > Previous: [s05](../s05_api_key_auth/) · Next: [s07](../s07_pre_consume_settle/)
 
-> *"tiktoken 数明白"* —— token 不是字符，也不是 word。
+> *"token 不是字符,也不是 word"* —— 用 token 算账,按 token 计费。
 
 > **Layer**：L3 计量与扣费
 
 ## 本章要做什么
 
-在请求飞行前就数 prompt token(OpenAI 走 tiktoken,其它按字符/4),把结果挂到响应的 `usage` 上。学完你能在账单到达用户之前就知道每条请求花了多少 token。
+s05 知道"谁在打"但不知道"打得多贵":网关把请求原样转发、再原样把上游给的 `usage` 回吐——只有在模型"已经做完活"之后,我们才知道花了多少 token。账单对不齐、超额没法拦、预扣没数字可参考——全都卡在这一步。
 
-> **tiktoken**（OpenAI 开源的 tokenizer 库，按 BPE 规则把文本切成 token 并计费） —— 后续章节直接复用,不再重复解释。
+要解决这个,在转发前先把 prompt 的 token 数清楚:OpenAI 模型走 `tiktoken`(`cl100k_base` 编码)按 BPE 数,其它厂商没有官方分词器就用 `字符数 / 4` 的经验估算兜底;上游回包时如果带了完整 `usage` 就用它,没带就用本地估算 + 回复长度合成。本章就把这条数 token 的链路写出来:
+
+1. **写一个 `tokenizer` 模块 —— 为什么要在转发前数 prompt token**:`count_prompt(messages, model)` 按模型名前缀分派:OpenAI 走 `count_openai`(每条消息加 4 token overhead + `cl100k_base` 编码 `content`,再给回复预热 2),非 OpenAI 走 `count_estimate`(`sum(len(content)) // 4`,至少 1)。**为什么必须在转发前就数清楚**:后续 s07 要按"预估 token 数 × 单价"预扣,没这个数字根本没法预扣;**为什么不等到上游回报再算**:那时候已经花了上游配额,本地的账和上游的账对不齐,账单/限额逻辑无法在请求飞行前做出决策。
+2. **在 `chat_completions` handler 里数 token —— 为什么 handler 自己调不算中间件**:每条进来的请求 `count_prompt` 一次,把 `prompt_tokens` 留下来给响应阶段用;**为什么不用全局中间件**:token 数和 `model` 字段绑定,要从 `messages` 里读,而 Pydantic 校验完的请求体才是干净形态——全局中间件在 Pydantic 之前跑,要么复读 `body` 一遍,要么拿不到 `model` 字段。
+3. **合并上游 `usage` —— 为什么两条路径都要保底**:上游给了完整 `usage` 就用,但 `prompt_tokens` 取 `max(上游值, 本地预计)`——**为什么取较大值**:`max(...)` 挡住"上游 tokenizer 估得比本地少"的边界情况,保证本地账目不被悄悄少扣;**为什么非 OpenAI 路径要走 fallback**:老版本 Claude/Gemini、被 mock 的上游、部分失败都会让 `usage` 缺失,这种时候用 `prompt_tokens`(本地估算)+ `max(1, len(reply) // 4)`(回复长度估)合成一份 `usage`,让客户端永远能读到 `usage.total_tokens`。
+4. **挂回响应 + 报 prompt+completion 字段 —— 为什么补齐 `usage` 是契约的一部分**:OpenAI 客户端拿到响应后会读 `usage` 字段做自己的统计/限速,缺失就要客户端自己想办法——**为什么坚持三字段都给**:`prompt_tokens` / `completion_tokens` / `total_tokens` 是 OpenAI SDK 期待的形态;补不齐就破坏客户端零修改的承诺(s02 立的)。
+
+成品:`curl -X POST .../v1/chat/completions` 收到响应里有 `"usage": {"prompt_tokens": N, "completion_tokens": M, "total_tokens": N+M}`,OpenAI 路径走 `tiktoken` 准数,Claude/Gemini 走 `char/4` 兜底。后续 s07 在这条数 token 的链路上接预扣+结算,s08 在闸门后接按用户限速,这一层定型后整条链路就知道"每一笔该花多少钱"。
+
+> **tiktoken**（OpenAI 开源的 tokenizer 库,按 BPE 规则把文本切成 token 并计费） —— 后续章节直接复用,不再重复解释。
 
 ## 上一章复盘
 
@@ -117,21 +126,6 @@ curl -X POST http://localhost:8006/v1/chat/completions \
   }
 }
 ```
-
-## 测试
-
-```bash
-python -m pytest tests/test_s06_token_counting.py -v
-```
-
-两条覆盖:
-
-1. `test_usage_field_populated` —— OpenAI 路径:响应里 `usage.prompt_
-   tokens >= 1` 且 `total_tokens >= prompt_tokens`。
-2. `test_non_openai_falls_back_to_char_estimator` —— Claude 路径:
-   `usage.prompt_tokens >= 1`(证明 `count_estimate` 分支跑了)。
-
-两条测试都用 `tests/conftest.py` 里共享的 `upstream_openai` / `upstream_claude` respx 固定器。
 
 ## → new-api 源码
 
