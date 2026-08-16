@@ -13,7 +13,6 @@ _next_id = 1
 class Channel:
     id: int
     name: str
-    provider: str
     base_url: str
     weight: int
     priority: int
@@ -33,7 +32,8 @@ def create_channel(name: str, provider: str, base_url: str, weight: int, priorit
     with _lock:
         cid = _next_id
         _next_id += 1
-        ch = Channel(id=cid, name=name, provider=provider, base_url=base_url, weight=weight, priority=priority)
+        # provider: dropped — s_full doesn't use channel pool selection
+        ch = Channel(id=cid, name=name, base_url=base_url, weight=weight, priority=priority)
         _channels[cid] = ch
         return ch
 
@@ -46,9 +46,3 @@ def list_channels() -> list[dict]:
 def get_channel(cid: int) -> Channel | None:
     with _lock:
         return _channels.get(cid)
-
-
-def mark_unhealthy(cid: int) -> None:
-    with _lock:
-        if cid in _channels:
-            _channels[cid].healthy = False

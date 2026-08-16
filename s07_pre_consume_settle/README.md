@@ -73,13 +73,15 @@ if r.status_code >= 400:
     raise HTTPException(r.status_code, r.text)
 
 # 成功路径 —— 退还差额
-pt = max(usage.prompt_tokens, prompt_tokens)
-ct = usage.completion_tokens
+pt = max(usage.get("prompt_tokens", 0), prompt_tokens)
+ct = usage.get("completion_tokens", max(1, len(translated["choices"][0]["message"]["content"]) // 4))
 actual = (pt + ct) * RATE_PER_TOKEN
 settle(principal.user_id, estimate, actual)
 ```
 
 `max(usage.prompt_tokens, prompt_tokens)` 是为了应对上游 tokenizer 和本地 tokenizer 略有差异的情况——取较大值保证不会因为估算偏小而出现"调用已经花掉 X 配额、但我们只补了 X-1"的账目缺口。
+
+Asymmetry note: `pt` falls back to 0 if upstream omits it, but `ct` falls back to a char/4 estimate (`max(1, len(content) // 4)`). Reason: tokenizers differ; `ct` is the *output* we already have, so we can estimate locally; `pt` is the *input* which we cannot recover locally if upstream omits it.
 
 **注意**：s07 这里的 `max(...)` 在 s_full 的 `services/billing.py` 替换为"pt/ct 任一缺失则保留 pre_deducted"。原因是 pre-consume 已经 floor 在 estimate 上，再 max 会让用户永远按 estimate 付费，掩盖超额路径；s_full 选择显式承担"pt/ct 缺失 → 不退款"的语义。
 

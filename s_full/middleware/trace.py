@@ -4,6 +4,7 @@ Same shape as s16, minus the structlog dependency to keep s_full self-contained.
 """
 from __future__ import annotations
 
+import json
 import time
 import uuid
 
@@ -29,11 +30,25 @@ class TraceAndMetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         trace_id = request.headers.get("x-trace-id") or uuid.uuid4().hex
         request.state.trace_id = trace_id
+
+        # Extract the chat model from the JSON body so the metric label is
+        # meaningful. Same body-peek + rewind pattern as s11 (Starlette
+        # caches body in request._body, so downstream middlewares still see it).
+        # Match against the original path; sub-app mounts can prefix it but /v1/chat/completions stays at root today.
+        if request.method == "POST" and request.url.path == "/v1/chat/completions":
+            try:
+                body_bytes = await request.body()
+                payload = json.loads(body_bytes or b"{}")
+                request.state.model = payload.get("model") if isinstance(payload, dict) else None
+            except Exception:
+                request.state.model = None
+
         start = time.perf_counter()
         response = await call_next(request)
         elapsed = time.perf_counter() - start
-        if request.url.path.endswith("/v1/chat/completions"):
-            model = request.headers.get("x-model", "unknown")
+
+        if request.url.path == "/v1/chat/completions":
+            model = getattr(request.state, "model", None) or "unknown"
             REQUESTS.labels(model=model, status=response.status_code).inc()
             LATENCY.labels(model=model).observe(elapsed)
         response.headers["x-trace-id"] = trace_id

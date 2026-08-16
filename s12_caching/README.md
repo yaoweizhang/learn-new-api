@@ -251,13 +251,6 @@ pytest tests/test_s12_caching.py -v
   章算两个不同 key。语义缓存需要把 query 做 embedding、算相似度、
   再决定是否命中——这一整套是另一章节的工作量,本章只管"同字节
   同响应"。
-- **路径 `/v1/v1/chat/completions` 是双前缀** —— 已知债务。s09 把
-  s08 挂在 `/v1` 下,s08 自己的 chat 路由又是 `/v1/chat/comple
-  tions`,所以对外可访问路径是 `/v1/v1/chat/completions`。本章中间
-  件的路径检查按实际可达路径写。修法是把 s09 的
-  `app.mount("/v1", s08_app)` 改成 `app.mount("/", s08_app)` + s08
-  路由改名 `/chat/completions`,但那会改动 s08-s11 所有章节的测试,
-  留到接口契约统一清理那一章再做。
 - **body 读完仍可被下游 middleware 复用** —— Starlette 的
   `BaseHTTPMiddleware` 在首次 `await request.body()` 后会把字节缓存
   到 `request._body`,下游中间件(包括 s11 的 `LogMiddleware`)再读

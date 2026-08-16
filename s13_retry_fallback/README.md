@@ -243,12 +243,7 @@ pytest tests/test_s13_retry_fallback.py -v
   请求不再经过 s11 的中间件。这意味着这一章之后 chat 调用的日志丢
   了。下一章 s14 要么把日志中间件也提上来、要么重新设计——本章
   故意不动，等下一章决定。
-- **路径 `/v1/chat/completions` 而不是 `/v1/v1/chat/completions`** ——
-  s13 自有路由注册在本地 + 路径写 `/v1/chat/completions`，**不**
-  走 s12→s11→s10→s09→s08 那条会出 `/v1/v1/...` 的链。这是本章的有
-  意设计:s13 是 chat 端点的替代实现,路径回到最自然的 `/v1/chat/
-  completions`。如果以后想做"老路径仍可达"的兼容性挂载,可以同时
-  在挂载 s12 之后挂载一个 strip-prefix 适配层。
+- **chat 端点提到本地，挂载链里的同名路由被本章节的注册顺序遮蔽** —— `@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前，Starlette 按顺序匹配，本地路由胜出。挂载 s12 仍然存在，只是为了让 `/admin/cache/stats` 这种 s12 独有路由可达。
 
 ## 下章预告
 

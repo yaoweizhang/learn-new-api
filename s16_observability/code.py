@@ -32,6 +32,7 @@ class TraceAndMetricsMiddleware(BaseHTTPMiddleware):
         # Extract the chat model from the JSON body so the metric label is
         # meaningful. Same body-peek + rewind pattern as s11 (Starlette
         # caches body in request._body, so downstream middlewares still see it).
+        # Match against the original path; sub-app mounts can prefix it but /v1/chat/completions stays at root today.
         if request.method == "POST" and request.url.path == "/v1/chat/completions":
             try:
                 body_bytes = await request.body()

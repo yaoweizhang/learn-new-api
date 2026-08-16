@@ -78,7 +78,7 @@ class Principal:
 
 _keys: dict[str, Principal] = {}
 
-def register_key(user_id: str, key: str, scopes=("chat",)) -> None:
+def register_key(user_id: str, key: str, scopes: tuple[str, ...] = ("chat",)) -> None:
     _keys[key] = Principal(user_id=user_id, scopes=scopes)
 
 def lookup_key(key: str) -> Principal | None:

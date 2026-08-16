@@ -281,7 +281,7 @@ new-api 的 **relay** 不只是"按模型前缀选 provider"——它会维护�
 
 ### 已知限制（与教程目标一致，YAGNI）
 
-- **没有 channel pool 的真实选路**：`_pick(model)` 只按模型前缀选 provider，不会按 priority/weight 在 `models/channel.py` 里挑具体 channel。如果想跑 channel failover，需要在 `routes/chat.py` 里加一个新选择函数——在选到 provider 之后再按 priority/weight 挑一个具体的 base_url。
+- **没有 channel pool 的真实选路**：`_pick(model)` 只按模型前缀选 provider —— s_full 的 `Channel` 模型只保留 `id` + `base_url` + `enabled`,没有 `provider` 字段,`mark_unhealthy` 函数也移除了,因为 s_full 没有 channel pool 选路、所有渠道都按模型前缀直接派发。如果要扩展 channel failover,需要:重新加 `provider` 字段、恢复 `mark_unhealthy`、在 `routes/chat.py` 里加 channel 选路调用。
 - **没有 retry / fallback**（参见 s13）：单次上游调用失败直接 refund + 502。
 - **没有 caching**（参见 s12）：同样的 prompt 不会走 prompt cache。
 - **streaming 部分支持**：客户端发 `stream=true` 时走 `StreamingResponse`
