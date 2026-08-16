@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 360" font-family="monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" font-family="monospace">
   <style>
     .client   { fill: #fafafa; stroke: #333;    stroke-width: 1.5; }
     .gateway  { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2;   }
     .upstream { fill: #fce8e6; stroke: #c5221f; stroke-width: 1.5; }
-    .title    { font-size: 15px; font-weight: bold; fill: #222; }
+    .title    { font-size: 14px; font-weight: bold; fill: #222; }
     .label    { font-size: 13px; fill: #222; }
     .small    { font-size: 11px; fill: #555; }
     .arrow    { stroke: #333; stroke-width: 1.5; fill: none; marker-end: url(#arrow); }
@@ -18,55 +18,35 @@
 
   <text x="360" y="22" text-anchor="middle" class="title">s04: 一个客户端代码,按 model 名分发到三家上游</text>
 
-  <!-- Client -->
-  <rect class="client" x="40" y="78" width="160" height="104"/>
-  <text x="120" y="106" text-anchor="middle" class="label">Client (任意 OpenAI 客户端)</text>
-  <text x="120" y="128" text-anchor="middle" class="small">一份 OpenAI 形态 body</text>
-  <text x="120" y="144" text-anchor="middle" class="small">model 字段 = 路由键</text>
-  <text x="120" y="162" text-anchor="middle" class="small">SDK / LangChain / curl 都行</text>
-  <text x="120" y="178" text-anchor="middle" class="small">不知道有几家上游</text>
+  <rect class="client" x="40" y="100" width="160" height="80"/>
+  <text x="120" y="125" text-anchor="middle" class="label">Client</text>
+  <text x="120" y="145" text-anchor="middle" class="small">OpenAI 客户端 · model = 路由键</text>
 
-  <!-- Relay (gateway) -->
-  <rect class="gateway" x="260" y="68" width="200" height="124"/>
-  <text x="360" y="94" text-anchor="middle" class="label">Relay (按前缀分派)</text>
-  <text x="360" y="114" text-anchor="middle" class="small">pick_provider(model)</text>
-  <text x="360" y="132" text-anchor="middle" class="small">Provider 抽象基类</text>
-  <text x="360" y="148" text-anchor="middle" class="small">to_upstream: OpenAI 翻厂商</text>
-  <text x="360" y="164" text-anchor="middle" class="small">from_upstream: 厂商翻 OpenAI</text>
-  <text x="360" y="184" text-anchor="middle" class="small">未知 model -&gt; 400</text>
+  <rect class="gateway" x="260" y="92" width="200" height="96"/>
+  <text x="360" y="117" text-anchor="middle" class="label">Relay</text>
+  <text x="360" y="137" text-anchor="middle" class="small">本章要写 · 按前缀派 + 出入翻译</text>
 
-  <!-- 3 Upstream boxes -->
-  <rect class="upstream" x="520" y="46" width="160" height="60"/>
-  <text x="600" y="64" text-anchor="middle" class="label">OpenAIProvider</text>
-  <text x="600" y="82" text-anchor="middle" class="small">gpt-* / o* 前缀</text>
-  <text x="600" y="98" text-anchor="middle" class="small">透传: 已有 OpenAI 形态</text>
+  <rect class="upstream" x="520" y="48" width="160" height="56"/>
+  <text x="600" y="66" text-anchor="middle" class="label">OpenAI</text>
+  <text x="600" y="84" text-anchor="middle" class="small">gpt-* · 透传</text>
 
-  <rect class="upstream" x="520" y="114" width="160" height="60"/>
-  <text x="600" y="132" text-anchor="middle" class="label">ClaudeProvider</text>
-  <text x="600" y="150" text-anchor="middle" class="small">claude-* 前缀</text>
-  <text x="600" y="166" text-anchor="middle" class="small">加 x-api-key + max_tokens</text>
+  <rect class="upstream" x="520" y="112" width="160" height="56"/>
+  <text x="600" y="130" text-anchor="middle" class="label">Claude</text>
+  <text x="600" y="148" text-anchor="middle" class="small">claude-* · 加 system 头</text>
 
-  <rect class="upstream" x="520" y="182" width="160" height="60"/>
-  <text x="600" y="200" text-anchor="middle" class="label">GeminiProvider</text>
-  <text x="600" y="218" text-anchor="middle" class="small">gemini-* 前缀</text>
-  <text x="600" y="234" text-anchor="middle" class="small">改 contents[] + ?key=URL</text>
+  <rect class="upstream" x="520" y="176" width="160" height="56"/>
+  <text x="600" y="194" text-anchor="middle" class="label">Gemini</text>
+  <text x="600" y="212" text-anchor="middle" class="small">gemini-* · 改 contents</text>
 
-  <!-- Client -> Relay request arrow -->
-  <line class="arrow" x1="200" y1="114" x2="258" y2="114"/>
-  <text x="229" y="109" text-anchor="middle" class="small">OpenAI JSON</text>
+  <line class="arrow" x1="200" y1="136" x2="258" y2="136"/>
+  <text x="229" y="131" text-anchor="middle" class="small">OpenAI JSON</text>
 
-  <!-- Relay -> 3 upstream dispatch arrows -->
-  <line class="arrow" x1="460" y1="100" x2="518" y2="78"/>
-  <text x="485" y="92" text-anchor="middle" class="small">gpt-*</text>
+  <line class="arrow" x1="460" y1="118" x2="518" y2="78"/>
+  <text x="480" y="98" text-anchor="middle" class="small">gpt-*</text>
 
-  <line class="arrow" x1="460" y1="138" x2="518" y2="146"/>
-  <text x="485" y="142" text-anchor="middle" class="small">claude-*</text>
+  <line class="arrow" x1="460" y1="140" x2="518" y2="140"/>
+  <text x="480" y="135" text-anchor="middle" class="small">claude-*</text>
 
-  <line class="arrow" x1="460" y1="170" x2="518" y2="212"/>
-  <text x="485" y="194" text-anchor="middle" class="small">gemini-*</text>
-
-  <!-- Caption: WHY this chapter exists -->
-  <text x="360" y="262" text-anchor="middle" class="small">s02/s03 上游写死 OpenAI: 客户端想打 Claude / Gemini 就要改客户端代码, 单家挂全挂</text>
-  <text x="360" y="280" text-anchor="middle" class="small">本章只做一件事: 按 model 前缀挑 Provider, 出站翻厂商方言, 回包翻回 OpenAI 形态</text>
-  <text x="360" y="308" text-anchor="middle" class="small">后续 s05 在分派表外面加 API key 鉴权, s07 加按用户配额, s11 把每家调用日志分别落表</text>
+  <line class="arrow" x1="460" y1="162" x2="518" y2="206"/>
+  <text x="480" y="184" text-anchor="middle" class="small">gemini-*</text>
 </svg>

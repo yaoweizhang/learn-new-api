@@ -36,12 +36,18 @@ OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`
 
 ## 方案
 
-引入一个 `Provider` 抽象基类,每个上游一个具体实现。每个 provider 只做两件事:
+引入一个 `Provider` 抽象基类 (`ABC`,abstract base class,要求子类实现规定方法),每个上游一个具体实现。每个 provider 只做两件事:
 
 1. **把 OpenAI 请求翻译成自家线协议** (`to_upstream`)。
 2. **把自家响应翻回 OpenAI 形态** (`from_upstream`)。
 
-路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器（`Adaptor`，new-api 术语：厂商适配器接口），然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
+路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器(`Adaptor`,new-api 术语:厂商适配器接口),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
+
+`## 问题` 提了两件痛:OpenAI 形态 body 直打到 Claude / Gemini 会被回 400 (痛点 #1)、单家挂了整套服务就 502 (痛点 #2)。这两件事**任何一件**都没法靠"客户端按厂商分流"能解决——必须由网关按 model 前缀自动分派并翻译。下面这幅图把这三件事各放到一个角色里:
+
+- **`Client` (任意 OpenAI 客户端)** —— 装上分派层之前,这是被迫按厂商分流改代码的角色;装上之后,这事被网关解了——客户端发什么 model,网关就派给哪家,客户端零修改。
+- **`Relay` (本章要写的分派层)** —— 把痛点 #1 #2 的解决动作集中放在这里:按 `model` 前缀挑 provider,用 `to_upstream` 把 OpenAI body 翻成各家方言,用 `from_upstream` 把各家响应翻回 OpenAI 形态。Client 始终说 OpenAI 形态,Upstream 始终说自家形态。
+- **`Provider` (OpenAI / Claude / Gemini 三选一)** —— 厂商专属的执行者。OpenAI 形态透传;Claude 加 `x-api-key` + `anthropic-version` + 顶层 `max_tokens`;Gemini 改 `contents[]` 形态 + URL 查询串里的 API key。单家挂了不影响另外两家。
 
 下面这张 ASCII 流程图把分派路径压成一行——和下面那张架构图相对照:上面这张是单跳时序,下面那张是角色拓扑,中间那块都是"按模型名前缀选":
 
@@ -56,6 +62,14 @@ Client ──POST /v1/chat/completions──▶  Relay(按模型名前缀选)  �
 
 ## 工作原理
 
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器用 OpenAI schema 校验请求体 → `pick_provider(req.model)` 按 `model` 前缀挑出 `OpenAIProvider` / `ClaudeProvider` / `GeminiProvider` 之一 → `provider.to_upstream` 把 OpenAI body 翻成该厂商方言 + 出站 headers → httpx 把请求发到该厂商 URL → 等待回包 → `provider.from_upstream` 把厂商响应翻回 OpenAI 形态 → 吐回客户端。整章所有部件都为这条主线服务。
+
+**1. 一个 `Provider` ABC (Python `ABC` + `@abstractmethod`)** —— `name` + `to_upstream(req) → (url, headers, body)` + `from_upstream(payload) → dict` 三个方法。每个上游一个具体实现。路由处理器只看到"出站 + 回包翻成 OpenAI 形态",不知道厂商是谁;这样加新厂商 = 加一个 `Provider` 子类,路由不动。
+
+**2. 一个 `pick_provider(model)` 分派器** —— 按 `model.startswith(...)` 一行一条 if 挑 provider。`gpt-` / `o` 走 OpenAI、`claude-` 走 Claude、`gemini-` 走 Gemini;其它一律 `400 unknown model`。客户端发请求时 `model` 已经在 body 里,运维不用另维护配置。
+
+**3. 三个 provider 实现 (`OpenAIProvider` / `ClaudeProvider` / `GeminiProvider`)** —— 每个 provider 只翻译"真正不一致的部分":共有字段 (`model` / `messages`) 原样透传,厂商专属字段显式构造。响应被折叠回 OpenAI 的 `chat.completion` 形态。
+
 适配器表是本章的核心:
 
 | 模型名前缀 | Provider | 上游 URL |
@@ -64,11 +78,6 @@ Client ──POST /v1/chat/completions──▶  Relay(按模型名前缀选)  �
 | `claude-` | `ClaudeProvider` | `https://api.anthropic.com/v1/messages` |
 | `gemini-` | `GeminiProvider` | `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key=…` |
 | 其它 | — | `400 unknown model` |
-
-每个 provider 只翻译"真正不一致的部分"——共有字段(`model`、
-`messages`)原样透传;厂商专属字段(Claude 的 `system`、`max_tokens`;
-Gemini 的 `contents` 形态)显式构造。响应被折叠回 OpenAI 的
-`chat.completion` 形态,所以客户端不需要知道答的是哪家上游:
 
 ```python
 class Provider(ABC):
@@ -129,7 +138,7 @@ cd s04_multi_provider
 PORT=8004 python code.py
 ```
 
-健康:
+确认三家适配器路径都能响应?打这条 curl——能拿到 `{"status":"ok"}` 说明 FastAPI 进程在响应、`Provider` ABC 和三家 provider 实现都加载到内存里了;再分别用 `model: gpt-...` / `claude-...` / `gemini-...` 各发一个请求,被 `pick_provider` 派到对应适配器、再被 `to_upstream` 翻译后转发,即说明三家适配器都活了:
 
 ```sh
 curl http://localhost:8004/health
@@ -170,25 +179,22 @@ model)` 元组映射到适配器实例;另外每 channel 都有 `Key` 模式(我
 里硬编码的 `_*_KEY` 环境变量变成运行时可配置)。Go 端每家厂商都有流
 式适配器——见下面的取舍。
 
-## 取舍
+## 本章不做什么
 
-明确**没有**做的事:
+- **没有流式翻译** (在流式响应里逐帧把各家 SSE 翻成 OpenAI 形态)——当 `stream: true` 时, 我们仍然等整个响应再返回 JSON。三家厂商的 SSE 线协议在流中段不同 (OpenAI 推 `data: {...}\n\n`, Claude 推 `event: …` 行, Gemini 推 `data: [array,…]`), 真正的流式翻译是另一道独立的设计题。→ s05+。
+- **没有鉴权、配额、日志、指标** (按用户计费 / 调用历史 / 监控)——任何能访问 8004 端口的人都能花 key, 看不到调用历史。→ s05、s07、s11、s16。
 
-- **没有流式翻译**。当 `stream: true` 时,我们仍然等整个响应再返
-  回 JSON。三家厂商的 SSE 线协议在流中段不同(OpenAI 推 `data:
-  {...}\n\n`,Claude 推 `event: …` 行,Gemini 推 `data: [array,…]`),
-  真正的流式翻译是另一道独立的设计题。→ s05+。
-- **OpenAI 路径没有真正的 `system` 翻译**。OpenAI 客户端可以把
-  `system` 放在 `messages` 里(`{"role": "system", "content": "…"}`);
-  Claude 想要的是顶层 `system` 字段。适配器做了顶层 `system` 的提
-  取,但 `messages` 里的 `system` 这条分支还没有处理。
-- **按前缀路由很脆**。一个叫 `open-mistral-7b`(真实的 Mistral 模型
-  名)的模型会被 `o` 匹配到 OpenAI provider——然后 401 或 400。new-api
-  的解法是按 `channel` 路由,而不是按 `model`,所以运维在配置阶段就
-  声明"这个模型走 Anthropic"。
-- **每请求新建连接池**。正确,但慢;长连接客户端才是生产答
-  案。→ s10。
-- **没有重试 / 退避**。→ s13。
+## 已知限制
+
+- **OpenAI 路径没有真正的 `system` 翻译** (把 `messages` 里的 `system` 消息正确提取为 Claude 顶层 `system` 字段)——OpenAI 客户端可以把 `system` 放在 `messages` 里 (`{"role": "system", "content": "…"}`); Claude 想要的是顶层 `system` 字段。适配器做了顶层 `system` 的提取, 但 `messages` 里的 `system` 这条分支还没有处理。
+- **按前缀路由很脆** ——一个叫 `open-mistral-7b` (真实的 Mistral 模型名) 的模型会被 `o` 匹配到 OpenAI provider——然后 401 或 400。new-api 的解法是按 `channel` 路由, 而不是按 `model`, 所以运维在配置阶段就声明"这个模型走 Anthropic"。
+- **每请求新建连接池** (connection pool, client 复用的 TCP 连接集合)——`async with httpx.AsyncClient()` 每次都重连, 高并发下握手成本可观; 长连接客户端是生产答案。→ s10 修掉这点。
+- **没有重试 / 退避** ——一次短暂的上游抖动会以 502 暴露给调用方。→ s13。
+
+## 设计选择
+
+- **按 `model` 前缀分派而不是 channel 表** ——客户端发请求时 `model` 已经在 body 里, 运维不用另维护"哪个 model 走哪家"的配置; new-api 的 channel 表是另一种思路 (按 `channel` 路由, 运维显式声明), 我们取更轻的一端。代价是 `open-mistral-7b` 这种冲突模型会被错派。
+- **`Provider` ABC 而不是三个 if-else** ——加新厂商 = 加一个子类, 路由不动;`to_upstream` / `from_upstream` 两个方法把"出站翻译 + 回包翻译"封装到适配器里, 路由只看到 (url, headers, body) → OpenAI 形态。
 
 ## 下章预告
 
