@@ -8,7 +8,19 @@
 
 ## 本章要做什么
 
-网关内挂一个最薄的 Jinja2 仪表盘:`/dashboard/login` 表单登录 + Cookie session,`/dashboard/` 渲染"用户/渠道/日志数"三个数字。学完运营用浏览器就能看到系统状态,不用 curl + jq。
+到 s13,网关已经能跑——用户签到、配额扣减、渠道选路 + 重试 + 回退、缓存、日志都接好了。但**所有管理动作全靠 curl**:想看现在跑了多少条渠道?`curl /admin/channels`;想看刚才哪条请求失败了?`curl /admin/logs`;想加一条新渠道?`curl -X POST /admin/channels -d '{...}'`。每次让人拼 curl + 看 JSON + `jq` 才知道"系统现在怎样",运营成本就上来了。
+
+要解决这个,在网关内挂一个**最薄的服务端渲染后台**:浏览器 GET `/dashboard/login` 拿登录表单、POST 凭证拿 Cookie,GET `/dashboard/` 渲染"用户/渠道/日志数"三个数字。学完运营用浏览器就能看到系统状态,不用 curl + jq。本章把这套最小看板写出来:
+
+1. **挂一个 Jinja2 仪表盘 —— 为什么服务端渲染不写 React SPA**: new-api 自带完整 React SPA (`web/` 目录,Vite + TypeScript + Zustand + Tailwind),那个体量比后端还大。**为什么不抄**: 教程目的是演示"网关能渲染 HTML"这件事的最小形态——Vue/React 构建工具链、状态管理、路由、组件库、TypeScript 类型定义,光搭起来就够写三章;Jinja2 + 3 个数字足够。**为什么用 Jinja2**: FastAPI 官方 `Jinja2Templates` 内置,F-string 模板拼字符串容易 XSS,服务端渲染对运维读看板这种只读场景最自然。
+
+2. **表单登录 + 明文 Cookie session —— 为什么不上 JWT**: `@app.post("/dashboard/login")` 接 `Form(email, password)`,校验成功就 `RedirectResponse("/dashboard/")` + `set_cookie("admin", "1", httponly=True)`。Cookie 只是 `admin=1` 的明文标记——**没有签名、没有加密**。**为什么不直接用 s09 的 JWT**: admin JWT 复用 s09 那一套能跑,但 admin 是 `is_admin=1` 的特殊用户、要签发 + 校验,5-10 行额外书架代码;教学范围内明文 Cookie 让两段测试足够短;**生产里要么 `itsdangerous` 签名、要么直接复用 s09 的 JWT**——取舍里展开。
+
+3. **`_require_admin` 守卫 + 401 而不是 302 —— 为什么手动调而不是 `Depends`**: 仪表盘 handler 第一行 `gate = _require_admin(request); if gate: return gate`,`_require_admin` 没 Cookie 时返回 `HTMLResponse("unauthorized", status_code=401)`。**为什么不是 302**: 重定向到 `/dashboard/login` 在生产里体验更好(浏览器自动跳登录页),但 Starlette `TestClient` 默认跟随重定向,302 + 跟随 → 200 会让断言 `status_code in (302, 401)` 失败。直接返 401 让 TestClient 停在原响应上,简化测试。**为什么手动调而不是 `Depends(_require_admin)`**: 401 响应不是 HTTPException、是手写的 HTMLResponse,`Depends` 配合自定义 Response 容易写绕;手动 5 行,更好读。
+
+4. **数据复用直接 import 内存单例 —— 为什么是"看得到"不是"可编辑"**: 仪表盘三个数字从已有模块读:`channels = len(ch_mod.list_channels())`(s10 内存 dict)、`logs = len(log_store.list_logs())`(s11 异步 flush 后的 list),`users` 硬编码 0 因为 s09 没 `list_all()`。**为什么不写 CRUD UI**: 不展示用户列表、不支持改渠道、不支持分页筛选;那要列表分页 + 搜索 + 批量操作 + 暗色模式 + 表单校验——YAGNI;本章只展示"能看到数字"。**为什么不接数据库**: 进程重启回到初始状态是有意为之,本章是"看得到数字"的最小后台,不是"可编辑的 CRUD 后台"。
+
+成品: 浏览器打开 `localhost:8014/dashboard/login` → 输入 `admin@example.com / admin`(默认本地凭证) → 登录后看到三个数字:Users: 0、Channels: N、Logs: M;老的 `/v1/chat/completions` 仍可达;`curl -i` 看 302 + `Set-Cookie: admin=1; HttpOnly`。后续 s15 把整套 Docker 化,s16 给后台看板加实时指标。
 
 ## 上一章复盘
 
@@ -197,23 +209,6 @@ curl -X POST http://127.0.0.1:8014/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
-
-## 测试
-
-```bash
-pytest tests/test_s14_admin_dashboard.py -v
-```
-
-两个测试覆盖主契约：
-
-| 测试 | 断言 |
-| --- | --- |
-| `test_dashboard_home_requires_login` | 无 Cookie 访问 `/dashboard/`，返回 401。 |
-| `test_dashboard_login_flow` | POST 正确凭证 → 200（TestClient 跟随 302 到 `/dashboard/` 并渲染）+ 响应包含 `learn-new-api`。 |
-
-`TestClient` 是同步的，Cookie session 在同一 client 实例内自动
-共享——第二个测试里 `c.post(...)` 设的 Cookie 被 `c.get(...)` 自
-动带上，所以"登录后能看仪表盘"是稳的。
 
 ## → new-api 源码
 
