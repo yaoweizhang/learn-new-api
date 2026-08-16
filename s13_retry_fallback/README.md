@@ -1,4 +1,4 @@
-# s13:失败即回落——渠道级 fallback(不重试,换下一条) — 失败 → 标 unhealthy → 换下一个
+# s13: 失败即回落——渠道级 fallback(不重试,换下一条) — 失败 → 标 unhealthy → 换下一个
 
 > Previous: [s12](../s12_caching/) · Next: [s14](../s14_admin_dashboard/)
 
