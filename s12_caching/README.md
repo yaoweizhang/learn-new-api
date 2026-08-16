@@ -6,27 +6,6 @@
 
 > **Layer**：L4 路由与韧性
 
-## 本章要做什么
-
-前 11 章里,客户端每次问"gpt-4o-mini 给我讲个笑话"都会原封不动打到上游——哪怕 1000 个用户问的是同一个问题,上游也会被叫 1000 次。OpenAI 这类按 token 计费的服务,最贵的不是单次推理而是**重复请求**:同 prompt + temperature 跑 1000 次就是 1000 倍的钱,而答案完全一样;同样的冷启动时延 800ms,缓存命中后只要几毫秒,体感差距非常明显。
-
-要解决这个,给 chat 端点包一层精确匹配缓存:同 model、同 messages、同 temperature 的请求,首次落缓存,之后命中直接吐 bytes,根本不打上游。本章把这层缓存写出来:
-
-1. **写一个内存缓存后端 `cache.py` —— 为什么是进程内 dict 而非 Redis**: `_store: dict[str, tuple[float, bytes]] = {}` 加 `threading.Lock`,对外暴露 `reset_cache / get / set / stats`。**为什么不直接接 Redis**:本章只演示"缓存中间件这个模式存在、键怎么算、TTL 怎么管",多进程共享、持久化、跨实例全部不在这一章的范围——接口照搬 `redis-py` 的签名(`get/set/stats`),v2 切 Redis 时只动实现不动接口,中间件一行不用改。
-2. **键用 `sha256(canonical JSON)` —— 为什么规范化 + sha256**: `_key(payload)` = `hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()`。**为什么 `sort_keys + separators`**:序列化结果与字段顺序无关——`{"a":1, "b":2}` 和 `{"b":2, "a":1}` 算同一个 key,改一个字符(哪怕加个空格)就完全不一样。**为什么用 sha256 而不是 `functools.lru_cache`**:`lru_cache` 只支持 hashable 位置参数;我们要按任意 dict 内容做键,还要自己控 TTL。
-3. **`CacheMiddleware` 包在 s11 外层 —— 为什么是 BaseHTTPMiddleware**: 只对 `POST /v1/chat/completions` 起效:命中 → 直接 `Response(content=hit)`,短路所有下游;miss → `await call_next(request)` 转发,200 后把 `response.body_iterator` 读一遍重组再 `cache.set(payload, body)`。**为什么 `stream=true` 跳过缓存**:SSE 是一段持续字节流,没法用一个 `bytes` 整体缓存,跳掉比 partial-stream cache 简单得多,那部分留到 v2。**为什么 body 读一次不破坏下游**:Starlette 的 `BaseHTTPMiddleware` 在首次 `await request.body()` 后会把字节缓存到 `request._body`,s11 的 `LogMiddleware` 再读时拿到的依然是同一份完整 body——所以不需要走 `request.state` 透传。
-4. **TTL 300 秒 + 时间戳用 `time.monotonic()` —— 为什么不用 `time.time()`**: `set` 时记 `time.monotonic() + ttl_seconds`,`get` 时检查过期就清掉。**为什么用 `monotonic`**:系统时钟跳变(NTP 校时、跨时区)时 `time.time()` 会回退或跳跃,可能把缓存集体判过期或集体"复活",`monotonic` 只往前走,语义干净。**为什么 TTL 固定 300 秒**:本章先让缓存生效——按模型分级、按客户端覆盖是 v2 的事。
-
-成品:同样 body 连发两次,第一次打上游 + 写缓存,第二次直接吐缓存 bytes,`upstream_openai.calls.call_count == 1`。`curl /admin/cache/stats` 看到 `{size, live}` 实时反映缓存状态。后续 s13 在 `CacheMiddleware` 内侧加一层失败回落,落到下一条渠道;真上 Redis 时接口不动、`cache.py` 一文件替换。
-
-## 上一章复盘
-
-s11 把每次调用都落盘了，但同样的请求每次都重新打上游，钱白费。
-
-## 在整体中的位置
-
-网关的"性能加速层"——命中时跳过所有上游调用,直接吐缓存。s13 失败回落的反向选择。
-
 ## 问题
 
 前 11 章里,每次客户端问"gpt-4o-mini 给我讲个笑话",请求都会原封
@@ -44,6 +23,17 @@ s11 把每次调用都落盘了，但同样的请求每次都重新打上游，�
 读出上次的结果直接返回。这一章只做**精确匹配**——同 model、同
 messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
 说个笑话")留到 v2 或专门的语义缓存层。
+
+## 本章要做什么
+
+要解决这个,给 chat 端点包一层精确匹配缓存:同 model、同 messages、同 temperature 的请求,首次落缓存,之后命中直接吐 bytes,根本不打上游。本章把这层缓存写出来:
+
+1. **写一个内存缓存后端 `cache.py` —— 为什么是进程内 dict 而非 Redis**: `_store: dict[str, tuple[float, bytes]] = {}` 加 `threading.Lock`,对外暴露 `reset_cache / get / set / stats`。**为什么不直接接 Redis**:本章只演示"缓存中间件这个模式存在、键怎么算、TTL 怎么管",多进程共享、持久化、跨实例全部不在这一章的范围——接口照搬 `redis-py` 的签名(`get/set/stats`),v2 切 Redis 时只动实现不动接口,中间件一行不用改。
+2. **键用 `sha256(canonical JSON)` —— 为什么规范化 + sha256**: `_key(payload)` = `hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()`。**为什么 `sort_keys + separators`**:序列化结果与字段顺序无关——`{"a":1, "b":2}` 和 `{"b":2, "a":1}` 算同一个 key,改一个字符(哪怕加个空格)就完全不一样。**为什么用 sha256 而不是 `functools.lru_cache`**:`lru_cache` 只支持 hashable 位置参数;我们要按任意 dict 内容做键,还要自己控 TTL。
+3. **`CacheMiddleware` 包在 s11 外层 —— 为什么是 BaseHTTPMiddleware**: 只对 `POST /v1/chat/completions` 起效:命中 → 直接 `Response(content=hit)`,短路所有下游;miss → `await call_next(request)` 转发,200 后把 `response.body_iterator` 读一遍重组再 `cache.set(payload, body)`。**为什么 `stream=true` 跳过缓存**:SSE 是一段持续字节流,没法用一个 `bytes` 整体缓存,跳掉比 partial-stream cache 简单得多,那部分留到 v2。**为什么 body 读一次不破坏下游**:Starlette 的 `BaseHTTPMiddleware` 在首次 `await request.body()` 后会把字节缓存到 `request._body`,s11 的 `LogMiddleware` 再读时拿到的依然是同一份完整 body——所以不需要走 `request.state` 透传。
+4. **TTL 300 秒 + 时间戳用 `time.monotonic()` —— 为什么不用 `time.time()`**: `set` 时记 `time.monotonic() + ttl_seconds`,`get` 时检查过期就清掉。**为什么用 `monotonic`**:系统时钟跳变(NTP 校时、跨时区)时 `time.time()` 会回退或跳跃,可能把缓存集体判过期或集体"复活",`monotonic` 只往前走,语义干净。**为什么 TTL 固定 300 秒**:本章先让缓存生效——按模型分级、按客户端覆盖是 v2 的事。
+
+成品:同样 body 连发两次,第一次打上游 + 写缓存,第二次直接吐缓存 bytes,`upstream_openai.calls.call_count == 1`。`curl /admin/cache/stats` 看到 `{size, live}` 实时反映缓存状态。后续 s13 在 `CacheMiddleware` 内侧加一层失败回落,落到下一条渠道;真上 Redis 时接口不动、`cache.py` 一文件替换。
 
 ## 方案
 
