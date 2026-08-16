@@ -8,9 +8,16 @@
 
 ## 本章要做什么
 
-加一个 FastAPI 进程,一条 `/relay` 路由把 JSON body 转发到单一上游,再把响应原样吐回。学完你会拿到一个最薄但能跑的中继——之后所有章节都建立在这个内核上。
+没有网关的时候,你的应用直接调 LLM 厂商:每个调用方各拿一把厂商 key、各自把厂商 URL 写死、各自复制一份调度逻辑。换厂商、轮 key、看流量——一件事改十遍代码。
 
-新增依赖:`fastapi`、`uvicorn`、`httpx`、`pydantic`。
+要解决这个,中间站一个程序:它替调用方转发请求,key 和 URL 都藏在中继里。本章就把这个程序的最薄版本写出来:
+
+1. **装 4 个包 —— 为什么是这 4 个**:`fastapi` 是用 Python 写 HTTP 路由的框架、`uvicorn` 是把 FastAPI 应用真正跑起来的服务器、`httpx` 是发出站 HTTP 请求的库(**为什么不用 `requests`**:`requests` 是同步的,而中继几乎所有时长都花在等上游,同步客户端每条在飞的请求要占一个 OS 线程,只有异步才扛得住并发)、`pydantic` 负责把进来的 JSON 转成 Python 对象(**为什么需要**:转发前先校验请求体格式,别让明显无效的请求白花一次网络往返)。
+2. **写一条 `POST /relay` 路由 —— 为什么先自创路径**:调用方 POST 一段 JSON(带 `model` 和 `messages`)过来,中继原样转发给上游(默认 OpenAI 的 `chat/completions`),再把上游的 JSON 回复原样吐回。**为什么不直接用 OpenAI 的路径**:这一章只验证"中继能不能转发"这一件事;路径名留到 s02 换成 OpenAI 的,那时才谈生态兼容。
+3. **把 key 放进环境变量 —— 为什么不让调用方传 key**:调用方永远看不到上游 key,中继自己读 `UPSTREAM_OPENAI_KEY` 并带上 `Authorization: Bearer ...` 头。**这是网关存在最核心的单一原因**:厂商 key 一旦下发到客户端,你就再也没法收回、轮换、限速、按用户计费。
+4. **再加一条 `GET /health` —— 为什么这么早就要**:一条零依赖的存活探针,后面每章都在用(s15 的 Docker healthcheck 直接指向它),现在写好就不用回头补。
+
+成品:`curl localhost:8001/health` 看到 `{"status":"ok"}`,`curl -X POST localhost:8001/relay -d '...'` 看到上游原样回复。后续 16 章都在这个最薄内核上往外加协议、流式、鉴权、限流、渠道、日志。
 
 ## 在整体中的位置
 
@@ -112,18 +119,6 @@ curl -X POST http://localhost:8001/relay \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
 ```
-
-## 测试
-
-```sh
-pytest tests/test_s01_minimal_relay.py -v
-```
-
-上游用 `respx`（拦截 httpx 出站请求的 mock 库）mock 拦截,测试用 `tests/conftest.py`（pytest 共享 fixture 的约定文件）里的 `upstream_openai` fixture（`pytest fixture`（pytest 测试装置：在测试前后准备/清理共享资源）），所以测试能离线跑,同时仍然断言真实的线协议形态——中继必须返回上游 `choices[0].message.content`,并且只该调一次上游。
-
-> **测试栈词汇**：本章及后续用到 `pytest` 的几个概念——`fixture`（测试装置,见上）、`autouse`（fixture 的自动应用标志：声明后 pytest 会自动套用到所有测试）、`conftest.py`（pytest 共享 fixture 的约定文件,见上）、`TestClient`（FastAPI 自带的同步测试客户端：不启 HTTP 直接在内存里调用 app）、`respx`（见上）。后文直接复用这些词,不再重复解释。
->
-> HTTP（超文本传输协议）状态码速查：`401` 未授权（token 错或缺失）、`402` 支付被拒（余额/配额不足）、`422` 请求格式错（参数校验未通过）、`502` 网关/上游挂了（拿到下游报错）。
 
 ## → new-api 源码
 
