@@ -33,7 +33,7 @@
   <rect class="box" x="420" y="50" width="160" height="80"/>
   <text x="500" y="75" text-anchor="middle" class="label">FastAPI app</text>
   <text x="500" y="93" text-anchor="middle" class="small">/healthz (s15)</text>
-  <text x="500" y="108" text-anchor="middle" class="small">/v1/v1/chat/completions</text>
+  <text x="500" y="108" text-anchor="middle" class="small">/v1/chat/completions</text>
 
   <!-- Arrows top row -->
   <line class="arrow" x1="140" y1="85" x2="188" y2="85"/>

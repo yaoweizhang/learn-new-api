@@ -49,8 +49,8 @@
   <!-- Mounted s10 -->
   <rect x="460" y="60" width="220" height="200" fill="#fed" stroke="#333"/>
   <text x="570" y="80" text-anchor="middle" font-size="12">/ mount (s10 app)</text>
-  <text x="570" y="105" text-anchor="middle" font-size="10">/v1/v1/chat/completions</text>
-  <text x="570" y="120" text-anchor="middle" font-size="9" fill="#666">(s09 mounts s08 at /v1; double prefix)</text>
+  <text x="570" y="105" text-anchor="middle" font-size="10">/v1/chat/completions</text>
+  <text x="570" y="120" text-anchor="middle" font-size="9" fill="#666">(s09 mounts s08 at /; s08 owns /v1 prefix)</text>
   <text x="570" y="145" text-anchor="middle" font-size="10">/admin/channels (s10)</text>
   <text x="570" y="165" text-anchor="middle" font-size="10">/auth/signup, /auth/login (s09)</text>
   <text x="570" y="185" text-anchor="middle" font-size="10">/v1/chat/completions (s08)</text>
@@ -73,7 +73,7 @@
   <!-- Logs sample data -->
   <rect x="720" y="290" width="180" height="160" fill="#ffe" stroke="#c80"/>
   <text x="810" y="310" text-anchor="middle" font-size="11" fill="#c80">flushed sample</text>
-  <text x="810" y="330" text-anchor="middle" font-size="9">path: /v1/v1/chat/completions</text>
+  <text x="810" y="330" text-anchor="middle" font-size="9">path: /v1/chat/completions</text>
   <text x="810" y="345" text-anchor="middle" font-size="9">ts: 1719...</text>
   <text x="810" y="360" text-anchor="middle" font-size="9">status: 200</text>
   <text x="810" y="375" text-anchor="middle" font-size="9" fill="#2a7">model: gpt-4o-mini</text>

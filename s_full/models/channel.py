@@ -48,16 +48,6 @@ def get_channel(cid: int) -> Channel | None:
         return _channels.get(cid)
 
 
-def pick_channel_for(model_prefix: str) -> Channel | None:
-    """Pick the highest-priority, enabled, healthy channel whose provider matches model_prefix."""
-    with _lock:
-        candidates = [c for c in _channels.values() if c.enabled and c.healthy]
-    if not candidates:
-        return None
-    candidates.sort(key=lambda c: (c.priority, -c.weight))
-    return candidates[0]
-
-
 def mark_unhealthy(cid: int) -> None:
     with _lock:
         if cid in _channels:
