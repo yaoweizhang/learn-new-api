@@ -238,6 +238,7 @@ pytest tests/test_s11_call_logs.py -v
 - **没有 `_require_admin` 闸门** —— `/admin/logs`、`/admin/stats` 当前对所有能访问的人开放。生产里必须收紧,但"管理员能看自己的调用日志"和"调用方能看到自己的用量"是两个不同的产品决策(前者运维、后者用户控制台),先分开再讨论统一鉴权。
 - **`time.sleep(0.2)` 是已知的时序依赖** —— 见"测试"一节。Brief 原本就是这么设计的;这是"异步 + 周期 flush"的固有特性。v2 改成事件驱动后就消除。
 - **`on_event("startup")` 已弃用** —— FastAPI 0.110+ 推荐用 lifespan context manager。本章沿用 brief 的写法保持一致;后续章节统一升级时一起改。
+- **shutdown 钩子做同步 drain** —— 见上文 `code.py` 注释。直接动机是 TestClient:测试退出 `with` 块时事件循环停掉,async flush 不再 tick,最后一批会留在 `_buffer` 里没出来;同步 drain 把这一批强制落 `_flushed`。生产 uvicorn 关闭流程里 asyncio 自然会让最后一次 tick 跑完,同步 drain 仍然是无害的双保险。
 
 ## 下章预告
 
