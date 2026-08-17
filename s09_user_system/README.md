@@ -29,7 +29,7 @@ s05 之前我们用一张"API key → 用户"的内存表来做鉴权。这种�
 
 ## 方案
 
-现在的场景是:`## 问题` 提了三件痛——用户没法自己注册(痛点 #1)、key 明文存(痛点 #2)、进程一重启全部蒸发(痛点 #3)——这三件事**任何一件**都没法靠"客户端自行保管"或"运维手工签发"能解决,必须由网关把"匿名 key 持有者"升级成"真用户":邮箱注册 + bcrypt 存哈希 + HS256 签 JWT。
+现在的场景是:`## 问题` 提了三件痛——用户没法自己注册(痛点 #1)、key 明文存(痛点 #2)、进程一重启全部蒸发(痛点 #3)——这三件事**任何一件**客户端自行保管都搞不定、运维手工签发也搞不定,必须由网关把"匿名 key 持有者"升级成"真用户":邮箱注册 + bcrypt 存哈希 + HS256 签 JWT。
 
 **要解决这个——我们在网关里引入四个最小但够用的部件**:
 
@@ -61,7 +61,7 @@ GET  /me            Authorization: Bearer <jwt>  -> 200 {id, email, is_admin}
 
 ## 工作原理
 
-**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期分两轨——s09 这条(dashboard / admin): 路由器按 `/auth/signup` 或 `/auth/login` 路径挑出处理器 → 处理器收 `Credentials` schema (`email` + `password`) → signup 走 `bcrypt.hashpw` + `users.create_user` + `jwt_util.issue` 签 HS256 JWT 返通行令牌;login 走 `users.find_by_email` + `bcrypt.checkpw` + `jwt_util.issue` 重签令牌 → 客户端持 JWT 调 `/me` 时,`Depends(_current_user)` 先 `_bearer` 抽 token → 查 `token_blacklist.is_revoked(sha256(token))` → 通过再 `jwt_util.decode` 验签 + 检查 `exp` → 解出 claims 注入 handler;`/auth/logout` 把 `sha256(token)` 加进 `token_blacklist` 内存 set,s09 这条自洽。整章所有部件都为这条主线服务。
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期分两轨——s09 这条(dashboard / admin): 路由器按 `/auth/signup` 或 `/auth/login` 路径挑出处理器 → 处理器收 `Credentials` schema (`email` + `password`) → signup 走 `bcrypt.hashpw` + `users.create_user` + `jwt_util.issue` 签 HS256 JWT 返通行令牌;login 走 `users.find_by_email` + `bcrypt.checkpw` + `jwt_util.issue` 重签令牌 → 客户端持 JWT 调 `/me` 时,`Depends(_current_user)` 先 `_bearer` 抽 token → 查 `token_blacklist.is_revoked(sha256(token))` → 通过再 `jwt_util.decode` 验签 + 检查 `exp` → 解出 claims 注入 handler;`/auth/logout` 把 `sha256(token)` 加进 `token_blacklist` 内存 set,s09 这条自洽。所有部件都围着这条主线展开。
 
 **1. 一个 signup handler (`POST /auth/signup`)** —— 收 `Credentials` (`email` + `password` Pydantic schema) → `users.find_by_email` 查重 → 不重就 `bcrypt.hashpw` 算密码哈希 → `users.create_user` 写 SQLite 行 → `jwt_util.issue` 签 HS256 JWT 返 `{id, email, access_token}`。注册即发证。
 

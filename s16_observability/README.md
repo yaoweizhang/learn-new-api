@@ -32,13 +32,13 @@
 
 ## 方案
 
-现在的场景是:哪怕到了 s15,我们能告诉运维的也只有"elapsed=2.3s, status=200"这种单数字——用户报障"那个 chat 卡了好久"时,运维拿到的是一行 `elapsed=2.3s` JSON,**没法知道这 2.3s 是花在鉴权(查 key) 还是 限速(token bucket) 还是 配额扣减(lock) 还是 上游调用(httpx)**,只能抓包逐跳猜。这件事**没法靠"用户记得大概有多慢"或"运维抓全链路包"能解决**,必须让一次请求的耗时在中间件层就被分阶段打点,日志里能看到每段花了多少。
+现在的场景是:哪怕到了 s15,我们能告诉运维的也只有"elapsed=2.3s, status=200"这种单数字——用户报障"那个 chat 卡了好久"时,运维拿到的是一行 `elapsed=2.3s` JSON,**没法知道这 2.3s 是花在鉴权(查 key) 还是 限速(token bucket) 还是 配额扣减(lock) 还是 上游调用(httpx)**,只能抓包逐跳猜。这件事用户记得大概有多慢搞不定、运维抓全链路包也搞不定,必须让一次请求的耗时在中间件层就被分阶段打点,日志里能看到每段花了多少。
 
 **要解决这个——我们在网关里引入三个最小但够用的机制**:
 
-1. **Prometheus 指标**:**Prometheus**(开源监控系统,以 `text/plain; version=1.0.0; charset=utf-8` 协议周期性"拉"暴露在 `/metrics` 端点的指标样本,内置 Counter / Histogram 等指标类型——本章首次提到这个术语,这里给出定义)——`prometheus_client` 在进程内维护计数器与直方图,`/metrics` 端点暴露。
-2. **结构化日志**:**structlog**(结构化日志库,把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki / Vector / Fluent Bit 直接吃 JSON 而不必写正则——本章首次提到这个术语,这里给出定义)——`structlog` 把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki 解析。
-3. **`trace_id` 透传**:**trace_id**(**Trace ID** —— 贯穿一次请求的唯一 ID,经 HTTP header 跨服务透传,运维可凭此在 `docker logs | jq` 里一次 select 出整条链路的所有日志条目——本章首次提到这个术语,这里给出定义)—— 一个 `BaseHTTPMiddleware` 读 `x-trace-id` 请求头(没有就生成),回写到响应头,并写进每条日志。
+1. **Prometheus 指标**:**Prometheus**(开源监控系统,以 `text/plain; version=1.0.0; charset=utf-8` 协议周期性"拉"暴露在 `/metrics` 端点的指标样本,内置 Counter / Histogram 等指标类型)——`prometheus_client` 在进程内维护计数器与直方图,`/metrics` 端点暴露。
+2. **结构化日志**:**structlog**(结构化日志库,把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki / Vector / Fluent Bit 直接吃 JSON 而不必写正则)——`structlog` 把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki 解析。
+3. **`trace_id` 透传**:**trace_id**(**Trace ID** —— 贯穿一次请求的唯一 ID,经 HTTP header 跨服务透传,运维可凭此在 `docker logs | jq` 里一次 select 出整条链路的所有日志条目)—— 一个 `BaseHTTPMiddleware` 读 `x-trace-id` 请求头(没有就生成),回写到响应头,并写进每条日志。
 
 下面这幅图把上面三件痛点各放到四个机制里(四个**机制**——指标、结构化日志、trace_id 透传、Prom 拉取——读者看到的是这套机制的承担者,而不是"四个角色")——下面也按机制列出各自的实际承担者:
 
@@ -50,7 +50,7 @@
 
 ## 工作原理
 
-**原理**: 一个 chat 请求从客户端进来,整个可观测性流程是: `TraceAndMetricsMiddleware` (Starlette 的"包整个 app 的可注入钩子") 在 `dispatch` 入口读 `request.headers.get("x-trace-id")`,没有就用 `uuid.uuid4().hex` 生成一个,写到 `request.state.trace_id` → `start = perf_counter()` 计时 → `await call_next(request)` 放行到挂载链(s15/s14/.../upstream) → `elapsed = perf_counter() - start` → 若 chat 路径,`REQUESTS.labels(model, status).inc()` + `LATENCY.labels(model).observe(elapsed)` 进 Prometheus 指标 → `log.info("request", trace_id=..., ...)` 经 structlog 出一行 JSON 日志 → 响应头 `x-trace-id` 回写给客户端。`/metrics` 路由在 mount 之前注册,Prometheus 服务 15s 拉一次得到样本。整章所有部件都为"trace_id 串一次请求 + 指标供 Prom 拉 + 日志一行 JSON"这条主线服务。
+**原理**: 一个 chat 请求从客户端进来,整个可观测性流程是: `TraceAndMetricsMiddleware` (Starlette 的"包整个 app 的可注入钩子") 在 `dispatch` 入口读 `request.headers.get("x-trace-id")`,没有就用 `uuid.uuid4().hex` 生成一个,写到 `request.state.trace_id` → `start = perf_counter()` 计时 → `await call_next(request)` 放行到挂载链(s15/s14/.../upstream) → `elapsed = perf_counter() - start` → 若 chat 路径,`REQUESTS.labels(model, status).inc()` + `LATENCY.labels(model).observe(elapsed)` 进 Prometheus 指标 → `log.info("request", trace_id=..., ...)` 经 structlog 出一行 JSON 日志 → 响应头 `x-trace-id` 回写给客户端。`/metrics` 路由在 mount 之前注册,Prometheus 服务 15s 拉一次得到样本。所有部件都围着"trace_id 串一次请求 + 指标供 Prom 拉 + 日志一行 JSON"这条主线展开。
 
 **1. 一个 `TraceAndMetricsMiddleware` (`code.py`, `@app.middleware("http")` 装在自己 app 上包裹挂载链)** —— `dispatch` 完成"读 / 生成 trace_id → 计时 → call_next → 打指标 → 写日志 → 回写 trace_id 头"这一整条流水线。**为什么用中间件而不用装饰器**: 一处定义全局生效,装饰器要给每个 handler 加易漏。**为什么只匹配 `/v1/chat/completions` 打指标**: 避免 `/healthz` `/metrics` 把 Prometheus 基数 (基数——指标 label 维度组合的可能值数量,过大时存储和查询成本爆炸) 撑爆。
 

@@ -29,11 +29,11 @@
 
 ## 方案
 
-现在的场景是:就算 `/admin/logs` 已经能拉出一条条记录,运营拿到一行 `{"path": "...", "ts": 1717443200.5, "status": 200, "model": "..."}`——**他不知道"这条调用到底花了多少毫秒",得自己 `next_log.ts - prev_log.ts` 算一个粗间隔;就算算出来也没法确定"`elapsed` 算的是上游耗时还是包含鉴权+配额+调上游全链路"**,更没法跨多条记录做"今天 gpt-4o-mini 的 P99"这种聚合。`## 问题` 提的三件痛——看不到用量、出问题无法排查、没法做对账——只是把"日志里不该只有 ts,还应该有耗时"这件事的缺失暴露出来。这件事**没法靠"客户端按请求自行记账"或"运营去上游控制台翻历史"能解决**,必须由网关在 chat 端点上一条路径记一行、异步落盘、再开一个只读接口露给管理员。
+就算 `/admin/logs` 已经能拉出一行行记录,运营拿到一行 `{"path", "ts", "status", "model"}`——依然没法知道一条调用花了多少毫秒、那毫秒是上游还是全链路、是 P99 还是 P50。客户端自行记账不可靠,运营去上游控制台翻历史也慢,必须由网关在 chat 端点一条路径记一行、异步落盘、再开只读接口露给管理员。
 
 **要解决这个——我们在网关里引入两个最小部件 + 一对调用日志抽象**:
 
-**首次引入**:**调用日志 / LogStore**(**调用日志 / LogStore** —— 每条 chat 调用记一行路径/时间/状态码/model,异步落盘,管理员通过 `/admin/logs` 和 `/admin/stats` 看——本章首次提到这个术语,这里给出定义 + 角色)。它在本章里承担的是"每条 chat 调用记一行、异步落盘、露两个只读端点"的全部职责。
+**调用日志 / LogStore** —— 每条 chat 调用记一行路径 / 时间 / 状态码 / model,异步落盘,管理员通过 `/admin/logs` 与 `/admin/stats` 看。它在本章里承担的是"每条 chat 调用记一行、异步落盘、露两个只读端点"的全部职责。耗时 `elapsed_ms` 这一行本章还没有,留给 s16 在中间件层补。
 
 下面这幅图把上面三件痛点各放到一个角色里:
 
@@ -60,7 +60,7 @@ GET  /admin/stats                                                         -> 200
 
 ## 工作原理
 
-**原理**: 一个 chat 请求穿过来之后,网关在三个动作上为它产生一行日志: `LogMiddleware` (在 `call_next` 返回后探 200 响应) 把 `{"path", "ts", "status", "model"}` 一行塞进 `log_store.enqueue` → 这一行先落在进程内 `_buffer: deque` (写入端,瞬时内存队列) 中,由后台 `flush_loop` (每秒 10 次的异步搬运循环) 每 100ms 整段搬到 `_flushed: list` (落盘列表,被 `/admin/logs` 读取);两个端点 `/admin/logs` 和 `/admin/stats` 直接读 `_flushed` 给管理员。整章所有部件都为"边接住调用边异步落日志、运营能看到"这条主线服务。
+**原理**: 一个 chat 请求穿过来之后,网关在三个动作上为它产生一行日志: `LogMiddleware` (在 `call_next` 返回后探 200 响应) 把 `{"path", "ts", "status", "model"}` 一行塞进 `log_store.enqueue` → 这一行先落在进程内 `_buffer: deque` (写入端,瞬时内存队列) 中,由后台 `flush_loop` (每秒 10 次的异步搬运循环) 每 100ms 整段搬到 `_flushed: list` (落盘列表,被 `/admin/logs` 读取);两个端点 `/admin/logs` 和 `/admin/stats` 直接读 `_flushed` 给管理员。所有部件都围着"边接住调用边异步落日志、运营能看到"这条主线展开。
 
 **1. 一个 `LogMiddleware` (`code.py`, `@app.middleware("http")` 装在自己 app 上包裹挂载链)** ——`dispatch` 在 `call_next(request)` 拿到 `response` 后判断:`response.status_code == 200` 且路径以 `/v1/chat/completions` 结尾,就把 `{path, ts, status, model}` 一行塞进 `log_store.enqueue`。**为什么用 BaseHTTPMiddleware (Starlette 的"包整个 app 的可注入钩子") 而非在 chat handler 里直接 enqueue**:中间件对所有 chat 调用一视同仁(不依赖具体 handler 实现),后续 s13 改了挂载结构也照样能看到。
 

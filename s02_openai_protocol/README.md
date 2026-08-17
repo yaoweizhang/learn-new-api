@@ -25,7 +25,7 @@
 
 ## 方案
 
-现在的场景是:`## 问题` 提了两件痛——每个客户端都得学一遍自创方言 (痛点 #1)、LLM 生态没人认这套私有格式 (痛点 #2)——这两件事**任何一件**都不是客户端自己改一下能解决,必须由网关把对外形态整个换成 OpenAI 已经统一的那一套。
+现在的场景是:`## 问题` 提了两件痛——每个客户端都得学一遍自创方言 (痛点 #1)、LLM 生态没人认这套私有格式 (痛点 #2)——这两件事**任何一件**客户端自己改一下都搞不定,必须由网关把对外形态整个换成 OpenAI 已经统一的那一套。
 
 **要解决这个——我们在网关的入站面上做两处调整,不动转发循环本身**:
 
@@ -53,7 +53,7 @@ Client ──POST /v1/chat/completions──▶  OpenAI 形态的 API  ──POS
 
 ## 工作原理
 
-**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器用 OpenAI schema 校验请求体 (model + messages) → 处理器用 `exclude_none=True` 剥掉可选空字段 → 转发给上游 FORWARD_TARGET → 等待上游回包 → 用 `response_model=ChatCompletionResponse` 把上游回包过一遍 OpenAI schema → 把校验后的 JSON 吐回客户端。整章所有部件都为这条主线服务。
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器用 OpenAI schema 校验请求体 (model + messages) → 处理器用 `exclude_none=True` 剥掉可选空字段 → 转发给上游 FORWARD_TARGET → 等待上游回包 → 用 `response_model=ChatCompletionResponse` 把上游回包过一遍 OpenAI schema → 把校验后的 JSON 吐回客户端。所有部件都围着这条主线展开。
 
 **1. 一个 chat handler (`POST /v1/chat/completions`, `response_model=ChatCompletionResponse`)** —— 把 s01 的 `/relay` 路径换成 OpenAI 生态统一认的 `/v1/chat/completions`,所有 SDK 默认就朝这里发。`response_model`(FastAPI 装饰器参数,声明响应类型做自动校验)让回包也走 schema 校验,任何字段缺失/形态错都会在网关边界就拦住。
 

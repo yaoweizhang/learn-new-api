@@ -29,12 +29,9 @@
 
 ## 方案
 
-现在的场景是:就算有了这张表,管理员把一条新渠道写进 `_channels` 之后——**没法立刻知道"这条渠道后面真的能调通吗""今天一共被选了几次""失败次数 / 成功率 / 当前在不在被选路上"**,得切到上游控制台、或者等线上有人报障,才能察觉某条渠道已经默默挂了。`## 问题` 提的那三件痛——没法动态加渠道、单渠道挂全挂没法做容灾、没法区分主备层级——只是把"渠道级别没有可观测"这件事的缺失暴露出来。这件事**没法靠"客户端按厂商分流"或"运维改代码重启"能解决**,必须由管理员通过 HTTP 往一张渠道表里注册条目、路由层按规则选路,而且每个渠道都带"被选了几次 / 失败率"的可读反馈,这件事才完整。
+管理员把一条新渠道写进之后——也没法立刻知道它真的能调通吗、今天被选了几次、失败率多少。得切到上游控制台、等线上有人报障,才能察觉某条渠道已经默默挂了。`## 问题` 那三件痛——没法动态加渠道、单渠道挂全挂、没法区分主备层级——的背后,缺的是"渠道级可观测"。客户端按厂商分流不可靠,运维改代码重启也慢,必须由管理员通过 HTTP 往一张渠道表里注册条目、路由层按规则选路,每条渠道都带"被选了几次 / 失败率"的可读反馈。
 
-**要解决这个——我们在网关里引入一个最小可用的渠道注册中心,分两部分**:
-
-- **`s10_channel_management/channels.py`** — 内存表 + 选路算法。`Channel` 是一个 `@dataclass`,字段:`id / name / provider / base_url / weight / priority / enabled / healthy`。`create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for` 是仅有的几个公开函数。所有读写都在 `threading.Lock` 保护下进行;进程内全局单例。
-- **`s10_channel_management/code.py`** — FastAPI 装配。挂载 s09 整块 app,在自己身上新增两条管理员路由:`POST /admin/channels`、`GET /admin/channels`。鉴权沿用 s09 的 JWT;用 `Depends(_require_admin)` 闸门把关,非管理员一律 `403 admin only`。
+**要解决这个——我们在网关里引入一个最小可用的渠道注册中心**。`Channel` 是一个 `@dataclass`,字段:`id / name / provider / base_url / weight / priority / enabled / healthy`。`create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for` 是仅有的几个公开函数。所有读写都在 `threading.Lock` 保护下进行;进程内全局单例。FastAPI 装配挂载 s09 整块 app,在自己身上新增两条管理员路由 `POST /admin/channels` 与 `GET /admin/channels`,鉴权沿用 s09 的 JWT、`Depends(_require_admin)` 把关,非管理员一律 `403 admin only`。
 
 下面这幅图把上面三件痛点各放到一个角色里:
 
@@ -54,7 +51,7 @@ GET  /admin/channels   Authorization: Bearer <admin jwt>   -> 200 [Channel...]
 
 ## 工作原理
 
-**原理**: 一个 chat 请求从客户端进来之前,管理员要先通过 HTTP 往一张渠道表里注册多家厂商;注册后立即生效——一次 `pick_channel_for(model_name)` 选路算法的生命周期是: `_provider_for_model(model_name)` 决定该 model 走哪个 provider → 按 `enabled and healthy and provider == ...` 三条件过滤候选 → 取 `min(c.priority)` 决定档位 → 档内按 `weight` 做 `random.choices(..., k=1)[0]` 加权随机(全 0 权重时回退 round-robin)。注册路径由 `POST /admin/channels` 配 `_require_admin` 闸门把关,闸门后 handler 调 `channels.create_channel(...)` 把 `Channel` 写进 `_channels: dict[int, Channel]`,全程 `threading.Lock` 原子。整章所有部件都为"动态配置 + 三步选路"这条主线服务。
+**原理**: 一个 chat 请求从客户端进来之前,管理员要先通过 HTTP 往一张渠道表里注册多家厂商;注册后立即生效——一次 `pick_channel_for(model_name)` 选路算法的生命周期是: `_provider_for_model(model_name)` 决定该 model 走哪个 provider → 按 `enabled and healthy and provider == ...` 三条件过滤候选 → 取 `min(c.priority)` 决定档位 → 档内按 `weight` 做 `random.choices(..., k=1)[0]` 加权随机(全 0 权重时回退 round-robin)。注册路径由 `POST /admin/channels` 配 `_require_admin` 闸门把关,闸门后 handler 调 `channels.create_channel(...)` 把 `Channel` 写进 `_channels: dict[int, Channel]`,全程 `threading.Lock` 原子。所有部件都围着"动态配置 + 三步选路"这条主线展开。
 
 **1. 一个 channel registry (`channels.py`,进程内 `dict[int, Channel]` + `threading.Lock`)** —— `_channels: dict` 存所有渠道,`@dataclass Channel` 字段 `id / name / provider / base_url / weight / priority / enabled / healthy`,`_next_id` 自增。所有读写都在 `_lock` 下原子——单进程多线程够用,s12 切到 Postgres 之后再说。公开函数只有 `reset_channels / create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for` 六个。
 

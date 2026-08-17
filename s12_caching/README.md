@@ -37,7 +37,7 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
 
 ## 方案
 
-现在的场景是:`## 问题` 提了两件痛——上游账单被重复请求翻倍 (痛点 #1)、用户体感 800ms 冷启动延迟 (痛点 #2)——这两件事**任何一件**都没法靠"客户端自带缓存"或"客户端 JS 优化"能解决,必须由网关在 chat 路由外层包一道精确匹配闸门:同 prompt 命中直接吐 bytes,短路所有下游;未命中照常转发,响应写回缓存。
+现在的场景是:`## 问题` 提了两件痛——上游账单被重复请求翻倍 (痛点 #1)、用户体感 800ms 冷启动延迟 (痛点 #2)——这两件事客户端自带缓存搞不定、客户端 JS 优化也搞不定,必须由网关在 chat 路由外层包一道精确匹配闸门:同 prompt 命中直接吐 bytes,短路所有下游;未命中照常转发,响应写回缓存。
 
 **要解决这个——我们在网关里引入一个中间件 + 一个内存字典后端**:
 
@@ -49,7 +49,7 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
   一个 `CacheMiddleware`(包在 s11 的 `LogMiddleware` 外层)和一条
   调试路由 `/admin/cache/stats`。
 
-**首次引入**:**响应缓存 / TTL 缓存** —— 在网关层按请求 payload 算 key、把相同请求的响应原样缓存 TTL 秒、命中时短路所有下游。本章首次提到这个术语,这里给出定义 + 角色。它在本章里承担的是"同 prompt 命中秒级吐回、未命中照常转发并写回"的两段动作。
+**响应缓存 / TTL 缓存** —— 在网关层按请求 payload 算 key、把相同请求的响应原样缓存 TTL 秒、命中时短路所有下游。它在本章里承担的是"同 prompt 命中秒级吐回、未命中照常转发并写回"的两段动作。
 
 缓存键:`sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))`。
 `sort_keys` + `separators` 让序列化结果**与字段顺序无关**——`{"a":1,
@@ -74,7 +74,7 @@ GET  /admin/cache/stats                                                         
 
 ## 工作原理
 
-**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: `CacheMiddleware.dispatch` 拦在 s11 mount 外层 → 检查 `request.method == POST and request.url.path == /v1/chat/completions` → 调 `await request.body()` 拿原始字节(Starlette 首次读后会自动缓存到 `request._body`,下游中间件可复用)→ 解析成 `payload` dict → 算 `key = sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()` → 调 `cache.get(payload)` 命中直接 `Response(content=hit, media_type=application/json)` 短路返回,未命中走 `await call_next(request)` → 200 响应时把 `response.body_iterator` 读一遍重组 bytes,调 `cache.set(payload, body)` 写回 TTL 300s。`stream=true` 的请求跳过缓存(无法整体缓存 SSE 字节流)。整章所有部件都为"按精确 key 短路 / 写回"这条主线服务。
+**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: `CacheMiddleware.dispatch` 拦在 s11 mount 外层 → 检查 `request.method == POST and request.url.path == /v1/chat/completions` → 调 `await request.body()` 拿原始字节(Starlette 首次读后会自动缓存到 `request._body`,下游中间件可复用)→ 解析成 `payload` dict → 算 `key = sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()` → 调 `cache.get(payload)` 命中直接 `Response(content=hit, media_type=application/json)` 短路返回,未命中走 `await call_next(request)` → 200 响应时把 `response.body_iterator` 读一遍重组 bytes,调 `cache.set(payload, body)` 写回 TTL 300s。`stream=true` 的请求跳过缓存(无法整体缓存 SSE 字节流)。所有部件都围着"按精确 key 短路 / 写回"这条主线展开。
 
 **1. 一个 cache store (`cache.py`,进程内 `dict` + `threading.Lock`)** —— `_store: dict[str, tuple[float, bytes]]` 存 `(expires_at, value)`;`reset_cache / get / set / stats` 四个公开函数签名照搬 `redis-py`(`get` 返 bytes 或 None,`set` 接 `(key, value, ttl_seconds=300)`),v2 切 Redis 时只动实现不动接口。所有读写都在 `_lock` 下原子——单进程多线程够用,真上 Redis 后这部分开销归零。
 

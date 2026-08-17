@@ -31,7 +31,7 @@
 
 ## 方案
 
-现在的场景是:`## 问题` 提了三件痛——调用前不知道这一笔要花多少(痛点 #1)、上游 `usage` 缺失就拿不到账单(痛点 #2)、估算不够准就不能合理计费(痛点 #3)——这三件事**任何一件**都没法靠"客户端自己估"或"运维后对账"能解决,必须由网关在转发前先数 token、转发后再合并 upstream usage。
+现在的场景是:`## 问题` 提了三件痛——调用前不知道这一笔要花多少(痛点 #1)、上游 `usage` 缺失就拿不到账单(痛点 #2)、估算不够准就不能合理计费(痛点 #3)——这三件事**任何一件**客户端自己估都搞不定、运维后对账也搞不定,必须由网关在转发前先数 token、转发后再合并 upstream usage。
 
 **要解决这个——我们在网关里引入一个 `tokenizer` 模块,按模型名前缀选估算器**——OpenAI 模型走 `tiktoken`(`cl100k_base` 是 OpenAI gpt-4*/gpt-3.5-turbo 用的 BPE 编码),其它模型走 `len(content) // 4` 的经验估算(故意粗糙——对账单估算够用,精确计费等上游 `/count_tokens`):
 
@@ -67,7 +67,7 @@ Client ──POST──▶ s06 ──count prompt──▶ Upstream ──reply�
 
 ## 工作原理
 
-**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: 处理器调 `tokenizer.count_prompt(messages, model)` 在转发前先算 prompt token 数 → 用 Pydantic 校验过的 `messages` 算, 不读原始 body → 转发到上游 → 拿到响应里的 `usage` 字段 → 用 `max(上游, 本地)` 做兜底补齐 `prompt_tokens` → 把完整 `usage` 回吐客户端。整章所有部件都为这条主线服务。
+**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: 处理器调 `tokenizer.count_prompt(messages, model)` 在转发前先算 prompt token 数 → 用 Pydantic 校验过的 `messages` 算, 不读原始 body → 转发到上游 → 拿到响应里的 `usage` 字段 → 用 `max(上游, 本地)` 做兜底补齐 `prompt_tokens` → 把完整 `usage` 回吐客户端。所有部件都围着这条主线展开。
 
 **1. 一个 tiktoken encoder (`tokenizer.count_openai`,`cl100k_base` 编码)** —— OpenAI 官方分词器,按 BPE 把文本切成 token。`count_openai` 对每条消息加 4 token overhead(角色 + 分隔符),再给回复预热加 2。`gpt-*` / `o*` 前缀的模型走这条路径。
 

@@ -18,7 +18,7 @@ OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`
 
 s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。把 OpenAI 写死在上游,任何一家挂了整条服务就 502。
 
-现在场景是:s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。要解决这个——**我们在 s02 转发循环前面插一层"按前缀挑适配器"的抽象**:客户端始终说 OpenAI 形态,网关按 `model` 前缀分给三家上游,响应再翻回 OpenAI 形态,客户端不需要知道答的是哪家。本章就做这一件事:
+s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。**我们在 s02 转发循环前面插一层"按前缀挑适配器"的抽象**:客户端始终说 OpenAI 形态,网关按 `model` 前缀分给三家上游,响应再翻回 OpenAI 形态,客户端不需要知道答的是哪家。本章就做这一件事:
 
 1. **定义 `Provider` 抽象基类 —— 为什么必须有这个抽象**:每家厂商 URL/auth/响应 schema 都不一样,**为什么不直接三个 if-else 写死在路由里**:加新厂商等于改路由;**为什么方法签名是 `(req) → (url, headers, body)` + `(payload) → dict`**:这样 `chat_completions` 路由只看到"出站 + 回包翻成 OpenAI 形态",不知道厂商是谁;翻牌写到 `from_upstream` 一个方法里,后续 s05/s07 加鉴权、配额只动路由这一层,不动适配器。
 2. **`pick_provider(model)` 按前缀分派 —— 为什么靠前缀而不是配置文件**:客户端发请求时 `model` 已经在 body 里了,运维不用另维护一份"哪个 model 走哪家"的配置,**为什么不靠 `(channel, model)` 元组**:`pick_provider` 按字符串前缀一行就能搞定,new-api 的 channel 表是另一种思路(s04 取舍节会展开)。
@@ -28,7 +28,7 @@ s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可
 
 ## 方案
 
-现在的场景是:`## 问题` 提了两件痛——OpenAI 形态 body 直打到 Claude / Gemini 会被回 400 (痛点 #1)、单家挂了整套服务就 502 (痛点 #2)——这两件事**任何一件**都没法靠"客户端按厂商分流"能解决,必须由网关按 model 前缀自动分派并翻译。
+现在的场景是:`## 问题` 提了两件痛——OpenAI 形态 body 直打到 Claude / Gemini 会被回 400 (痛点 #1)、单家挂了整套服务就 502 (痛点 #2)——这两件事**任何一件**客户端按厂商分流都搞不定,必须由网关按 model 前缀自动分派并翻译。
 
 **要解决这个——我们在调用方和上游之间插入一个抽象分派层**——这是本章第一次正式给出名字,**多厂商适配器层 / 多 provider 适配层**(adapter layer —— 在调用方和上游之间插一道抽象,负责"接 OpenAI 形态 + 按 model 前缀挑厂商 + 把请求翻成厂商方言 + 把响应翻回 OpenAI 形态",客户端零修改)。这一层作为一个 Python 抽象基类落地——**`Provider`**(`ABC`,abstract base class,要求子类实现规定方法),**每个上游一个具体实现,每个 provider 只做两件事**:
 
@@ -56,7 +56,7 @@ Client ──POST /v1/chat/completions──▶  Relay(按模型名前缀选)  �
 
 ## 工作原理
 
-**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器用 OpenAI schema 校验请求体 → `pick_provider(req.model)` 按 `model` 前缀挑出 `OpenAIProvider` / `ClaudeProvider` / `GeminiProvider` 之一 → `provider.to_upstream` 把 OpenAI body 翻成该厂商方言 + 出站 headers → httpx 把请求发到该厂商 URL → 等待回包 → `provider.from_upstream` 把厂商响应翻回 OpenAI 形态 → 吐回客户端。整章所有部件都为这条主线服务。
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器用 OpenAI schema 校验请求体 → `pick_provider(req.model)` 按 `model` 前缀挑出 `OpenAIProvider` / `ClaudeProvider` / `GeminiProvider` 之一 → `provider.to_upstream` 把 OpenAI body 翻成该厂商方言 + 出站 headers → httpx 把请求发到该厂商 URL → 等待回包 → `provider.from_upstream` 把厂商响应翻回 OpenAI 形态 → 吐回客户端。剩下部件都按这条主线拼装。
 
 **1. 一个 `Provider` ABC (Python `ABC` + `@abstractmethod`)** —— `name` + `to_upstream(req) → (url, headers, body)` + `from_upstream(payload) → dict` 三个方法。每个上游一个具体实现。路由处理器只看到"出站 + 回包翻成 OpenAI 形态",不知道厂商是谁;这样加新厂商 = 加一个 `Provider` 子类,路由不动。
 

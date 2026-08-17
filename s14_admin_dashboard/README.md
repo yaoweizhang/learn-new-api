@@ -35,9 +35,9 @@ new-api 自己有 React 写的完整 Web 后台(`web/` 目录),那是个正经�
 
 ## 方案
 
-现在的场景是:`## 问题` 提了一件事——想看系统状态只能拼 `curl + jq`(痛点 #1 现状)——这件事**没法靠"s10 给 channels 加个 REST"或"s11 给 logs 加个 REST"能解决**——REST 端点还得用脚本去拼,只是把"运营不想学 curl"翻译成了"运营学 jq"。必须有一个浏览器开就能看到数字的页面,加上一个"我是管理员"的会话,只读露三条数据。
+`## 问题` 那件痛——想看系统状态只能拼 `curl + jq`——光给 channels / logs 加 REST 也不行,REST 端点还得用脚本去拼,只是把"运营不想学 curl"翻译成了"运营学 jq"。必须有一个浏览器开就能看到数字的页面,加上一个"我是管理员"的会话,只读露三条数据。
 
-**要解决这个——我们在网关里引入四个最小部件**,完成一个浏览器一打开就能看到三个数字的最小仪表盘——这个仪表盘,本章第一次提到时我们把它命名为 **管理后台 / Dashboard**(admin dashboard,一个浏览器可访问的、只读露三条数据的最薄服务端渲染后台——本章首次提到这个术语,所以这里多说一句)。
+**要解决这个——我们在网关里引入四个最小部件**,完成一个浏览器一打开就能看到三个数字的最小仪表盘。这一章给它一个正式名字,**管理后台 / Dashboard**(admin dashboard,一个浏览器可访问的、只读露三条数据的最薄服务端渲染后台)。
 
 下面这幅图把这件痛点各放到四个角色里:
 
@@ -75,7 +75,7 @@ GET  /v1/chat/completions          -> 仍可达(来自挂载的 s13)
 
 ## 工作原理
 
-**原理**: 浏览器打开 dashboard 时,整个流程是: GET `/dashboard/login` → Relay 渲染登录表单 (服务端用 Jinja2Templates 把 `login.html` 拼成 HTML 字符串返回) → 浏览器填表 POST `/dashboard/login` → Relay 校验 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 环境变量 → 通过则 `RedirectResponse("/dashboard/", status_code=302)` + `set_cookie("admin", "1", httponly=True)` → 浏览器带 Cookie GET `/dashboard/` → Relay 调 `_require_admin` 查 Cookie → 通过则 `TemplateResponse(request, "dashboard.html", {"stats": ...})` 渲染数字,失败则直接 `HTMLResponse("unauthorized", status_code=401)`。整章所有部件都为"服务端渲染 + 最小 cookie session"这条主线服务。
+**原理**: 浏览器打开 dashboard 时,整个流程是: GET `/dashboard/login` → Relay 渲染登录表单 (服务端用 Jinja2Templates 把 `login.html` 拼成 HTML 字符串返回) → 浏览器填表 POST `/dashboard/login` → Relay 校验 `ADMIN_EMAIL` / `ADMIN_PASSWORD` 环境变量 → 通过则 `RedirectResponse("/dashboard/", status_code=302)` + `set_cookie("admin", "1", httponly=True)` → 浏览器带 Cookie GET `/dashboard/` → Relay 调 `_require_admin` 查 Cookie → 通过则 `TemplateResponse(request, "dashboard.html", {"stats": ...})` 渲染数字,失败则直接 `HTMLResponse("unauthorized", status_code=401)`。所有部件都围着"服务端渲染 + 最小 cookie session"这条主线展开。
 
 **1. 一个 Jinja2 templates 服务端渲染器 (`templates/base.html` + `templates/dashboard.html` + `Jinja2Templates(directory=...)`)** —— `dashboard.html` 继承 `base.html`(页面骨架),渲染三个数字(users / channels / logs)。**为什么用 Jinja2 不用 React SPA**: FastAPI 官方内置 `Jinja2Templates`,服务端渲染对运维读看板这种只读场景最自然;new-api 的 `web/` React SPA (new-api 自带的前端,Vite + TypeScript + Zustand + Tailwind) 体积比后端还大,本教程不抄。
 

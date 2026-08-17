@@ -12,9 +12,9 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 ## 本章要做什么
 
-现在场景是:s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根本没有"谁在调"这件事:谁能摸到中继,谁就能花掉你的上游配额,也没有地方挂上按用户的限速、计费、scope。中继是完全敞开的。要解决这个——**我们在 chat 路由前面加一道 Bearer 闸门**:每个 `/v1/chat/completions` 请求都先过 `Depends(require_api_key)`,不知道 / 不认识 / 被封禁的 key 一律 `401` 打掉,通过之后才进转发循环。本章就写这一道闸门:
+s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根本没有"谁在调"这件事:谁能摸到中继,谁就能花掉你的上游配额,也没有地方挂上按用户的限速、计费、scope。中继是完全敞开的。**我们在 chat 路由前面加一道 Bearer 闸门**:每个 `/v1/chat/completions` 请求都先过 `Depends(require_api_key)`,不知道 / 不认识 / 被封禁的 key 一律 `401` 打掉,通过之后才进转发循环。本章就写这一道闸门:
 
-1. **写 `require_api_key` 依赖 —— 为什么必须用 Depends 而不是中间件**:`Depends`(FastAPI 依赖注入:路由处理器之前自动跑的函数)是 FastAPI 的官方可测试注入点,**为什么不比 on_event 拦截**:on_event 只能编进 ASGI 中间件栈、测不动;**为什么每个 handler 自己声明**:路由写 `dependencies=[Depends(require_api_key)]` 不必改全局栈,新加路由默认是开放的(不会偷偷被闸上)——这是显式优于隐式的取舍。
+1. **写 `require_api_key` 依赖 —— 为什么必须用 Depends 而不是中间件**:`Depends`(FastAPI 依赖注入:路由处理器之前自动跑的函数)是 FastAPI 的官方可测试注入点,**为什么不用 ASGI 中间件**:中间件装上之后对所有路由一刀切,新加路由默认就被它拦了——想要"只对 chat 路径生效"得在中间件里再写一层 if/else,反而更绕;`Depends` 写在路由声明里,新路由不挂就默认开放,显式优于隐式。
 2. **读 `Authorization: Bearer <key>` —— 为什么是 Bearer 头而不是 query 串**:Bearer 头一行密码,放请求头里、**为什么不放 URL**:`Authorization: Bearer sk-xxx` 是 OAuth 2.0 标准放密钥的地方,放 URL 会被 nginx access log、上游 SLA 日志、浏览器历史全留下来——密钥不应穿过日志系统;**为什么 split 方式是 `startswith("Bearer ")` + `removeprefix(...)`**:大小写不敏感但前缀格式严格,空格分隔切干净。
 3. **查 `storage.lookup_key` + `storage.is_blocked` —— 为什么分两步**:先查黑名单(`is_blocked`)、再查白名单(`lookup_key`),**为什么不合并成一个 if**:`is_blocked` 是个生产接缝(未来接 Redis `banned:` 集合),即使白名单查不到,被显式封禁的 key 也应被特殊处理(返回 `key blocked` 而不是 `unknown key`,运维能区分意图);**为什么 storage 是独立模块**:和 s04 把 adapter 抽出来的理由一致——`code.py` 不该知道 key 存在哪里,只调 `lookup_key(key)` 拿 `Principal`。
 4. **把 `Principal` 挂到 `request.state` —— 为什么挂到 state 而不是 return**:`Depends` 把 `principal` 当返回值也能拿到,但**为什么还要写 `request.state.principal = principal`**:后续中间件 / handler(限速 s08 / 配额 s07 / 日志 s11)都从 `request.state.principal` 拿身份,不一定走 Depends 链(`Principal` 也要够轻,本教程里只装 `user_id` + `scopes`)。
@@ -25,9 +25,9 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 ## 方案
 
-现在的场景是:`## 问题` 提了一件痛——任何能摸到端口的人都能花你的上游 key、按用户限速 / 计费 / scope 全挂不上去,因为连"谁在调"这件事都不知道——这件事**没法靠"客户端自觉"或"运维拉名单"能解决**,必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401。
+现在的场景是:`## 问题` 提了一件痛——任何能摸到端口的人都能花你的上游 key、按用户限速 / 计费 / scope 全挂不上去,因为连"谁在调"这件事都不知道——这件事客户端自觉搞不定、运维拉名单也搞不定,必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401。
 
-**要解决这个——我们在网关里引入一个 `Principal` —— 当前请求代表的用户身份与权限(`user_id` + `scopes` 元组;`scopes` 是权限标签,挂在 Principal 上) + 一个 `Depends` —— FastAPI 依赖注入入口(路由前自动跑的函数) + `require_api_key` 依赖**,`require_api_key` 在 chat-completion 处理器之前运行。闸门的动作分四步:
+**要解决这个——我们在网关里引入一个 `Principal`** —— 当前请求代表的用户身份(`user_id` + `scopes` 元组,`scopes` 是权限标签),由 `Depends(require_api_key)` 这道闸门查表后挂到 `request.state` 上。闸门的动作分四步:
 
 1. 从请求里读 `Authorization: Bearer <key>`。
 2. 检查 `storage.is_blocked(key)`(黑名单查询钩子,返回是否被封禁——未来接 Redis;本章永远返 `False`)。
@@ -57,7 +57,7 @@ Client ──POST + Bearer ──▶  require_api_key  ──▶  /v1/chat/compl
 
 ## 工作原理
 
-**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 在 handler 之前 `Depends(require_api_key)` 自动跑 → 闸门读 `Authorization` 头剥出 Bearer 字符串 → 先查 `is_blocked` 黑名单再查 `lookup_key` 白名单 → 不通过抛 `HTTPException(401)` 在 handler 之前就拦掉 → 通过则把 `Principal` 挂到 `request.state` 再进原 chat 处理器 → 处理器做 s04 的 `pick_provider` + 转发。整章所有部件都为这条主线服务。
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 在 handler 之前 `Depends(require_api_key)` 自动跑 → 闸门读 `Authorization` 头剥出 Bearer 字符串 → 先查 `is_blocked` 黑名单再查 `lookup_key` 白名单 → 不通过抛 `HTTPException(401)` 在 handler 之前就拦掉 → 通过则把 `Principal` 挂到 `request.state` 再进原 chat 处理器 → 处理器做 s04 的 `pick_provider` + 转发。所有部件都围着这条主线展开。
 
 **1. 一个 auth dependency (`require_api_key`,挂在 `dependencies=[Depends(...)]`)** —— FastAPI 在 chat handler 之前自动调它,从 `request.headers` 抽 `Authorization: Bearer <key>`,剥前缀、去空白。`Depends` (FastAPI 依赖注入:路由处理器之前自动跑的函数) 是 FastAPI 官方推荐的注入点:可单元测试、新加路由默认是开放的(不会偷偷被闸上)。`dependencies=[Depends(require_api_key)]` 让每个 handler 自己声明"我要这道闸门",全局栈不被偷偷改动。
 

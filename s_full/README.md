@@ -8,7 +8,7 @@
 
 ## 问题
 
-经过 s01-s16 的逐步拆解，我们拥有：
+走完 s01-s16,手上是 16 章累下来的全部功能:
 
 - 16 个独立的 FastAPI app（每个 chapter 都有自己的 `code.py`）
 - 通过 `app.mount("/...", sNN_app)` 串成一条链:`s16 -> s15 -> s14 -> ... -> s02`
@@ -36,7 +36,7 @@ new-api/
 
 ## 本章要做什么
 
-现在场景是:经过 s01-s16 的逐步拆解,我们拥有 16 个独立的 FastAPI app、通过 `app.mount("/...", sNN_app)` 串成一条链(s16 → s15 → ... → s02)、每个 chapter 内部都有自己的 routes / services / models,但都塞在 `sNN_topic/` 一个目录下。这适合教学(每个 chapter 独立可读、独立可测),但**不像真实项目**——读者去看 `new-api` 仓库,看到的是 `router/ controller/ service/ model/ middleware/ common/` 这种目录。要解决这个——**我们把 16 章的功能重新装配成一个独立的 FastAPI app**:不再挂载 chapter chain,改为在 `s_full/code.py` 入口用 `app.include_router(...)` 把 `routes/auth.py / routes/admin.py / routes/chat.py` 三个本地 router 接进来——**include_router**(**`include_router`**(把 APIRouter 的路由直接注册进当前 app 的路由表,路径保持原样,跟 `app.mount` 把子 app 整体挂到某子路径下完全不同))替代 `mount`;目录按 `routes / services / models / adapters / middleware` 五层重组,对应 `new-api` 的 `Router → Controller → Service → Model → Middleware`。本章就把这个"教学挂载 → 生产装配"的过程做出来:
+走完 s01-s16,手上是 16 个独立的 FastAPI app,每个 chapter 一份 `code.py`,靠 `app.mount("/...", sNN_app)` 串成 `s16 -> s15 -> s14 -> ... -> s02` 一条链;每个 chapter 的 routes / services / models 全塞在 `sNN_topic/` 一个目录里。这适合教学(每个 chapter 独立可读、独立可测),但**不像真实项目**——读者去看 `new-api` 仓库,看到的是 `router/ controller/ service/ model/ middleware/ common/` 这种目录。**在 `s_full/code.py` 入口用 `app.include_router(...)` 把 `routes/auth.py / routes/admin.py / routes/chat.py` 三个本地 router 接进来——`include_router`**(把 APIRouter 的路由直接注册进当前 app 的路由表,路径保持原样,跟 `app.mount` 把子 app 整体挂到某子路径下完全不同)**替代 `mount`**;目录按 `routes / services / models / adapters / middleware` 五层重组,对应 `new-api` 的 `Router → Controller → Service → Model → Middleware`。本章就把这个"教学挂载 → 生产装配"的过程做出来:
 
 1. **把 16 章代码复制到 `s_full/` 下的五层子目录 —— 为什么是复制而不是 import**: `routes/auth.py` ← s09 的注册/登录、`routes/chat.py` ← s04+s05+s06+s07+s08 的 chat 转发链路、`services/quota.py` ← s07 的预扣结算、`services/rate_limit.py` ← s08 的 token bucket、`models/user.py` ← s09 的 SQLite+bcrypt、`adapters/{openai,claude,gemini}.py` ← s04 的 Provider ABC、`middleware/trace.py` ← s16 的 `TraceAndMetricsMiddleware`。**为什么不 `from s09_user_system.auth import router` 跨章 import**:(a) tutorial 章节本身要保持自包含可读,跨章 import 会把"s09 跑得动"绑到"s07 的某个内部细节没改";(b) `s_full` 要展示**独立项目**的目录长什么样——独立项目不能 import 教学章节;(c) pytest collection 时跨章 import 容易触发意料之外的初始化副作用(比如 s07 启动时把 `models/user.py` 的 sqlite 文件创建到 s07 自己的 cwd)。
 
@@ -56,7 +56,7 @@ new-api/
 
 **要解决这个——我们把 s01-s16 的代码复制到 `s_full/` 下的清晰子目录里，对外提供单一 FastAPI app**。`s_full` 拥有自己的 routers，不挂载 chapter chain——**include_router** 替代 mount：`include_router` 是 FastAPI 把一个 APIRouter 的全部路由注册进主 app 路由表的方法，路径就是 APIRouter 声明的那个，不会叠加挂载前缀；而 `app.mount("/api/v1", sub_app)` 是把另一个 ASGI app 整体挂到子路径下，挂载链有 16 层，某一层忘了改前缀，客户端就是一个要追 16 层的 404。
 
-本章不画角色图（`s_full` 是整合章，没有新角色，只有装配动作），所以下面直接把每个集成层挑战对到 `s_full` 的解法上：
+`s_full` 是整合章,没有新角色,跳过角色图,直接把每个集成层挑战对到 `s_full` 的解法上:
 
 - **挑战 #1:16 个 app、16 个端口** → **单一 8099 端口的 FastAPI app**。`s_full/code.py` 里只有一个 `app = FastAPI(...)`,16 章的功能全部收拢到它下面。部署方只需要暴露一个进程、一个端口、一份配置,而不是 16 份。
 - **挑战 #2:mount 链让路径被重前缀化** → **`include_router` 替代 `mount`**。`app.include_router(auth.router)` / `admin.router` / `chat.router` 把三个 `APIRouter` 的路由直接注册进同一张路由表,路径就是它声明的那个。
@@ -99,7 +99,7 @@ s_full/
 
 ## 工作原理
 
-**原理**: 一个 HTTP 请求打到 8099 端口上唯一那个 FastAPI app, 它的生命周期是: ASGI 服务器先把请求交给 middleware stack (中间件链, 这里只有 `TraceAndMetricsMiddleware`——生成 trace_id + 记 Prometheus 计数) → 路由表按方法和路径挑出对应 handler (路由表的内容是启动时三次 `include_router` 注册进来的) → handler 通过 dependency injection 拿到 `Principal` (鉴权后代表当前调用者的对象) → 依次调 `services/` 层的限流与预扣、`adapters/` 层的协议翻译 → httpx 发出站请求给上游 → 回包翻回 OpenAI 形态 → `services/` 结算配额、`models/log` 入队落盘 → 响应沿 middleware stack 原路吐回客户端。整章所有部件都为这条主线服务, 而且这条主线跟 s01-s16 里逐章写过的**完全是同一份代码**, 只是换了摆放位置。
+**原理**: 一个 HTTP 请求打到 8099 端口上唯一那个 FastAPI app, 它的生命周期是: ASGI 服务器先把请求交给 middleware stack (中间件链, 这里只有 `TraceAndMetricsMiddleware`——生成 trace_id + 记 Prometheus 计数) → 路由表按方法和路径挑出对应 handler (路由表的内容是启动时三次 `include_router` 注册进来的) → handler 通过 dependency injection 拿到 `Principal` (鉴权后代表当前调用者的对象) → 依次调 `services/` 层的限流与预扣、`adapters/` 层的协议翻译 → httpx 发出站请求给上游 → 回包翻回 OpenAI 形态 → `services/` 结算配额、`models/log` 入队落盘 → 响应沿 middleware stack 原路吐回客户端。所有部件都围着这条主线展开,而且这条主线跟 s01-s16 里逐章写过的**完全是同一份代码**, 只是换了摆放位置。
 
 **1. 一个 application entrypoint (`s_full/code.py`)** —— 三行 `app.include_router(...)` + 一行 `app.add_middleware(...)` + `/health` `/metrics` 两条自带路由, 就是整个应用的对外面貌。读者不需要往下追任何一层就能看全对外路由。
 

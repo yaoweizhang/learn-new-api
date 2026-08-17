@@ -21,14 +21,9 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
 **这一章的判断:网关不再做"瞬态错误原地重试"——一次失败就回落到
 下一条渠道。**三个理由:
 
-1. **重试 vs 降级**:重试同一渠道是在赌"上游马上就好";多渠道架
-   构下,赌输的代价是浪费 0.6s 退避 + 3 次请求。下一步更好的赌是
-   换一条渠道。
-2. **真实 new-api 也没在 relay 层做 retry**:Go 那边是切到下一优
-   先级渠道,而不是 tenacity 风格的就地重试。我们这一章跟上。
-3. **"瞬态"判定模糊**:4xx 是请求格式错,重试一万次还是 4xx;某
-   些上游把 429 用作"配额不足"——重试也无济于事。明确重试白名单需
-   要按 provider 分情况配置,超出本章范围。
+1. **重试同一渠道是在赌"上游马上就好"**——多渠道架构下,赌输的代价是 0.6s 退避 + 3 次请求;换一条渠道是更稳的赌。
+2. **真实 new-api 也没在 relay 层做 retry**——Go 那边是切到下一优先级渠道,而不是 tenacity 风格的就地重试。
+3. **"瞬态"判定模糊**——4xx 是请求格式错,重试一万次还是 4xx;某些上游把 429 用作"配额不足",重试也无济于事。重试白名单需要按 provider 分情况配置,超出本章范围。
 
 所以这道闸门变成:
 
@@ -53,7 +48,7 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
 
 ## 方案
 
-现在的场景是:`## 问题` 提了一件痛——s12 把缓存这条路解决了"快",但上游瞬时 502 / 503 / 504 时,客户端依然直接看到错误,然后全栈重试(鉴权 + 计费 + 配额 + 日志 + 缓存全部重跑一遍)。这件事**没法靠"客户端按渠道切流"或"s12 缓存兜底"能解决**——缓存只对相同 prompt 命中,瞬时错误属于"换一次请求就消失"那一类,根本不命中缓存,必须由网关在 chat 端点层跑一条 for-loop 渠道序列、失败立即 mark_unhealthy + 切下一条。
+现在的场景是:`## 问题` 提了一件痛——s12 把缓存这条路解决了"快",但上游瞬时 502 / 503 / 504 时,客户端依然直接看到错误,然后全栈重试(鉴权 + 计费 + 配额 + 日志 + 缓存全部重跑一遍)。这件事客户端按渠道切流搞不定、s12 缓存兜底也搞不定——缓存只对相同 prompt 命中,瞬时错误属于"换一次请求就消失"那一类,根本不命中缓存,必须由网关在 chat 端点层跑一条 for-loop 渠道序列、失败立即 mark_unhealthy + 切下一条。
 
 **要解决这个——我们在网关里引入一个渠道级 for 循环**——按顺序遍历候选渠道,失败一条就立刻切下一条:
 
@@ -90,7 +85,7 @@ GET  /admin/cache/stats                                       -> 200 {size, live
 
 ## 工作原理
 
-**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: `Starlette` 按注册顺序匹配路由 → 本地 `@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前, 直接胜出挂载的同名路由 → handler 内 `ch_mod.list_channels()` 拿候选渠道快照 → `async with httpx.AsyncClient(timeout=30.0) as client:` 开连接 → `for ch in candidates:` 遍历 → `if not ch["enabled"] or not ch["healthy"]: continue` 跳过 → `try: r = await client.post(f"{ch['base_url']}/v1/chat/completions", content=body, headers=upstream_headers)` 调一条 → 成功路径(`r.status_code < 400`)走 `provider.from_upstream` 翻回 OpenAI 形态 → `return JSONResponse(translated)`; 失败路径(transport error 或非 2xx) 走 `ch_mod.mark_unhealthy(ch["id"]) + continue` → 全部失败时 `raise HTTPException(last_status or 502, ...)`,失败整笔 `refund(p.user_id, estimate)` 退回配额。整章所有部件都为"遍历 + 失败即切"这条主线服务。
+**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: `Starlette` 按注册顺序匹配路由 → 本地 `@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前, 直接胜出挂载的同名路由 → handler 内 `ch_mod.list_channels()` 拿候选渠道快照 → `async with httpx.AsyncClient(timeout=30.0) as client:` 开连接 → `for ch in candidates:` 遍历 → `if not ch["enabled"] or not ch["healthy"]: continue` 跳过 → `try: r = await client.post(f"{ch['base_url']}/v1/chat/completions", content=body, headers=upstream_headers)` 调一条 → 成功路径(`r.status_code < 400`)走 `provider.from_upstream` 翻回 OpenAI 形态 → `return JSONResponse(translated)`; 失败路径(transport error 或非 2xx) 走 `ch_mod.mark_unhealthy(ch["id"]) + continue` → 全部失败时 `raise HTTPException(last_status or 502, ...)`,失败整笔 `refund(p.user_id, estimate)` 退回配额。所有部件都围着"遍历 + 失败即切"这条主线展开。
 
 **1. 一个本地 chat route handler (`POST /v1/chat/completions`,注册在 mount 之前)** —— Starlette 按注册顺序迭代路由,本地路由先注册,客户端打 `/v1/chat/completions` 时直接被 s13 本地 handler 拦截,根本不走 s12→s11→s10→s09→s08 那条挂载链的 chat 路由;`/admin/cache/stats` 这种 s12 独有路由依然可达,因为本地没定义它,Starlette 接着往下走到挂载链,被 s12 自己 match 上。
 

@@ -29,7 +29,7 @@ event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n
 
 ## 方案
 
-现在的场景是:`## 问题` 提了一件痛——客户端在 s02 那条攒齐路径下会等 7 秒空白屏再渲染 (痛点)——这件事**没法靠"客户端轮询"或"客户端 JS 优化"能解决**,必须由网关把响应方式从攒齐回吐切成边读边推。
+现在的场景是:`## 问题` 提了一件痛——客户端在 s02 那条攒齐路径下会等 7 秒空白屏再渲染 (痛点)——这件事客户端轮询搞不定、客户端 JS 优化也搞不定,必须由网关把响应方式从攒齐回吐切成边读边推。
 
 **要解决这个——我们在 `chat_completions` handler 里按 `req.stream` 字段分两条路**:
 
@@ -61,7 +61,7 @@ Client ──POST /v1/chat/completions {stream:true}──▶  Relay  ──POST
 
 ## 工作原理
 
-**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器看 `req.stream` 字段分支 → 流式分支开 `httpx.AsyncClient.stream(...)` 上下文 + 加 `accept: text/event-stream` 头 → 进入 async 迭代器用 `aiter_bytes()` 拿上游字节 → 边读边 `yield` 给 FastAPI `StreamingResponse` → 响应头同时打 `cache-control: no-cache` 和 `x-accel-buffering: no` → 客户端断开时 `async with` 退出自动关上游连接。整章所有部件都为这条主线服务。
+**原理**: 一个 HTTP 请求从客户端进来, 它的生命周期是: 路由器按 `/v1/chat/completions` 路径挑出 chat 处理器 → 处理器看 `req.stream` 字段分支 → 流式分支开 `httpx.AsyncClient.stream(...)` 上下文 + 加 `accept: text/event-stream` 头 → 进入 async 迭代器用 `aiter_bytes()` 拿上游字节 → 边读边 `yield` 给 FastAPI `StreamingResponse` → 响应头同时打 `cache-control: no-cache` 和 `x-accel-buffering: no` → 客户端断开时 `async with` 退出自动关上游连接。所有部件都围着这条主线展开。
 
 **1. 一个 stream branch (FastAPI 处理器里的 `if req.stream`)** —— 同一路由按 `stream` 字段切两条路。非流式走 s02 的 `await client.post(...)` + `r.json()`,流式走下面两个部件;两条路用同一个 OpenAI schema 校验入口。
 

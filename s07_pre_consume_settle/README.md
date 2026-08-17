@@ -8,7 +8,7 @@
 
 ## 问题
 
-一个拥有 100 token 配额的用户,可以同时提交 100 个并行请求,每个 100 token。如果每条请求在调上游之前都按 100 token 做估算,这 100 条全部会通过配额闸门——然后真正打完上游才知道真实花费。结果是:用户可能在请求过程中**变负**,下一条本来余额充足的合法请求却因为配额已经下溢而被拒绝。
+用户余额只剩 100 token,同时发出 100 条请求、每条约花 100 token。配额闸门在真实花完之前看不穿并发,100 条全部放行——然后用户余额变负,下一条本来合法的请求被拒绝。
 
 这就是 `spend-after`(调完再扣的反模式,对比"调前预扣")模式的天然漏洞:闸门看到的估算和实际账单是两件事,中间这段窗口越长、并发越多,漏洞越大。
 
@@ -17,7 +17,7 @@
 现在场景是:一个拥有 100 token 配额的用户,可以同时提交 100 个并行请求,每个 100 token。如果每条请求在调上游之前都按 100 token 做估算,这 100 条全部会通过配额闸门——然后真正打完上游才知道真实花费。这就是 `spend-after`(调完再扣的反模式,对比"调前预扣")模式的天然漏洞。要解决这个——**我们改用预扣+结算两阶段**:调上游前按 s06 的估算值乘单价先预扣一个偏宽的额度(不够直接 `402 Payment Required` 不打上游),上游回包后用真实 `usage` 跟预扣值做差额结算——少用退、超用补、整笔失败原样退。本章就把这两刀写出来:
 
 1. **写一个 `quota` 模块 —— 为什么要有自己的模块而不是直接扣字典**:`reset()` / `set_balance(uid, n)` / `get_balance(uid)` / `deduct(uid, n) -> bool`(原子条件扣减,余额不足返 `False` 不部分扣)/ `refund(uid, n)` / `settle(uid, pre, actual)`(退还或补差额,原子返回实扣)。**为什么扣减必须在 `threading.Lock` 下原子**:同用户并发请求不能"双花",先读再写会被两个 in-flight 请求同时穿过;**为什么用 `threading.Lock` 而不是 `asyncio.Lock`**:配额算式是纳秒级,加锁开销可忽略,`asyncio.Lock` 在每个 `await` 点要让出,划不来。
-2. **handler 调前算 estimate + 预扣 —— 为什么用偏宽的估算**:`estimate = (prompt_tokens + expected_completion) * RATE_PER_TOKEN`,`expected_completion` 走 `req.max_tokens or 256`。**为什么没 `max_tokens` 时按 256**:大多数回复比 256 短,所以用户常常收到小笔退款——偏宽是为了闸门能在请求飞行前拦住明显不够余额的用户,宁多勿少;**为什么不调用上游真实 `/count_tokens` 接口**:本章要的是估算不是精确,多一次远端调用就把"预扣"这件事本身变成昂贵的——等到 s_full 走精确路径。
+2. **handler 调前算 estimate + 预扣 —— 为什么用偏宽的估算**:`estimate = (prompt_tokens + expected_completion) * RATE_PER_TOKEN`,`expected_completion` 走 `req.max_tokens or 256`。**为什么没 `max_tokens` 时按 256**:大多数回复比 256 短,所以用户常常收到小笔退款——偏宽是为了闸门能在请求飞行前拦住明显不够余额的用户,宁多勿少。
 3. **handler 调后算 actual + 结算 —— 为什么差额要双向找齐**:成功路径 `actual = (max(上游 pt, 本地 pt) + ct) * RATE`,`settle(uid, estimate, actual)` 内部 `diff = actual - estimate`,`diff>0` 补差额(余额不够 deduct 静默失败——生产是 billing 异常)、`diff<0` 退差额。**为什么 `max(上游 pt, 本地 pt)`**:上游 tokenizer 和本地略有差异,取较大值保证本地账目不被悄悄少扣;**为什么 `ct` 缺失时回退到 `max(1, len(reply)//4)` 而不是 0**:`pt` 是输入我们没法本地算,`ct` 是输出我们已经拿到内容,本地估一下总比 0 准。
 4. **失败路径整笔 refund —— 为什么不能"扣就扣了"**:网络错(`httpx.HTTPError`)、`r.status_code >= 400`、模型名错(`pick_provider` 抛 `ValueError`)——任一失败都把整份预扣 `refund` 回去。**为什么失败也走 refund**:用户没有拿到任何有效回复,按 token 收钱没道理;**为什么不是事后异步对账**:对账窗口越大,并发漏洞越大——同步 refund 让用户余额状态始终和"成功收到的回复数"对得上。
 
@@ -25,9 +25,9 @@
 
 ## 方案
 
-现在的场景是:用户调一次 chat,看到自己账户余额掉了——但**他不知道"扣除发生在哪个时刻"(调前还是调后)、"超额了会怎样"(直接拒、预扣后退、还是默默放行)、"退款何时打回账号"(同步还是异步、看得见还是看不见)**,这三件事跨章看完仍然没有答案。`## 问题` 提的那件痛——spend-after 模式闸门看的是估算、真实账单要等调用完,这中间窗口里并发请求可能让用户变负、失败调用也可能被错误扣费——只是把"扣费契约"这件事缺失暴露出来。这件事**没法靠"客户端按请求自行算账"或"事后手工对账"能解决**,必须由网关在转发前先扣一个偏宽的额度、转发后再算差额,并把每一段动作的因果链讲清楚。
+用户调一次 chat,账户余额掉了——但他不知道扣费发生在调前还是调后、超额是被拒还是默默放行、退款何时回到账上。`## 问题` 那件痛——spend-after 模式闸门看估算、真实账单要等调用完,中间这个窗口里并发请求可能让用户变负、失败调用也可能被错误扣费。客户端自己算账不行,事后手工对账也不行,必须在网关层先预扣一个偏宽的额度、调后按真实 usage 结算差额,把每一段动作的因果链讲清楚。
 
-**要解决这个——我们在网关里引入一对动作**:**预扣**(pre-consume,调上游前先按估算扣一个偏宽额度) + **结算**(settle,上游回包后用真实 usage 跟预扣值做差额——少用退、超用补)。这两个动作合起来就是这条"调前估 + 调后对账"两步路线的统称,**预扣 / 结算**。本章套路按时间顺序分四步:
+**要解决这个——我们在网关里引入一对动作**:**预扣**(pre-consume,调上游前先按估算扣一个偏宽额度) + **结算**(settle,上游回包后用真实 usage 跟预扣值做差额——少用退、超用补)。这两个动作合起来就是这条"调前估 + 调后对账"两步路线的统称,**预扣 / 结算**。这一章按时间顺序分四步:
 
 1. **调之前先预扣一个估计值**:用 s06 算出的 `prompt_tokens + expected_completion`,乘以 `RATE_PER_TOKEN`。余额不够直接 `402 Payment Required`,根本不打上游。
 2. **调上游**。
@@ -45,7 +45,7 @@
 
 ## 工作原理
 
-**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: handler 调 `s06.count_prompt` 拿到 `prompt_tokens` → 算 `estimate = (pt + expected_completion) × RATE_PER_TOKEN` → 调 `quota.deduct(uid, estimate)` 预扣(余额不够直接 `402`)→ 转发到上游 → 拿到响应时用 `quota.settle(uid, pre, actual)` 退/补差额(成功)或 `quota.refund(uid, estimate)` 整笔退回(失败)。整章所有部件都为这条主线服务。
+**原理**: 一个 chat 请求从客户端进来, 它的生命周期是: handler 调 `s06.count_prompt` 拿到 `prompt_tokens` → 算 `estimate = (pt + expected_completion) × RATE_PER_TOKEN` → 调 `quota.deduct(uid, estimate)` 预扣(余额不够直接 `402`)→ 转发到上游 → 拿到响应时用 `quota.settle(uid, pre, actual)` 退/补差额(成功)或 `quota.refund(uid, estimate)` 整笔退回(失败)。整章代码都是这条主线的落地。
 
 **1. 一个 pre-deduct 估算 (`code.py` handler 内的 `estimate = (pt + expected_completion) × RATE`)** —— `expected_completion` 走 `req.max_tokens or 256`(没传 `max_tokens` 时按 256 兜底,大多回复更短所以用户常收到小笔退款)。偏宽是为了闸门能在请求飞行前拦住明显不够余额的用户,宁多勿少。
 
