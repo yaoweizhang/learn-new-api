@@ -18,7 +18,7 @@
 
 ## 本章要做什么
 
-要解决这个,把这层配置搬到一张**管理员可改的内存渠道表**——多渠道 + 选路,同一客户端就能跨多账号。本章把这张表和选路算法写出来:
+现在场景是:之前所有章节里,我们的上游都是写死在代码里的:要么 `s04_multi_provider` 里用一个简单的 if/elif 把 `model` 前缀映射到 base_url,要么 `s05` 用一张内存表把 API key 和用户绑死。一旦系统要对外服务,立刻就遇到三个问题:没法动态加渠道、没法做容灾、没法区分优先级。要解决这个——**我们把这层配置搬到一张管理员可改的内存渠道表**(**渠道表 / Channel 表**(每个 channel 是 new-api 里"一条独立的上游通道":一份 provider + base_url + weight + priority 配置,管理员通过 HTTP 增删改查,注册后立刻生效;选路时从这张表里按规则挑一条)——多渠道 + 选路,同一客户端就能跨多账号。本章把这张表和选路算法写出来:
 
 1. **写一张内存渠道表 `channels.py` —— 为什么是内存表先于数据库**: `Channel` 是 `@dataclass`,字段 `id / name / provider / base_url / weight / priority / enabled / healthy`;`_channels: dict[int, Channel]` + `threading.Lock` 保护并发读写;公开函数只有 `reset_channels / create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for`。**为什么不先接 SQLite**:渠道是低频变更的运营数据,先用进程内 dict 把"注册即生效"的契约做出来,等 s12 切到持久化一并迁移——先把"动态配置"这件事讲透,不要让数据库分心。
 2. **`pick_channel_for(model_name)` 三步算法 —— 为什么是 priority 优先于 weight**: 先按 `enabled and healthy and provider == _provider_for_model(model_name)` 过滤;然后取最小 `priority`(数字越小越优先,`priority=0` 是最高档);最后在档内按 `weight` 做 `random.choices(..., k=1)[0]` 加权随机。**为什么 priority 先于 weight**: priority 是"主备层级",weight 是"同档内分摊"——主账号全挂之前,备用账号即使 weight=1000 也不该接流量;反过来同档内若按 first-fit,所有请求都会落到最高 weight 那条,其它渠道闲着。
