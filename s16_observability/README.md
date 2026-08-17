@@ -18,7 +18,7 @@
 
 ## 本章要做什么
 
-要解决这个,引入三件套:Prometheus `/metrics` 暴露计数器和直方图、`structlog` 把日志重写成 JSON 一行一条、`x-trace-id` 在中间件读 / 回写并塞进每条日志。学完一次请求的入口 + 出口 + 上游三段日志能用 `trace_id` 串起来,Prometheus 拉指标给你看错误率 / 延迟 / 按模型分桶。本章把这套可观测性最小骨架写出来:
+现在场景是:到 s15 为止,我们只能回答两类问题:"服务有没有起来"(看 `/healthz`)、"请求成功没有"(看 HTTP 状态码)。如果用户报告"今天 chat 很慢",我们需要:每分钟请求数 / 错误率 / P50/P99 时延;按 model 分桶;把一次请求的入口 + 出口 + 上游日志串起来。要解决这个——**我们引入三件套**:**Prometheus**(**Prometheus / Prom 指标**(一种"拉模式"的指标系统:进程内维护 `Counter` + `Histogram`,通过 `/metrics` 路由把样本暴露成文本,Prometheus 服务每 15s 来拉一次;指标可带 label 分桶)、**结构化日志**(**structlog JSON 日志**(`structlog` 把 `logging` 输出重写成 JSON 一行一条,`docker logs | jq` 直接过滤;每条都带 trace_id))、`x-trace-id` 在中间件读 / 回写并塞进每条日志——**trace_id**(**trace_id / 追踪 ID**(贯穿一次请求的唯一 ID,通常 `uuid4().hex`;从入口读,没有就生成,回写响应头,塞进每条日志,跨服务透传))。学完一次请求的入口 + 出口 + 上游三段日志能用 `trace_id` 串起来,Prometheus 拉指标给你看错误率 / 延迟 / 按模型分桶。本章把这套可观测性最小骨架写出来:
 
 1. **挂一个 `TraceAndMetricsMiddleware` —— 为什么用中间件而不在 handler 里调**: `@app.middleware("http")` 装在 s16 这层 app 上,包裹下面 s15 → s14 → ... 整条挂载链。`dispatch` 流程: `trace_id = request.headers.get("x-trace-id") or uuid.uuid4().hex` → 写到 `request.state.trace_id` → `start = perf_counter()` → `await call_next(request)` → `elapsed = perf_counter() - start` → 若 chat 路径就 `REQUESTS.labels(model, status).inc()` + `LATENCY.labels(model).observe(elapsed)` → `log.info("request", trace_id=..., ...)` → 响应头写 `x-trace-id`。**为什么用中间件**: 一处定义全局生效,装饰器要给每个 handler 加 `@track_metrics` 易漏;**为什么只匹配 `/v1/chat/completions` 打指标**: `/healthz`、`/metrics` 也走中间件,但只有 chat 路径打 label——避免 `/healthz`、`/metrics` 把 Prometheus 基数撑爆。
 
