@@ -25,7 +25,7 @@
 
 ## 本章要做什么
 
-要解决这个,把整个 s01-s14 链路打包进 `python:3.11-slim` 单容器,用 `docker compose up` 一条命令拉起完整网关(单进程 in-memory,没有 redis / mysql 依赖);`HEALTHCHECK` 探活,`/healthz` 路由做业务级深检——深检现在是个桩(永远 `ok=True`),生产里换 DB 读 + upstream HEAD。本章把这套部署形态写出来:
+现在场景是:到 s14,我们的 FastAPI 应用在开发机上跑得通:`python s14_admin_dashboard/code.py` 一开浏览器就能看到仪表盘。但"在我机器上能跑"不等于"上生产能跑"——Python 版本不一致、依赖装出来不一致、进程死了没人拉、上游改了协议没人知道。要解决这个——**我们把整个 s01-s14 链路打包进 `python:3.11-slim` 单容器**(**Docker 容器**(一个跑在宿主上的隔离进程,自带 Python 运行时 + 我们的代码 + 依赖;用 `docker compose up` 一条命令拉起);**HEALTHCHECK**(Docker 自带的进程级探活:每 30s 调一次 `/healthz`,失败累计 3 次把容器标 unhealthy 触发重启)),用 `docker compose up` 一条命令拉起完整网关(单进程 in-memory,没有 redis / mysql 依赖);`HEALTHCHECK` 探活,`/healthz` 路由做业务级深检——深检现在是个桩(永远 `ok=True`),生产里换 DB 读 + upstream HEAD。本章把这套部署形态写出来:
 
 1. **写一个 `Dockerfile` —— 为什么单阶段不写多阶段**: `FROM python:3.11-slim` + `WORKDIR /app` + `COPY requirements.txt .` + `RUN pip install --no-cache-dir` + `COPY . .`。**为什么不写多阶段**: 多阶段出 ~20MB 镜像,单阶段 ~150MB;镜像大小对教学无所谓,多阶段需要 Go 工具链那一套思路(我们纯 Python 不需要);**为什么 `requirements.txt` 在 `COPY . .` 之前**: 镜像分层缓存——代码改了只重 build 最后一层,依赖层不动。
 
