@@ -19,7 +19,7 @@ event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n
 
 ## 本章要做什么
 
-s02 把整个 JSON body 攒齐再回吐——200 个 token、按 30 tok/s 的回复,客户端将近 7 秒只能盯空白屏。生产聊天的 UX 不能接受这个延迟,逐 token 推送是让聊天"看起来活"的唯一办法。本章就在 s02 那条路径上把流式打开:
+现在场景是:s02 把整个 JSON body 攒齐再回吐——200 个 token、按 30 tok/s 的回复,客户端将近 7 秒只能盯空白屏。生产聊天的 UX 不能接受这个延迟。要解决这个——**我们让 s02 那条路径支持流式(逐 token 推送:一个 token 一小段字节,客户端每收到一段就立刻渲染)**,让聊天"看起来活"。本章就在 s02 那条路径上把流式打开:
 
 1. **按 `req.stream` 分两条路 —— 为什么必须分支**:非流式请求(s02 已实现)是"攒齐再回 JSON",流式请求是"转发第一个字节就开始推"。**为什么不能两路合并**:流式路径用的是 `httpx.AsyncClient.stream(...)` + `StreamingResponse` 的异步生成器,非流式用的是 `await client.post(...)` + `r.json()`,前者不缓存上游 body、后者必须等到上游关闭连接,合并就是同时要两条矛盾策略。
 2. **流式走 `httpx.AsyncClient.stream(...)` + `aiter_bytes()` —— 为什么是这套 API**:SSE 是 HTTP 长连接 + 文本帧,**为什么必须用 httpx.stream 的 context manager**:`aiter_bytes()` 只能在 `stream(...)` 返回的响应对象上调,普通 `client.post()` 等到 body 完整才返回对象、等于把流式退化成 s02;**为什么是 `aiter_bytes()` 而不是 `aiter_text()`**:我们不解析、不重塑帧,逐字节原样转出,字节边界错了才会把 `data: {...}\n\n` 撕成两半。
@@ -29,11 +29,10 @@ s02 把整个 JSON body 攒齐再回吐——200 个 token、按 30 tok/s 的回
 
 ## 方案
 
-按 `req.stream` 做分支:
+在 `chat_completions` handler 里,看到 `req.stream` 字段就分两条路:
 
-- **stream=false**:走和 s02 一样的 `await client.post(...)`,返回
-  `JSONResponse`。
-- **stream=true**:打开 `httpx.AsyncClient.stream(...)`,返回一个 FastAPI
+- **stream=false**(s02 已实现):走 `await client.post(...)`,攒齐再回 `JSONResponse`。
+- **stream=true**(本章新加):打开 `httpx.AsyncClient.stream(...)`,返回一个 FastAPI
   `StreamingResponse`(FastAPI 的流式响应类型,按 chunk 推送),用 `async for
   chunk in upstream.aiter_bytes()` 产出字节。两个响应头要紧:
   `cache-control: no-cache` 和 `x-accel-buffering: no`(后者告诉 nginx
