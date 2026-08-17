@@ -39,7 +39,7 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 下面这幅图把闸门放到三个角色里:
 
 - **`Client` (调用方)** —— 在装闸门之前,这是干"谁都能打"这件事的角色;装上之后,这事被闸门解了——Client 只剩"我必须带 `Authorization: Bearer sk-...` 才能过"。
-- **`Relay` (本章要写的闸门 + 转发)** —— 把痛点的解决动作集中放在这里:`Depends(require_api_key)` 在 chat 处理器之前跑,读 `Authorization` 头、查 key 表、不认识返 401,通过则挂 `Principal` 到 `request.state` 再进入原有转发循环(s04 那条)。Client 看不见 key 字符串后面是谁,Upstream 看不见 Client 持了哪把 key。
+- **`Gateway` (本章要写的闸门 + 转发)** —— 把痛点的解决动作集中放在这里:`Depends(require_api_key)` 在 chat 处理器之前跑,读 `Authorization` 头、查 key 表、不认识返 401,通过则挂 `Principal` 到 `request.state` 再进入原有转发循环(s04 那条)。Client 看不见 key 字符串后面是谁,Upstream 看不见 Client 持了哪把 key。
 - **`Upstream` (LLM 厂商)** —— 服务提供方。它仍然只见网关、不见 Client;网关带不带 key、挂不挂 `Principal`,对上游透明。
 
 下面这张 ASCII 流程图画鉴权边界,和下面那张架构图相对照——上面这张是单跳时序,下面那张是角色拓扑,中间那块都是 `require_api_key` 闸门:
