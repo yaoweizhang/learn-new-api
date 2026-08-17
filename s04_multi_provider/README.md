@@ -18,7 +18,7 @@ OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`
 
 s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。把 OpenAI 写死在上游,任何一家挂了整条服务就 502。
 
-要解决这个,把"按前缀挑适配器"这层抽象插在 s02 转发循环前面:客户端始终说 OpenAI 形态,网关按 `model` 前缀分给三家上游,响应再翻回 OpenAI 形态,客户端不需要知道答的是哪家。本章就做这一件事:
+现在场景是:s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。要解决这个——**我们在 s02 转发循环前面插一层"按前缀挑适配器"的抽象**:客户端始终说 OpenAI 形态,网关按 `model` 前缀分给三家上游,响应再翻回 OpenAI 形态,客户端不需要知道答的是哪家。本章就做这一件事:
 
 1. **定义 `Provider` 抽象基类 —— 为什么必须有这个抽象**:每家厂商 URL/auth/响应 schema 都不一样,**为什么不直接三个 if-else 写死在路由里**:加新厂商等于改路由;**为什么方法签名是 `(req) → (url, headers, body)` + `(payload) → dict`**:这样 `chat_completions` 路由只看到"出站 + 回包翻成 OpenAI 形态",不知道厂商是谁;翻牌写到 `from_upstream` 一个方法里,后续 s05/s07 加鉴权、配额只动路由这一层,不动适配器。
 2. **`pick_provider(model)` 按前缀分派 —— 为什么靠前缀而不是配置文件**:客户端发请求时 `model` 已经在 body 里了,运维不用另维护一份"哪个 model 走哪家"的配置,**为什么不靠 `(channel, model)` 元组**:`pick_provider` 按字符串前缀一行就能搞定,new-api 的 channel 表是另一种思路(s04 取舍节会展开)。
@@ -33,7 +33,7 @@ s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可
 1. **把 OpenAI 请求翻译成自家线协议** (`to_upstream`)。
 2. **把自家响应翻回 OpenAI 形态** (`from_upstream`)。
 
-路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器(`Adaptor`,new-api 术语:厂商适配器接口),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
+路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器(`Adaptor`,**适配器 / 适配层**(adapter,new-api 术语:厂商适配器接口,负责"接 OpenAI 形态 + 翻成厂商方言 + 把厂商响应翻回 OpenAI 形态"——一个厂商一个实现)),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
 
 `## 问题` 提了两件痛:OpenAI 形态 body 直打到 Claude / Gemini 会被回 400 (痛点 #1)、单家挂了整套服务就 502 (痛点 #2)。这两件事**任何一件**都没法靠"客户端按厂商分流"能解决——必须由网关按 model 前缀自动分派并翻译。下面这幅图把这三件事各放到一个角色里:
 
