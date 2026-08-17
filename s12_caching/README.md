@@ -26,12 +26,12 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
 
 ## 本章要做什么
 
-现在场景是:前 11 章里,每次客户端问"gpt-4o-mini 给我讲个笑话",请求都会原封不动打到上游——哪怕 1000 个用户问的是同一个问题,上游也会被叫 1000 次。两个痛点立刻出现:上游账单爆炸、用户体感延迟。要解决这个——**我们给 chat 端点包一层精确匹配缓存**(**响应缓存 / TTL 缓存**(在内存里把"请求 JSON → 上游响应 bytes"这一对原样存下来,下次同样的请求直接吐缓存,根本不打上游;每条缓存带一个过期时间 **TTL**(time-to-live,过期就清掉)):同 model、同 messages、同 temperature 的请求,首次落缓存,之后命中直接吐 bytes,根本不打上游。本章把这层缓存写出来:
+要解决这个——**我们给 chat 端点包一层精确匹配缓存**(**响应缓存 / TTL 缓存**(在内存里把"请求 JSON → 上游响应 bytes"这一对原样存下来,下次同样的请求直接吐缓存,根本不打上游;每条缓存带一个过期时间 **TTL**(time-to-live,过期就清掉)):同 model、同 messages、同 temperature 的请求,首次落缓存,之后命中直接吐 bytes,根本不打上游。本章把这层缓存写出来:
 
-1. **写一个内存缓存后端 `cache.py` —— 为什么是进程内 dict 而非 Redis**: `_store: dict[str, tuple[float, bytes]] = {}` 加 `threading.Lock`,对外暴露 `reset_cache / get / set / stats`。**为什么不直接接 Redis**:本章只演示"缓存中间件这个模式存在、键怎么算、TTL 怎么管",多进程共享、持久化、跨实例全部不在这一章的范围——接口照搬 `redis-py` 的签名(`get/set/stats`),v2 切 Redis 时只动实现不动接口,中间件一行不用改。
-2. **键用 `sha256(canonical JSON)` —— 为什么规范化 + sha256**: `_key(payload)` = `hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()`。**为什么 `sort_keys + separators`**:序列化结果与字段顺序无关——`{"a":1, "b":2}` 和 `{"b":2, "a":1}` 算同一个 key,改一个字符(哪怕加个空格)就完全不一样。**为什么用 sha256 而不是 `functools.lru_cache`**:`lru_cache` 只支持 hashable 位置参数;我们要按任意 dict 内容做键,还要自己控 TTL。
-3. **`CacheMiddleware` 包在 s11 外层 —— 为什么是 BaseHTTPMiddleware**: 只对 `POST /v1/chat/completions` 起效:命中 → 直接 `Response(content=hit)`,短路所有下游;miss → `await call_next(request)` 转发,200 后把 `response.body_iterator` 读一遍重组再 `cache.set(payload, body)`。**为什么 `stream=true` 跳过缓存**:SSE 是一段持续字节流,没法用一个 `bytes` 整体缓存,跳掉比 partial-stream cache 简单得多,那部分留到 v2。**为什么 body 读一次不破坏下游**:Starlette 的 `BaseHTTPMiddleware` 在首次 `await request.body()` 后会把字节缓存到 `request._body`,s11 的 `LogMiddleware` 再读时拿到的依然是同一份完整 body——所以不需要走 `request.state` 透传。
-4. **TTL 300 秒 + 时间戳用 `time.monotonic()` —— 为什么不用 `time.time()`**: `set` 时记 `time.monotonic() + ttl_seconds`,`get` 时检查过期就清掉。**为什么用 `monotonic`**:系统时钟跳变(NTP 校时、跨时区)时 `time.time()` 会回退或跳跃,可能把缓存集体判过期或集体"复活",`monotonic` 只往前走,语义干净。**为什么 TTL 固定 300 秒**:本章先让缓存生效——按模型分级、按客户端覆盖是 v2 的事。
+1. **写一个内存缓存后端 `cache.py`**。`_store: dict[str, tuple[float, bytes]] = {}` 加 `threading.Lock`,对外暴露 `reset_cache / get / set / stats`。本章只演示"缓存中间件这个模式存在、键怎么算、TTL 怎么管",多进程共享、持久化、跨实例全部不在这一章的范围——接口照搬 `redis-py` 的签名(`get/set/stats`),v2 切 Redis 时只动实现不动接口,中间件一行不用改,所以先不接 Redis。
+2. **键用 `sha256(canonical JSON)`**。`_key(payload)` = `hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()`。`sort_keys + separators` 让序列化结果与字段顺序无关——`{"a":1, "b":2}` 和 `{"b":2, "a":1}` 算同一个 key,改一个字符(哪怕加个空格)就完全不一样。`lru_cache` 只支持 hashable 位置参数;我们要按任意 dict 内容做键,还要自己控 TTL,所以用 sha256 而不是 `functools.lru_cache`。
+3. **`CacheMiddleware` 包在 s11 外层**。只对 `POST /v1/chat/completions` 起效:命中 → 直接 `Response(content=hit)`,短路所有下游;miss → `await call_next(request)` 转发,200 后把 `response.body_iterator` 读一遍重组再 `cache.set(payload, body)`。SSE 是一段持续字节流,没法用一个 `bytes` 整体缓存,跳掉比 partial-stream cache 简单得多,那部分留到 v2——所以 `stream=true` 跳过缓存。Starlette 的 `BaseHTTPMiddleware` 在首次 `await request.body()` 后会把字节缓存到 `request._body`,s11 的 `LogMiddleware` 再读时拿到的依然是同一份完整 body——所以 body 读一次不破坏下游,不需要走 `request.state` 透传。
+4. **TTL 300 秒 + 时间戳用 `time.monotonic()`**。`set` 时记 `time.monotonic() + ttl_seconds`,`get` 时检查过期就清掉。系统时钟跳变(NTP 校时、跨时区)时 `time.time()` 会回退或跳跃,可能把缓存集体判过期或集体"复活",`monotonic` 只往前走,语义干净——所以用 `monotonic`。本章先让缓存生效——按模型分级、按客户端覆盖是 v2 的事,所以 TTL 固定 300 秒。
 
 成品:同样 body 连发两次,第一次打上游 + 写缓存,第二次直接吐缓存 bytes,`upstream_openai.calls.call_count == 1`。`curl /admin/cache/stats` 看到 `{size, live}` 实时反映缓存状态。后续 s13 在 `CacheMiddleware` 内侧加一层失败回落,落到下一条渠道;真上 Redis 时接口不动、`cache.py` 一文件替换。
 
@@ -57,10 +57,10 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
 
 下面这幅图把上面两件痛点各放到一个角色里:
 
-- **`Client` (调用方)** —— 在装上缓存之前,这是被账单和延迟困住两难的角色;装上之后,这事被中继解——Client 只管发请求,同 prompt 第二次起由中继秒级吐回。
-- **`Relay` (本章要写的 CacheMiddleware)** —— 把痛点 #1 #2 的解决动作集中放在这里:中间件按 `request.method == POST and request.url.path == /v1/chat/completions` 触发 → 算 `key = sha256(canonical JSON)` → `cache.get(key)` 命中直接 `Response(content=hit)` 短路返回;未命中走 `await call_next(request)`,响应 200 后把 body 重组写回 `cache.set(payload, body)`。Client 看不见有没有走缓存,Upstream 看不见命中,缓存层藏在中间件里。
+- **`Client` (调用方)** —— 在装上缓存之前,这是被账单和延迟困住两难的角色;装上之后,这事被网关解——Client 只管发请求,同 prompt 第二次起由网关秒级吐回。
+- **`Gateway` (本章要写的 CacheMiddleware)** —— 把痛点 #1 #2 的解决动作集中放在这里:中间件按 `request.method == POST and request.url.path == /v1/chat/completions` 触发 → 算 `key = sha256(canonical JSON)` → `cache.get(key)` 命中直接 `Response(content=hit)` 短路返回;未命中走 `await call_next(request)`,响应 200 后把 body 重组写回 `cache.set(payload, body)`。Client 看不见有没有走缓存,Upstream 看不见命中,缓存层藏在中间件里。
 - **`Cache` (进程内 `dict` + Lock,`cache.py`)** —— 本章新引入的进程内存储。`_store: dict[key, (expires_at, value)]`,每个 key 是 `sha256(canonical JSON)`,value 是上游响应 bytes,`expires_at = monotonic() + ttl_seconds`(默认 300s)。所有读写在 `threading.Lock` 下原子——单进程多线程够用,s_full 切 Redis 时接口不动、`cache.py` 一文件替换。
-- **`Upstream` (LLM 厂商)** —— 服务提供方。它在响应里只看到自己被调了一次还是被调了 N 次,完全不知道中继外面有一层缓存——被中继"短路"掉的请求根本不会到达 Upstream。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。它在响应里只看到自己被调了一次还是被调了 N 次,完全不知道网关外面有一层缓存——被网关"短路"掉的请求根本不会到达 Upstream。
 
 路由形状——下面这张块状路由表把本章要写的 2 条接口压成一览:左是 `method + path`,中间是入参(`/v1/chat/completions` 接 `Authorization: Bearer API key` 和 body),右是返回码与返回体;本章要写的核心就是"读缓存或写缓存"一条转发路径 + 一条统计接口:
 

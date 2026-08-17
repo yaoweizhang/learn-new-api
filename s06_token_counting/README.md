@@ -18,12 +18,12 @@
 
 ## 本章要做什么
 
-现在场景是:`s05` 把请求转出去、原样把上游给回来的 `usage` 透传——这只有在模型"已经做完活"之后才正确。我们想要的是:在调用离开我们边缘之前就报个价;统一 usage 形态;估算要够准,可以合理计费。要解决这个——**我们在转发前先把 prompt 的 token 数清楚**:OpenAI 模型走 `tiktoken`(`cl100k_base` 编码)按 BPE 数,其它厂商没有官方分词器就用 `字符数 / 4` 的经验估算兜底;上游回包时如果带了完整 `usage` 就用它,没带就用本地估算 + 回复长度合成。本章就把这条数 token 的链路写出来:
+要解决这个——**我们在转发前先把 prompt 的 token 数清楚**:OpenAI 模型走 `tiktoken`(`cl100k_base` 编码)按 BPE 数,其它厂商没有官方分词器就用 `字符数 / 4` 的经验估算兜底;上游回包时如果带了完整 `usage` 就用它,没带就用本地估算 + 回复长度合成。本章就把这条数 token 的链路写出来:
 
-1. **写一个 `tokenizer` 模块 —— 为什么要在转发前数 prompt token**:`count_prompt(messages, model)` 按模型名前缀分派:OpenAI 走 `count_openai`(每条消息加 4 token overhead + `cl100k_base` 编码 `content`,再给回复预热 2),非 OpenAI 走 `count_estimate`(`sum(len(content)) // 4`,至少 1)。**为什么必须在转发前就数清楚**:后续 s07 要按"预估 token 数 × 单价"预扣,没这个数字根本没法预扣;**为什么不等到上游回报再算**:那时候已经花了上游配额,本地的账和上游的账对不齐,账单/限额逻辑无法在请求飞行前做出决策。
-2. **在 `chat_completions` handler 里数 token —— 为什么 handler 自己调不算中间件**:每条进来的请求 `count_prompt` 一次,把 `prompt_tokens` 留下来给响应阶段用;**为什么不用全局中间件**:token 数和 `model` 字段绑定,要从 `messages` 里读,而 Pydantic 校验完的请求体才是干净形态——全局中间件在 Pydantic 之前跑,要么复读 `body` 一遍,要么拿不到 `model` 字段。
-3. **合并上游 `usage` —— 为什么两条路径都要保底**:上游给了完整 `usage` 就用,但 `prompt_tokens` 取 `max(上游值, 本地预计)`——**为什么取较大值**:`max(...)` 挡住"上游 tokenizer 估得比本地少"的边界情况,保证本地账目不被悄悄少扣;**为什么非 OpenAI 路径要走 fallback**:老版本 Claude/Gemini、被 mock 的上游、部分失败都会让 `usage` 缺失,这种时候用 `prompt_tokens`(本地估算)+ `max(1, len(reply) // 4)`(回复长度估)合成一份 `usage`,让客户端永远能读到 `usage.total_tokens`。
-4. **挂回响应 + 报 prompt+completion 字段 —— 为什么补齐 `usage` 是契约的一部分**:OpenAI 客户端拿到响应后会读 `usage` 字段做自己的统计/限速,缺失就要客户端自己想办法——**为什么坚持三字段都给**:`prompt_tokens` / `completion_tokens` / `total_tokens` 是 OpenAI SDK 期待的形态;补不齐就破坏客户端零修改的承诺(s02 立的)。
+1. **写一个 `tokenizer` 模块**。`count_prompt(messages, model)` 按模型名前缀分派:OpenAI 走 `count_openai`(每条消息加 4 token overhead + `cl100k_base` 编码 `content`,再给回复预热 2),非 OpenAI 走 `count_estimate`(`sum(len(content)) // 4`,至少 1)。必须在转发前数清楚——后续 s07 要按"预估 token 数 × 单价"预扣,没这个数字根本没法预扣。等到上游回报再算那时候已经花了上游配额,本地的账和上游的账对不齐,账单/限额逻辑无法在请求飞行前做出决策。
+2. **在 `chat_completions` handler 里数 token**。每条进来的请求 `count_prompt` 一次,把 `prompt_tokens` 留下来给响应阶段用。token 数和 `model` 字段绑定,要从 `messages` 里读,而 Pydantic 校验完的请求体才是干净形态——全局中间件在 Pydantic 之前跑,要么复读 `body` 一遍,要么拿不到 `model` 字段,所以不能用全局中间件。
+3. **合并上游 `usage`**。上游给了完整 `usage` 就用,但 `prompt_tokens` 取 `max(上游值, 本地预计)`。取较大值的原因是:`max(...)` 挡住"上游 tokenizer 估得比本地少"的边界情况,保证本地账目不被悄悄少扣。非 OpenAI 路径要走 fallback 也是同样道理——老版本 Claude/Gemini、被 mock 的上游、部分失败都会让 `usage` 缺失,这种时候用 `prompt_tokens`(本地估算)+ `max(1, len(reply) // 4)`(回复长度估)合成一份 `usage`,让客户端永远能读到 `usage.total_tokens`。
+4. **挂回响应 + 报 prompt+completion 字段**。OpenAI 客户端拿到响应后会读 `usage` 字段做自己的统计/限速,缺失就要客户端自己想办法。`prompt_tokens` / `completion_tokens` / `total_tokens` 是 OpenAI SDK 期待的形态;补不齐就破坏客户端零修改的承诺(s02 立的)。
 
 成品:`curl -X POST .../v1/chat/completions` 收到响应里有 `"usage": {"prompt_tokens": N, "completion_tokens": M, "total_tokens": N+M}`,OpenAI 路径走 `tiktoken` 准数,Claude/Gemini 走 `char/4` 兜底。后续 s07 在这条数 token 的链路上接预扣+结算,s08 在闸门后接按用户限速,这一层定型后整条链路就知道"每一笔该花多少钱"。
 
@@ -50,18 +50,18 @@
 
 下面这幅图把上面三件痛点各放到一个角色里:
 
-- **`Client` (调用方)** —— 在装 s06 之前,这是"只管发请求、账单等回包再说"的角色;装上之后,这事被中继解了——Client 只管发 `prompt`,token 数和 `usage` 都由中继填好回吐。
-- **`Relay` (本章要写的数 token + 合并 usage)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:handler 调 `tokenizer.count_prompt(messages, model)` 拿到 `prompt_tokens`(OpenAI 走 `tiktoken`,其它走 `char/4`);转发上游后,如果回了完整 `usage` 就用它,缺失就用本地估算值 + 回复长度合成一份。Client 看不见上游报了多少 token,Upstream 看不见本地估了多少。
-- **`Upstream` (LLM 厂商)** —— 服务提供方。它在响应里带 `usage` 字段就如实回,缺失也无所谓——中继会用 `max(上游, 本地)` 兜底,账单永远算得清。
+- **`Client` (调用方)** —— 在装 s06 之前,这是"只管发请求、账单等回包再说"的角色;装上之后,这事被网关解了——Client 只管发 `prompt`,token 数和 `usage` 都由网关填好回吐。
+- **`Gateway` (本章要写的数 token + 合并 usage)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:handler 调 `tokenizer.count_prompt(messages, model)` 拿到 `prompt_tokens`(OpenAI 走 `tiktoken`,其它走 `char/4`);转发上游后,如果回了完整 `usage` 就用它,缺失就用本地估算值 + 回复长度合成一份。Client 看不见上游报了多少 token,Upstream 看不见本地估了多少。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。它在响应里带 `usage` 字段就如实回,缺失也无所谓——网关会用 `max(上游, 本地)` 兜底,账单永远算得清。
 
-下面这张 ASCII 流程图把"先计数再转发"画出来,和下面那张架构图相对照——上面这张是单跳时序,下面那张是角色拓扑,中间那块都是 s06 中继(预热计数 + 合并 upstream usage):
+下面这张 ASCII 流程图把"先计数再转发"画出来,和下面那张架构图相对照——上面这张是单跳时序,下面那张是角色拓扑,中间那块都是 s06 网关(预热计数 + 合并 upstream usage):
 
 ```
 Client ──POST──▶ s06 ──count prompt──▶ Upstream ──reply──▶ merge usage ──▶ Client
                                   └── 非 OpenAI 走 char/4 兜底
 ```
 
-下面这张架构图给读者一幅全局鸟瞰——图里仍是 `Client / s06 / Upstream` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块 `s06` 中继就是本章要写的——预热计数 + 合并上游 usage:
+下面这张架构图给读者一幅全局鸟瞰——图里仍是 `Client / s06 / Upstream` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块 `s06` 网关就是本章要写的——预热计数 + 合并上游 usage:
 
 ![architecture](images/architecture.svg)
 

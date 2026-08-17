@@ -14,12 +14,12 @@
 
 ## 本章要做什么
 
-现在场景是:一个拥有 100 token 配额的用户,可以同时提交 100 个并行请求,每个 100 token。如果每条请求在调上游之前都按 100 token 做估算,这 100 条全部会通过配额闸门——然后真正打完上游才知道真实花费。这就是 `spend-after`(调完再扣的反模式,对比"调前预扣")模式的天然漏洞。要解决这个——**我们改用预扣+结算两阶段**:调上游前按 s06 的估算值乘单价先预扣一个偏宽的额度(不够直接 `402 Payment Required` 不打上游),上游回包后用真实 `usage` 跟预扣值做差额结算——少用退、超用补、整笔失败原样退。本章就把这两刀写出来:
+要解决这个——**我们改用预扣+结算两阶段**:调上游前按 s06 的估算值乘单价先预扣一个偏宽的额度(不够直接 `402 Payment Required` 不打上游),上游回包后用真实 `usage` 跟预扣值做差额结算——少用退、超用补、整笔失败原样退。本章就把这两刀写出来:
 
-1. **写一个 `quota` 模块 —— 为什么要有自己的模块而不是直接扣字典**:`reset()` / `set_balance(uid, n)` / `get_balance(uid)` / `deduct(uid, n) -> bool`(原子条件扣减,余额不足返 `False` 不部分扣)/ `refund(uid, n)` / `settle(uid, pre, actual)`(退还或补差额,原子返回实扣)。**为什么扣减必须在 `threading.Lock` 下原子**:同用户并发请求不能"双花",先读再写会被两个 in-flight 请求同时穿过;**为什么用 `threading.Lock` 而不是 `asyncio.Lock`**:配额算式是纳秒级,加锁开销可忽略,`asyncio.Lock` 在每个 `await` 点要让出,划不来。
-2. **handler 调前算 estimate + 预扣 —— 为什么用偏宽的估算**:`estimate = (prompt_tokens + expected_completion) * RATE_PER_TOKEN`,`expected_completion` 走 `req.max_tokens or 256`。**为什么没 `max_tokens` 时按 256**:大多数回复比 256 短,所以用户常常收到小笔退款——偏宽是为了闸门能在请求飞行前拦住明显不够余额的用户,宁多勿少。
-3. **handler 调后算 actual + 结算 —— 为什么差额要双向找齐**:成功路径 `actual = (max(上游 pt, 本地 pt) + ct) * RATE`,`settle(uid, estimate, actual)` 内部 `diff = actual - estimate`,`diff>0` 补差额(余额不够 deduct 静默失败——生产是 billing 异常)、`diff<0` 退差额。**为什么 `max(上游 pt, 本地 pt)`**:上游 tokenizer 和本地略有差异,取较大值保证本地账目不被悄悄少扣;**为什么 `ct` 缺失时回退到 `max(1, len(reply)//4)` 而不是 0**:`pt` 是输入我们没法本地算,`ct` 是输出我们已经拿到内容,本地估一下总比 0 准。
-4. **失败路径整笔 refund —— 为什么不能"扣就扣了"**:网络错(`httpx.HTTPError`)、`r.status_code >= 400`、模型名错(`pick_provider` 抛 `ValueError`)——任一失败都把整份预扣 `refund` 回去。**为什么失败也走 refund**:用户没有拿到任何有效回复,按 token 收钱没道理;**为什么不是事后异步对账**:对账窗口越大,并发漏洞越大——同步 refund 让用户余额状态始终和"成功收到的回复数"对得上。
+1. **写一个 `quota` 模块**。直接扣字典不行——余额并发改会双花,所以要自己的模块。函数清单:`reset()` / `set_balance(uid, n)` / `get_balance(uid)` / `deduct(uid, n) -> bool`(原子条件扣减,余额不足返 `False` 不部分扣)/ `refund(uid, n)` / `settle(uid, pre, actual)`(退还或补差额,原子返回实扣)。扣减必须在 `threading.Lock` 下原子——同用户并发请求不能"先读再写"被两个 in-flight 同时穿过。用 `threading.Lock` 而不是 `asyncio.Lock`,因为配额算式是纳秒级,加锁开销可忽略;`asyncio.Lock` 在每个 await 点要让出,划不来。
+2. **handler 调前算 estimate + 预扣**。偏宽估算让闸门能在请求飞行前拦住不够余额的用户,宁多勿少。`estimate = (prompt_tokens + expected_completion) * RATE_PER_TOKEN`,`expected_completion` 走 `req.max_tokens or 256`——没传 `max_tokens` 时按 256 兜底,大多数回复比 256 短,用户会常常收到小笔退款。
+3. **handler 调后算 actual + 结算**。差额要双向找齐——少用退、超用补,跟上游报的 usage 对得上。`actual = (max(上游 pt, 本地 pt) + ct) * RATE`,`settle(uid, estimate, actual)` 内部 `diff = actual - estimate`,`diff>0` 补差额(余额不够 deduct 静默失败——生产是 billing 异常)、`diff<0` 退差额。`max(上游 pt, 本地 pt)` 是因为上游 tokenizer 和本地略有差异,取较大值保证本地账目不被悄悄少扣;`ct` 缺失时回退到 `max(1, len(reply)//4)` 而不是 0,因为 `pt` 是输入没法本地算,`ct` 是输出我们已经拿到字节,本地估一下总比 0 准。
+4. **失败路径整笔 refund**。网络错、4xx、5xx、`pick_provider` 抛错都算失败,预扣原样退回——用户不为失败调用付费。失败也走 refund 是因为用户没拿到任何有效回复,按 token 收钱没道理;同步退款不是为了"快",而是为了不靠事后异步对账——对账窗口越大,并发漏洞越大。
 
 成品:`curl -X POST .../v1/chat/completions` 成功时响应里带 `"usage"` + `"quota_charged": N`;调一次 `GET /quota/u1` 看到余额减少了一笔实际花费(可能比预扣少,差额已退);余额为 0 时直接 `402 insufficient quota`,上游一次都不打。后续 s08 在闸门后接按用户的限速,s09 把 `_balances` 持久化进 SQLite 走事务化扣减。
 
@@ -38,10 +38,10 @@
 
 下面这幅图把这件痛点各放到四个角色里:
 
-- **`Client` (调用方)** —— 在装 s07 之前,这是"打完了才扣钱、扣不下时一脸懵"的角色;装上之后,这事被中继解了——Client 只管发请求,余额不够直接 `402` 打回来,失败调用自动原样退回。
-- **`Relay` (本章要写的预扣 + 调后结算)** —— 把痛的解决动作集中放在这里:handler 调 `quota.deduct(uid, estimate)` 预扣 → 调上游 → 成功路径用 `quota.settle(uid, pre, actual)` 退/补差额(少用退、超用补),失败路径用 `quota.refund(uid, estimate)` 整笔退回。整段在 `threading.Lock` 下原子。
+- **`Client` (调用方)** —— 在装 s07 之前,这是"打完了才扣钱、扣不下时一脸懵"的角色;装上之后,这事被网关解了——Client 只管发请求,余额不够直接 `402` 打回来,失败调用自动原样退回。
+- **`Gateway` (本章要写的预扣 + 调后结算)** —— 把痛的解决动作集中放在这里:handler 调 `quota.deduct(uid, estimate)` 预扣 → 调上游 → 成功路径用 `quota.settle(uid, pre, actual)` 退/补差额(少用退、超用补),失败路径用 `quota.refund(uid, estimate)` 整笔退回。整段在 `threading.Lock` 下原子。
 - **`Quota` (内存 dict + Lock,`quota.py`)** —— 本章新引入的进程内存储。`_balances: dict[uid → int]`,所有 `deduct` / `refund` / `settle` 操作在 `threading.Lock` 下原子进行——同用户并发请求不能"双花"。进程一重启配额清零,s09 接 SQLite 持久化。
-- **`Upstream` (LLM 厂商)** —— 服务提供方。它在响应里带 `usage` 就如实回,中继按 `max(上游 pt, 本地 pt) + ct` 算出真实花费做结算;网络错或 4xx/5xx 中继视为失败、整笔退回。
+- **`Upstream` (LLM 厂商)** —— 服务提供方。它在响应里带 `usage` 就如实回,网关按 `max(上游 pt, 本地 pt) + ct` 算出真实花费做结算;网络错或 4xx/5xx 网关视为失败、整笔退回。
 
 ## 工作原理
 

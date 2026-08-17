@@ -11,19 +11,19 @@
 `s02` 用 `r = await client.post(...)` 等整个响应,然后 `r.json()`。对
 于一条产出 200 个 token、按 30 tok/s 的聊天补全来说,客户端在将近 7
 秒里只能盯着空白屏。逐 token 推送是让聊天产品"看起来活"的方式;没
-有它,任何建立在中继上的聊天 UX 都破了。
+有它,任何建立在网关上的聊天 UX 都破了。
 
 上游本身说的就是 Server-Sent Events(SSE)——`Content-Type: text/
 event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n`。
-中继不能缓存、解析、重塑这些字节;必须把它们一路端出去。
+网关不能缓存、解析、重塑这些字节;必须把它们一路端出去。
 
 ## 本章要做什么
 
-现在场景是:s02 把整个 JSON body 攒齐再回吐——200 个 token、按 30 tok/s 的回复,客户端将近 7 秒只能盯空白屏。生产聊天的 UX 不能接受这个延迟。要解决这个——**我们让 s02 那条路径支持流式(逐 token 推送:一个 token 一小段字节,客户端每收到一段就立刻渲染)**,让聊天"看起来活"。本章就在 s02 那条路径上把流式打开:
+要解决这个——**我们让 s02 那条路径支持流式(逐 token 推送:一个 token 一小段字节,客户端每收到一段就立刻渲染)**,让聊天"看起来活"。本章就在 s02 那条路径上把流式打开:
 
-1. **按 `req.stream` 分两条路 —— 为什么必须分支**:非流式请求(s02 已实现)是"攒齐再回 JSON",流式请求是"转发第一个字节就开始推"。**为什么不能两路合并**:流式路径用的是 `httpx.AsyncClient.stream(...)` + `StreamingResponse` 的异步生成器,非流式用的是 `await client.post(...)` + `r.json()`,前者不缓存上游 body、后者必须等到上游关闭连接,合并就是同时要两条矛盾策略。
-2. **流式走 `httpx.AsyncClient.stream(...)` + `aiter_bytes()` —— 为什么是这套 API**:SSE 是 HTTP 长连接 + 文本帧,**为什么必须用 httpx.stream 的 context manager**:`aiter_bytes()` 只能在 `stream(...)` 返回的响应对象上调,普通 `client.post()` 等到 body 完整才返回对象、等于把流式退化成 s02;**为什么是 `aiter_bytes()` 而不是 `aiter_text()`**:我们不解析、不重塑帧,逐字节原样转出,字节边界错了才会把 `data: {...}\n\n` 撕成两半。
-3. **响应头加 `cache-control: no-cache` 和 `x-accel-buffering: no` —— 为什么两都要写**:前者禁止中间节点缓存一份开放式流,**为什么这个头不能省**:中间代理看到长连接默认按"可缓存资源"处理,会一口气攒到阈值再放行;**为什么还要 `x-accel-buffering: no`**:这是 nginx 的专属指令(`x-accel-buffering` 是 nginx 的反向代理缓冲开关),关掉 `proxy_buffering`,nginx 就不会卡住 SSE body,客户端才看得到逐字。
+1. **按 `req.stream` 分两条路**。非流式请求(s02 已实现)是"攒齐再回 JSON",流式请求是"转发第一个字节就开始推"。流式路径用的是 `httpx.AsyncClient.stream(...)` + `StreamingResponse` 的异步生成器,非流式用的是 `await client.post(...)` + `r.json()`——前者不缓存上游 body、后者必须等到上游关闭连接,合并就是同时要两条矛盾策略,所以必须分支。
+2. **流式走 `httpx.AsyncClient.stream(...)` + `aiter_bytes()`**。SSE 是 HTTP 长连接 + 文本帧。`aiter_bytes()` 只能在 `stream(...)` 返回的响应对象上调,普通 `client.post()` 等到 body 完整才返回对象、等于把流式退化成 s02,所以必须用 httpx.stream 的 context manager。我们不解析、不重塑帧,逐字节原样转出——字节边界错了才会把 `data: {...}\n\n` 撕成两半,所以选 `aiter_bytes()` 而不是 `aiter_text()`。
+3. **响应头加 `cache-control: no-cache` 和 `x-accel-buffering: no`**。因为中间代理看到长连接默认按"可缓存资源"处理,会一口气攒到阈值再放行——`cache-control: no-cache` 禁止中间节点把开放式流当缓存分发;`x-accel-buffering: no`(nginx 的专属指令,关掉 `proxy_buffering`)则防止 nginx 卡住 SSE body、让客户端看不到逐字。两者缺一不可。
 
 成品:`curl -N -X POST .../v1/chat/completions -d '...,"stream":true}'` 看到一字一字往出冒,首字延迟几百毫秒;不带 `stream` 时仍走 s02 的 JSON 路径。后续 s04 在这条流式通道下挂 Claude/Gemini 适配器,逐厂商的 SSE 帧形态差异由那一章解决。
 
@@ -43,19 +43,19 @@ event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n
 下面这幅图把这件痛放到三个角色里:
 
 - **`Client` (流式调用方)** —— 在 s02 那条攒齐路径上,这是被 7 秒空白屏困住的角色;切流式之后,这事被网关解了——客户端读一个 chunk 渲染一个 chunk。
-- **`Relay` (本章要写的流式分支)** —— 把痛点的解决动作集中放在这里:看到 `stream=true` 就开 `httpx.AsyncClient.stream(...)` 上下文,用 `aiter_bytes()` 拿到字节立刻 `yield` 给 FastAPI 的 `StreamingResponse`。Client 拿到首字就几百毫秒。
-- **`Upstream` (SSE)** —— OpenAI 那家按 `data: {...}\n\n` 一帧接一帧推,最后是 `data: [DONE]\n\n`。中继不做解析、不重塑,把字节原样透传。
+- **`Gateway` (本章要写的流式分支)** —— 把痛点的解决动作集中放在这里:看到 `stream=true` 就开 `httpx.AsyncClient.stream(...)` 上下文,用 `aiter_bytes()` 拿到字节立刻 `yield` 给 FastAPI 的 `StreamingResponse`。Client 拿到首字就几百毫秒。
+- **`Upstream` (SSE)** —— OpenAI 那家按 `data: {...}\n\n` 一帧接一帧推,最后是 `data: [DONE]\n\n`。网关不做解析、不重塑,把字节原样透传。
 
 下面这张 ASCII 时序图把流式响应一口气画出来——和下面那张架构图相对照:上面这张是端到端时序(chunk 随时间一条一条往下走),下面那张是角色拓扑(谁在哪、消息怎么流):
 
 ```
-Client ──POST /v1/chat/completions {stream:true}──▶  Relay  ──POST FORWARD_TARGET──▶  Upstream
+Client ──POST /v1/chat/completions {stream:true}──▶    Gateway  ──POST FORWARD_TARGET──▶  Upstream
         ◀──── SSE chunk 1 ────                   ◀──── SSE chunk 1 ────
         ◀──── SSE chunk 2 ────                   ◀──── SSE chunk 2 ────
         ◀──── SSE [DONE] ────                    ◀──── SSE [DONE] ────
 ```
 
-下面这张架构图给读者一幅全局鸟瞰——图里仍是 `Client / Relay / Upstream` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 SSE 流式 chunk),中间那一块就是本章要写的 Relay,拿到一个 chunk 立刻 yield,边流边推:
+下面这张架构图给读者一幅全局鸟瞰——图里仍是 `Client / Gateway / Upstream` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 SSE 流式 chunk),中间那一块就是本章要写的 Gateway,拿到一个 chunk 立刻 yield,边流边推:
 
 ![architecture](images/architecture.svg)
 
@@ -133,7 +133,7 @@ curl -N -X POST http://localhost:8003/v1/chat/completions \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"stream":true}'
 ```
 
-不设 `UPSTREAM_OPENAI_KEY` 时,上游返回 401——这正好说明中继在向前转发。配上真实 key 就能拿到流式文本。
+不设 `UPSTREAM_OPENAI_KEY` 时,上游返回 401——这正好说明网关在向前转发。配上真实 key 就能拿到流式文本。
 
 ## → new-api 源码
 
@@ -149,7 +149,7 @@ channel adaptor 知道每家厂商的帧形态。我们这里先压成一段直�
 
 ## 本章不做什么
 
-- **没有帧解析或重组** (按 SSE 帧边界重组字节)——我们转发原始字节;如果哪天上游改了 SSE 形态 (Anthropic 用 `event:` 行), 中继就会破。→ s04 引入按厂商的适配器。
+- **没有帧解析或重组** (按 SSE 帧边界重组字节)——我们转发原始字节;如果哪天上游改了 SSE 形态 (Anthropic 用 `event:` 行), 网关就会破。→ s04 引入按厂商的适配器。
 - **没有客户端断连向上游传播** (客户端中途挂断时同步关闭上游请求)——如果调用方中途挂断, 我们就一直从上游读到它关闭, 白花 token 和钱。→ s08 把 `request.is_disconnected()` 接进生成器。
 - **没有鉴权、配额、日志、指标** (按用户计费 / 调用历史 / 监控)——任何能访问 8003 端口的人都能花 key, 看不到调用历史。→ s05、s07、s11、s16。
 

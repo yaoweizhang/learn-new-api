@@ -18,12 +18,12 @@
 
 ## 本章要做什么
 
-现在场景是:之前所有章节里,我们的上游都是写死在代码里的:要么 `s04_multi_provider` 里用一个简单的 if/elif 把 `model` 前缀映射到 base_url,要么 `s05` 用一张内存表把 API key 和用户绑死。一旦系统要对外服务,立刻就遇到三个问题:没法动态加渠道、没法做容灾、没法区分优先级。要解决这个——**我们把这层配置搬到一张管理员可改的内存渠道表**(**渠道表 / Channel 表**(每个 channel 是 new-api 里"一条独立的上游通道":一份 provider + base_url + weight + priority 配置,管理员通过 HTTP 增删改查,注册后立刻生效;选路时从这张表里按规则挑一条)——多渠道 + 选路,同一客户端就能跨多账号。本章把这张表和选路算法写出来:
+要解决这个——**我们把这层配置搬到一张管理员可改的内存渠道表**(**渠道表 / Channel 表**(每个 channel 是 new-api 里"一条独立的上游通道":一份 provider + base_url + weight + priority 配置,管理员通过 HTTP 增删改查,注册后立刻生效;选路时从这张表里按规则挑一条)——多渠道 + 选路,同一客户端就能跨多账号。本章把这张表和选路算法写出来:
 
-1. **写一张内存渠道表 `channels.py` —— 为什么是内存表先于数据库**: `Channel` 是 `@dataclass`,字段 `id / name / provider / base_url / weight / priority / enabled / healthy`;`_channels: dict[int, Channel]` + `threading.Lock` 保护并发读写;公开函数只有 `reset_channels / create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for`。**为什么不先接 SQLite**:渠道是低频变更的运营数据,先用进程内 dict 把"注册即生效"的契约做出来,等 s12 切到持久化一并迁移——先把"动态配置"这件事讲透,不要让数据库分心。
-2. **`pick_channel_for(model_name)` 三步算法 —— 为什么是 priority 优先于 weight**: 先按 `enabled and healthy and provider == _provider_for_model(model_name)` 过滤;然后取最小 `priority`(数字越小越优先,`priority=0` 是最高档);最后在档内按 `weight` 做 `random.choices(..., k=1)[0]` 加权随机。**为什么 priority 先于 weight**: priority 是"主备层级",weight 是"同档内分摊"——主账号全挂之前,备用账号即使 weight=1000 也不该接流量;反过来同档内若按 first-fit,所有请求都会落到最高 weight 那条,其它渠道闲着。
-3. **挂两条管理员路由 `/admin/channels` —— 为什么先 CRUD 不接转发**: `POST /admin/channels` 注册渠道、`GET /admin/channels` 列出。**为什么不直接接 `/v1/chat/completions`**:本章要演示的是"动态注册 + 选路算法",把转发层一起拉进来会让 diff 翻倍,选路 bug 和转发 bug 会混在一起排查——`pick_channel_for` 的契约和"用这条渠道去打上游"的契约分开讲更清楚。
-4. **鉴权闸门 `_require_admin` —— 为什么用 `dependencies=[...]` 列表形式**: 沿用 s09 的 JWT,自己额外要求 `claims["is_admin"]` 必须为 True,否则 403。**为什么不用 typed parameter**: `_require_admin` 自己完成"读 header → 解码 → is_admin 检查"一整条链路,handler 函数本身只关心业务——闸门用法挂在 `dependencies=[Depends(_require_admin)]` 上更干净,也跟 s08 之前 `request.state.principal` 的模式保持分离。
+1. **写一张内存渠道表 `channels.py`**。`Channel` 是 `@dataclass`,字段 `id / name / provider / base_url / weight / priority / enabled / healthy`;`_channels: dict[int, Channel]` + `threading.Lock` 保护并发读写;公开函数只有 `reset_channels / create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for`。渠道是低频变更的运营数据,先用进程内 dict 把"注册即生效"的契约做出来,等 s12 切到持久化一并迁移——先把"动态配置"这件事讲透,不要让数据库分心,所以先不接 SQLite。
+2. **`pick_channel_for(model_name)` 三步算法**。先按 `enabled and healthy and provider == _provider_for_model(model_name)` 过滤;然后取最小 `priority`(数字越小越优先,`priority=0` 是最高档);最后在档内按 `weight` 做 `random.choices(..., k=1)[0]` 加权随机。Priority 先于 weight 是因为 priority 是"主备层级",weight 是"同档内分摊"——主账号全挂之前,备用账号即使 weight=1000 也不该接流量;反过来同档内若按 first-fit,所有请求都会落到最高 weight 那条,其它渠道闲着。
+3. **挂两条管理员路由 `/admin/channels`**。`POST /admin/channels` 注册渠道、`GET /admin/channels` 列出。本章要演示的是"动态注册 + 选路算法",把转发层一起拉进来会让 diff 翻倍,选路 bug 和转发 bug 会混在一起排查——`pick_channel_for` 的契约和"用这条渠道去打上游"的契约分开讲更清楚,所以先 CRUD 不接转发。
+4. **鉴权闸门 `_require_admin`**。沿用 s09 的 JWT,自己额外要求 `claims["is_admin"]` 必须为 True,否则 403。`_require_admin` 自己完成"读 header → 解码 → is_admin 检查"一整条链路,handler 函数本身只关心业务——闸门用法挂在 `dependencies=[Depends(_require_admin)]` 上更干净,也跟 s08 之前 `request.state.principal` 的模式保持分离,所以用 `dependencies=[...]` 列表形式,不用 typed parameter。
 
 成品:`POST /admin/channels` 注册 `openai-primary`(weight=100, priority=0)和 `openai-backup`(weight=50, priority=1),后续 `pick_channel_for("gpt-4o-mini")` 会先把 `provider="openai"` 滤出来,再挑最低 priority 档(`openai-primary`),档内按 weight 加权随机(全 weight=0 时回退 round-robin,避免 `random.choices` 全零报错);`mark_unhealthy(cid)` 立即让该渠道被选路跳过。后续 s11 在每次请求时调 `pick_channel_for` 把调用日志落到渠道名;s13 把失败和 `mark_unhealthy` 接成"自动回血"回路。
 
@@ -35,10 +35,10 @@
 
 下面这幅图把上面三件痛点各放到一个角色里:
 
-- **`Client` (任意 OpenAI 客户端)** —— 在装上渠道表之前,这是被迫按厂商分流改代码的角色;装上之后,这事被中继隔走——客户端只认 `/v1/chat/completions`,它根本不知道有几条渠道。
-- **`Relay` (本章要写的渠道表 + 选路算法)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:`POST /admin/channels` 注册新渠道、`_channels: dict` 存所有渠道、`pick_channel_for(model)` 按 `(provider 匹配 → 最小 priority 档 → 档内 weight 加权随机)` 三步挑一条。Client 只发请求,Upstream 只接请求,选路细节藏在中继里。
+- **`Client` (任意 OpenAI 客户端)** —— 在装上渠道表之前,这是被迫按厂商分流改代码的角色;装上之后,这事被网关隔走——客户端只认 `/v1/chat/completions`,它根本不知道有几条渠道。
+- **`Gateway` (本章要写的渠道表 + 选路算法)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:`POST /admin/channels` 注册新渠道、`_channels: dict` 存所有渠道、`pick_channel_for(model)` 按 `(provider 匹配 → 最小 priority 档 → 档内 weight 加权随机)` 三步挑一条。Client 只发请求,Upstream 只接请求,选路细节藏在网关里。
 - **`Pool` (内存 `_channels: dict[int, Channel]`)** —— 本章新引入的运行时配置存储。每个 `Channel` 记录 `provider / base_url / weight / priority / enabled / healthy`,管理员通过 HTTP 增删改查,选路时按规则遍历;`mark_unhealthy(cid)` 立即把某条渠道踢出下次选择,挂载链上游不需要知道这件事。
-- **`Upstream` (LLM 厂商,可选多家)** —— 服务提供方。它不直接面对客户端,也不直接面对管理员——管理员把渠道条目写进 Pool,选路算法从中继发出请求时挑一家厂商转发过去。Client 看不见选路细节,Upstream 也不知道自己是被挑中的哪一条。
+- **`Upstream` (LLM 厂商,可选多家)** —— 服务提供方。它不直接面对客户端,也不直接面对管理员——管理员把渠道条目写进 Pool,选路算法从网关发出请求时挑一家厂商转发过去。Client 看不见选路细节,Upstream 也不知道自己是被挑中的哪一条。
 
 路由形状——下面这张块状路由表把本章要写的 2 条管理员接口压成一览:左是 `method + path`,中间是 header 必带 `Authorization: Bearer <admin jwt>`,右是返回码与返回体;本章要写的核心就是"注册 + 列出"两个动作:
 

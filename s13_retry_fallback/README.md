@@ -37,12 +37,12 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
 
 ## 本章要做什么
 
-现在场景是:走到第 12 章,网关把"上游能不能正常响应"这件事赌在一条渠道上:s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户端。上游只要抖一下(HTTP 503、502、504、429),客户端直接看到一个错误,然后自己重试。问题在于客户端重试是**全栈重试**——重试一次要把整条请求重新走一遍认证、计费、配额、日志、缓存,对上游看又是 2 次请求,第一次失败的账已经被记了一次。要解决这个——**我们把 chat 端点提到本地,跑一条渠道级 for 循环**:每条渠道最多被调一次,失败立刻 `mark_unhealthy` + 切下一条;所有渠道都失败才一次性返回错误。本章把这条韧性带写出来:
+要解决这个——**我们把 chat 端点提到本地,跑一条渠道级 for 循环**:每条渠道最多被调一次,失败立刻 `mark_unhealthy` + 切下一条;所有渠道都失败才一次性返回错误。本章把这条韧性带写出来:
 
-1. **写一段渠道级 for 循环 —— 为什么不用 tenacity 式重试**: `for ch in candidates:` 遍历 `ch_mod.list_channels()` 出来的每条渠道,`try: r = await client.post(url, content=body, headers=upstream_headers)`,成功直接 `return JSONResponse(translated)`,失败一条就 `ch_mod.mark_unhealthy(ch["id"]) + continue`。**为什么不原地重试**:重试同一渠道是在赌"上游马上就好",多渠道架构下赌输的代价是 0.6s 退避 + 3 次请求——下一步更好的赌是换一条渠道。**为什么不重试 4xx**:4xx 是请求格式错,重试一万次还是 4xx;明确重试白名单要按 provider 分情况配置,超出本章范围——多渠道架构的代价是每条之间多付一次失败成本,好处是单条故障不拖垮整次请求。
-2. **`mark_unhealthy` 即时生效 —— 为什么不做熔断器**: 失败当下把 `ch.healthy = False`,下一条请求 `for ch in candidates` 的 `if not ch["healthy"]: continue` 直接跳过。**为什么不做滞后判定**:熔断器模式要"30 秒内失败率 > 50% 才断开"避免单次毛刺误下线,本章 YAGNI——单次抖动就下线一条渠道至少省 600ms 重试时间,代价是偶尔把好渠道误下线 1 个请求窗口。要恢复得手动调 s10 的 `/admin/channels/{id}/enable`(s10 已实现,本章不重复);真实部署会跑后台健康检查任务定时 `mark_healthy`。
-3. **最后一道总闸 502 —— 为什么把最后一次错误原样回吐**: 所有渠道都失败时,如果最后一次是非 2xx,`raise HTTPException(status_code=last_status, detail=last_body)` 把 status 原样转给客户端(带上 `last_body` 方便排查);如果都是 transport error,则返 502 + 最后一次的错误文本。**为什么不吞掉 status**:客户端在网关层看到 429 还能退避、看到 502 知道"上游挂了/网关全部回落失败",被洗成统一 500 反而丢信息。**为什么失败时 `refund(p.user_id, estimate)`**:全失败的请求不该被算钱,和 s07 的失败整笔退款契约保持一致。
-4. **chat 端点提到本地挡挂载 —— 为什么不能继续走 s12 → s11 → s10 → s09 → s08 链**: `@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前,Starlette 按顺序匹配路由,本地路由直接胜出。**为什么替换而不是叠加**:s13 是 chat 端点的"带回落"版本,叠加会在 s08 的旧 chat 路由 + s13 的本地路由之间产生 split-brain(一次请求只走一条)。**但 s12 的 `/admin/cache/stats` 仍可达**:本地没定义它,Starlette 接着往下走到挂载链,s12 自己 match 上。
+1. **写一段渠道级 for 循环**。`for ch in candidates:` 遍历 `ch_mod.list_channels()` 出来的每条渠道,`try: r = await client.post(url, content=body, headers=upstream_headers)`,成功直接 `return JSONResponse(translated)`,失败一条就 `ch_mod.mark_unhealthy(ch["id"]) + continue`。重试同一渠道是在赌"上游马上就好",多渠道架构下赌输的代价是 0.6s 退避 + 3 次请求——下一步更好的赌是换一条渠道,所以不原地重试。4xx 是请求格式错,重试一万次还是 4xx;明确重试白名单要按 provider 分情况配置,超出本章范围——多渠道架构的代价是每条之间多付一次失败成本,好处是单条故障不拖垮整次请求,所以不重试 4xx。
+2. **`mark_unhealthy` 即时生效**。失败当下把 `ch.healthy = False`,下一条请求 `for ch in candidates` 的 `if not ch["healthy"]: continue` 直接跳过。熔断器模式要"30 秒内失败率 > 50% 才断开"避免单次毛刺误下线,本章 YAGNI——单次抖动就下线一条渠道至少省 600ms 重试时间,代价是偶尔把好渠道误下线 1 个请求窗口,所以不做熔断器。要恢复得手动调 s10 的 `/admin/channels/{id}/enable`(s10 已实现,本章不重复);真实部署会跑后台健康检查任务定时 `mark_healthy`。
+3. **最后一道总闸 502**。所有渠道都失败时,如果最后一次是非 2xx,`raise HTTPException(status_code=last_status, detail=last_body)` 把 status 原样转给客户端(带上 `last_body` 方便排查);如果都是 transport error,则返 502 + 最后一次的错误文本。客户端在网关层看到 429 还能退避、看到 502 知道"上游挂了/网关全部回落失败",被洗成统一 500 反而丢信息——所以不吞掉 status。全失败的请求不该被算钱,失败时 `refund(p.user_id, estimate)`,和 s07 的失败整笔退款契约保持一致。
+4. **chat 端点提到本地挡挂载**。`@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前,Starlette 按顺序匹配路由,本地路由直接胜出——所以不能继续走 s12 → s11 → s10 → s09 → s08 链。s13 是 chat 端点的"带回落"版本,叠加会在 s08 的旧 chat 路由 + s13 的本地路由之间产生 split-brain(一次请求只走一条),所以替换而不是叠加。s12 的 `/admin/cache/stats` 仍可达——本地没定义它,Starlette 接着往下走到挂载链,s12 自己 match 上。
 
 成品:两条渠道——primary 返 503、secondary 返 200,客户端拿到 200,`mock.calls.call_count == 2`(每条渠道各被调 1 次,锁住"立即回落不重试"这个不变量);全失败时一次性返回最后一次的错误给客户端,所有预扣配额整笔 refund。后续 s14 把日志和渠道状态拉到 Jinja2 后台;真实部署把 `mark_unhealthy` 改成 GORM 写库 + Redis 缓存,后台健康检查任务定时 `mark_healthy`。
 
@@ -64,7 +64,7 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
 
 下面这幅图把这件痛点各放到五个角色里:
 
-- **`Client` (调用方)** —— 在装上 s13 之前,这是被"上游一次抖动就 502 + 客户端全栈重试"困住两难的角色;装上之后,这事被中继解——Client 只管发请求,上游瞬时失败在中继内部被"换下一条"消化掉,对客户端看永远是 200 或最后一手的 502。
+- **`Client` (调用方)** —— 在装上 s13 之前,这是被"上游一次抖动就 502 + 客户端全栈重试"困住两难的角色;装上之后,这事被网关解——Client 只管发请求,上游瞬时失败在网关内部被"换下一条"消化掉,对客户端看永远是 200 或最后一手的 502。
 - **`Relay` (本章要写的本地 chat 路由)** —— 把痛的解决动作集中放在这里:`@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前,把 s12→s11→s10→s09→s08 那条挂载链的同名路由挡住;handler 内 `async with httpx.AsyncClient(timeout=30.0) as client:` 开连接池 → `for ch in candidates:` 遍历 → `try: await client.post(url, content=body, headers=upstream_headers)` 调一条,成功直接 `return JSONResponse(translated)`,失败一条就 `ch_mod.mark_unhealthy(ch["id"]) + continue`。Client 不知道有几条渠道,Pool 不知道请求路径,Upstream 看不见其它渠道存在。
 - **`Channels pool` (s10 的内存 dict)** —— 本章直接复用 s10 的 `_channels: dict[int, Channel] + threading.Lock`。每次进入 handler 调 `ch_mod.list_channels()` 拿快照;`mark_unhealthy(cid)` 立即把该渠道 `healthy` 字段置 False——下一条请求 `if not ch["healthy"]: continue` 直接跳过。
 - **`c1` / `c2` / `c3` (三条候选渠道)** —— 实际可选的多家上游。按 list_channels 顺序遍历(本章 channel 数量小 < 10 条, 按注册顺序够用),优先级 / weight 在 s10 选路时已排过;本章直接信任 caller 传入的顺序。c1 失败 → mark_unhealthy(c1) + 切到 c2;c2 失败 → 切到 c3。

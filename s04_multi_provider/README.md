@@ -16,13 +16,11 @@ OpenAI 时一切相安无事——但 OpenAI 期望的 body(`model`、`messages`
 
 ## 本章要做什么
 
-s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。把 OpenAI 写死在上游,任何一家挂了整条服务就 502。
+s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。把 OpenAI 写死在上游,任何一家挂了整条服务就 502。**我们在 s02 转发循环前面插一层"按前缀挑适配器"的抽象**:客户端始终说 OpenAI 形态,网关按 `model` 前缀分给三家上游,响应再翻回 OpenAI 形态,客户端不需要知道答的是哪家。本章就做这一件事:
 
-s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可能想打 Claude 或 Gemini,各家要的请求形态完全不一样——Claude 要 `x-api-key` + `anthropic-version` 头 + 顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组 + URL 查询串里的 API key。一份 OpenAI 形态 body 直接打到 Claude 上游会被回 `400 invalid request`。**我们在 s02 转发循环前面插一层"按前缀挑适配器"的抽象**:客户端始终说 OpenAI 形态,网关按 `model` 前缀分给三家上游,响应再翻回 OpenAI 形态,客户端不需要知道答的是哪家。本章就做这一件事:
-
-1. **定义 `Provider` 抽象基类 —— 为什么必须有这个抽象**:每家厂商 URL/auth/响应 schema 都不一样,**为什么不直接三个 if-else 写死在路由里**:加新厂商等于改路由;**为什么方法签名是 `(req) → (url, headers, body)` + `(payload) → dict`**:这样 `chat_completions` 路由只看到"出站 + 回包翻成 OpenAI 形态",不知道厂商是谁;翻牌写到 `from_upstream` 一个方法里,后续 s05/s07 加鉴权、配额只动路由这一层,不动适配器。
-2. **`pick_provider(model)` 按前缀分派 —— 为什么靠前缀而不是配置文件**:客户端发请求时 `model` 已经在 body 里了,运维不用另维护一份"哪个 model 走哪家"的配置,**为什么不靠 `(channel, model)` 元组**:`pick_provider` 按字符串前缀一行就能搞定,new-api 的 channel 表是另一种思路(s04 取舍节会展开)。
-3. **每个 provider 只翻译"真正不一致的部分" —— 为什么不全量重写**:`model` / `messages` 这种共有字段原样透传,只构造厂商专属的 `system` 字段、`max_tokens` 默认值、`contents[]` 数组形态;**为什么响应也翻**:客户端只认 OpenAI 形态,Claude 响应里的 `content[].text` 必须翻成 `choices[0].message.content`、Gemini 的 `candidates[].content.parts[].text` 也是;否则 s02 的客户端代码就破。
+1. **定义 `Provider` 抽象基类**:每家厂商 URL/auth/响应 schema 都不一样,如果写三个 if-else 进路由,加新厂商就得改路由。方法签名是 `(req) → (url, headers, body)` + `(payload) → dict`——`chat_completions` 路由只看到"出站 + 回包翻成 OpenAI 形态",不知道厂商是谁;翻牌写到 `from_upstream` 一个方法里,后续 s05/s07 加鉴权、配额只动路由这一层,不动适配器。
+2. **`pick_provider(model)` 按前缀分派**:客户端发请求时 `model` 已经在 body 里了,运维不用另维护一份"哪个 model 走哪家"的配置。按字符串前缀一行就能搞定,new-api 的 channel 表是另一种思路(s04 取舍节会展开)。
+3. **每个 provider 只翻译"真正不一致的部分"**:`model` / `messages` 这种共有字段原样透传,只构造厂商专属的 `system` 字段、`max_tokens` 默认值、`contents[]` 数组形态。响应也得翻——客户端只认 OpenAI 形态,Claude 响应里的 `content[].text` 必须翻成 `choices[0].message.content`、Gemini 的 `candidates[].content.parts[].text` 也是;否则 s02 的客户端代码就破。
 
 成品:一份 OpenAI 形态客户端代码能同时调 OpenAI / Anthropic / Gemini,客户端零修改,单家挂不影响另外两家。后续 s05 在这一章分派表外面加 API key 鉴权,s07 加按用户配额,s11 把每个 provider 的调用日志分别落表。
 
@@ -40,17 +38,17 @@ s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可
 下面这幅图把上面两件痛点各放到一个角色里:
 
 - **`Client` (任意 OpenAI 客户端)** —— 装上分派层之前,这是被迫按厂商分流改代码的角色;装上之后,这事被网关解了——客户端发什么 model,网关就派给哪家,客户端零修改。
-- **`Relay` (本章要写的分派层)** —— 把痛点 #1 #2 的解决动作集中放在这里:按 `model` 前缀挑 provider,用 `to_upstream` 把 OpenAI body 翻成各家方言,用 `from_upstream` 把各家响应翻回 OpenAI 形态。Client 始终说 OpenAI 形态,Upstream 始终说自家形态。
+- **`Gateway` (本章要写的分派层)** —— 把痛点 #1 #2 的解决动作集中放在这里:按 `model` 前缀挑 provider,用 `to_upstream` 把 OpenAI body 翻成各家方言,用 `from_upstream` 把各家响应翻回 OpenAI 形态。Client 始终说 OpenAI 形态,Upstream 始终说自家形态。
 - **`Provider` (OpenAI / Claude / Gemini 三选一)** —— 厂商专属的执行者。OpenAI 形态透传;Claude 加 `x-api-key` + `anthropic-version` + 顶层 `max_tokens`;Gemini 改 `contents[]` 形态 + URL 查询串里的 API key。单家挂了不影响另外两家。
 
 下面这张 ASCII 流程图把分派路径压成一行——和下面那张架构图相对照:上面这张是单跳时序,下面那张是角色拓扑,中间那块都是"按模型名前缀选":
 
 ```
-Client ──POST /v1/chat/completions──▶  Relay(按模型名前缀选)  ──POST upstream──▶  Provider
+Client ──POST /v1/chat/completions──▶  Gateway(按模型名前缀选)  ──POST upstream──▶  Provider
         ◀────── OpenAI JSON ─────────                                    ◀──── JSON ────
 ```
 
-下面这张架构图给读者一幅全局鸟瞰——图里有 `Client`、`Relay`、以及根据模型名前缀动态选出的 `Provider` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块就是本章要写的 Relay,按模型名挑 adapter:
+下面这张架构图给读者一幅全局鸟瞰——图里有 `Client`、`Gateway`、以及根据模型名前缀动态选出的 `Provider` 三个角色,箭头方向 = 请求/响应走向(`▶` 是请求,`◀` 是 JSON 响应),中间那一块就是本章要写的 Gateway,按模型名挑 adapter:
 
 ![architecture](images/architecture.svg)
 
@@ -139,7 +137,7 @@ curl http://localhost:8004/health
 # {"status":"ok"}
 ```
 
-三家厂商,一份请求形态(把对应的 `UPSTREAM_*_KEY` 设上才有真实回复;不设的话上游会回 401,我们正好希望中继把它原样透传):
+三家厂商,一份请求形态(把对应的 `UPSTREAM_*_KEY` 设上才有真实回复;不设的话上游会回 401,我们正好希望网关把它原样透传):
 
 ```sh
 # OpenAI
