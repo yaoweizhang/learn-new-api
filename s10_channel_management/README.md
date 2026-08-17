@@ -36,7 +36,7 @@
 - **`s10_channel_management/channels.py`** — 内存表 + 选路算法。`Channel` 是一个 `@dataclass`,字段:`id / name / provider / base_url / weight / priority / enabled / healthy`。`create_channel / list_channels / get_channel / mark_unhealthy / pick_channel_for` 是仅有的几个公开函数。所有读写都在 `threading.Lock` 保护下进行;进程内全局单例。
 - **`s10_channel_management/code.py`** — FastAPI 装配。挂载 s09 整块 app,在自己身上新增两条管理员路由:`POST /admin/channels`、`GET /admin/channels`。鉴权沿用 s09 的 JWT;用 `Depends(_require_admin)` 闸门把关,非管理员一律 `403 admin only`。
 
-下面这幅图把上面三件痛各放到一个角色里:
+下面这幅图把上面三件痛点各放到一个角色里:
 
 - **`Client` (任意 OpenAI 客户端)** —— 在装上渠道表之前,这是被迫按厂商分流改代码的角色;装上之后,这事被中继隔走——客户端只认 `/v1/chat/completions`,它根本不知道有几条渠道。
 - **`Relay` (本章要写的渠道表 + 选路算法)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:`POST /admin/channels` 注册新渠道、`_channels: dict` 存所有渠道、`pick_channel_for(model)` 按 `(provider 匹配 → 最小 priority 档 → 档内 weight 加权随机)` 三步挑一条。Client 只发请求,Upstream 只接请求,选路细节藏在中继里。

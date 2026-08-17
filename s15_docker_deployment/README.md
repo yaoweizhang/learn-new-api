@@ -49,7 +49,7 @@
 
 **首次引入**:**Docker 容器**(Docker 容器——把应用 + 运行时 + 依赖 + 配置打包成一个可移植、可复现的镜像,在任何 Docker host 上 `docker compose up` 就能跑起来的部署单元——本章首次提到这个术语,这里给出定义 + 角色)。它在本章里承担的是"一处构建、到处运行、失败自愈"的全套职责。
 
-下面这幅图把上面四件痛各放到三个角色里(三个**运行时参与者**,与上面列出的"三个部署文件"是两件事——部署文件是写在磁盘上的 Dockerfile / docker-compose.yml / code.py,运行时参与者是这些文件启动后进程里活生生的角色):
+下面这幅图把上面四件痛点各放到三个角色里(三个**运行时参与者**,与上面列出的"三个部署文件"是两件事——部署文件是写在磁盘上的 Dockerfile / docker-compose.yml / code.py,运行时参与者是这些文件启动后进程里活生生的角色):
 
 - **`Host` (Docker host,开发机/服务器)** —— 在装上 docker 之前,这是被迫拼 `python s14/code.py` + 写 systemd unit + 手敲 supervisor.conf 的角色;装上之后,这事被 docker-compose 隔走——只发一条 `docker compose up` 命令就完事。
 - **`Container` (本章要打的镜像 `gateway`, `python:3.11-slim` 单容器)** —— 把痛点 #1 #2 #3 #4 的解决动作集中放在这里:`Dockerfile` 锁 Python 版本 + pip 依赖、`HEALTHCHECK` 30s 探一次 `/healthz`、失败重启。一处镜像构建,所有环境(开发机/CI/生产)拿到的运行时都一致。

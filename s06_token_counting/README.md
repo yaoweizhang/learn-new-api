@@ -48,7 +48,7 @@
 - 否则就用 `prompt_tokens` 估算值 + `len(reply) // 4`(对完成
   token)合成一份 `usage`。
 
-下面这幅图把上面三件痛各放到一个角色里:
+下面这幅图把上面三件痛点各放到一个角色里:
 
 - **`Client` (调用方)** —— 在装 s06 之前,这是"只管发请求、账单等回包再说"的角色;装上之后,这事被中继解了——Client 只管发 `prompt`,token 数和 `usage` 都由中继填好回吐。
 - **`Relay` (本章要写的数 token + 合并 usage)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:handler 调 `tokenizer.count_prompt(messages, model)` 拿到 `prompt_tokens`(OpenAI 走 `tiktoken`,其它走 `char/4`);转发上游后,如果回了完整 `usage` 就用它,缺失就用本地估算值 + 回复长度合成一份。Client 看不见上游报了多少 token,Upstream 看不见本地估了多少。

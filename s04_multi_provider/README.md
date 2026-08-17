@@ -37,7 +37,7 @@ s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可
 
 路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应实现,然后沿着这个 provider 转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
 
-下面这幅图把上面两件痛各放到一个角色里:
+下面这幅图把上面两件痛点各放到一个角色里:
 
 - **`Client` (任意 OpenAI 客户端)** —— 装上分派层之前,这是被迫按厂商分流改代码的角色;装上之后,这事被网关解了——客户端发什么 model,网关就派给哪家,客户端零修改。
 - **`Relay` (本章要写的分派层)** —— 把痛点 #1 #2 的解决动作集中放在这里:按 `model` 前缀挑 provider,用 `to_upstream` 把 OpenAI body 翻成各家方言,用 `from_upstream` 把各家响应翻回 OpenAI 形态。Client 始终说 OpenAI 形态,Upstream 始终说自家形态。

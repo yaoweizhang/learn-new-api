@@ -40,7 +40,7 @@
 2. **结构化日志**:**structlog**(结构化日志库,把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki / Vector / Fluent Bit 直接吃 JSON 而不必写正则——本章首次提到这个术语,这里给出定义)——`structlog` 把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki 解析。
 3. **`trace_id` 透传**:**trace_id**(**Trace ID** —— 贯穿一次请求的唯一 ID,经 HTTP header 跨服务透传,运维可凭此在 `docker logs | jq` 里一次 select 出整条链路的所有日志条目——本章首次提到这个术语,这里给出定义)—— 一个 `BaseHTTPMiddleware` 读 `x-trace-id` 请求头(没有就生成),回写到响应头,并写进每条日志。
 
-下面这幅图把上面三件痛各放到四个机制里(四个**机制**——指标、结构化日志、trace_id 透传、Prom 拉取——读者看到的是这套机制的承担者,而不是"四个角色")——下面也按机制列出各自的实际承担者:
+下面这幅图把上面三件痛点各放到四个机制里(四个**机制**——指标、结构化日志、trace_id 透传、Prom 拉取——读者看到的是这套机制的承担者,而不是"四个角色")——下面也按机制列出各自的实际承担者:
 
 - **`Client` (调用方)** —— 在装上 trace + metrics 中间件之前,这是发完请求就忘、报障只能报"大概几点打的"的角色;装上之后,这事被中间件隔走——客户端可以自带 `x-trace-id`(后续请求),服务端无则自动生成;指标在内部累计,无需客户端参与。
 - **`Relay` (本章要写的 `TraceAndMetricsMiddleware`)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:`@app.middleware("http")` 装在自己 app 上、包裹挂载链;`dispatch` 流程:`trace_id = request.headers.get(...) or uuid.uuid4().hex` 写 `request.state.trace_id` → `start = perf_counter()` → `await call_next(request)` → `elapsed = ...` → 若 chat 路径 `REQUESTS.labels(model, status).inc()` + `LATENCY.labels(model).observe(elapsed)` → `log.info("request", trace_id=...)` → 响应头写 `x-trace-id`。中间件一处定义全局生效。

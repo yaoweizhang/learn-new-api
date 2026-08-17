@@ -38,7 +38,7 @@ s05 之前我们用一张"API key → 用户"的内存表来做鉴权。这种�
 - **HS256 JWT / JSON Web Token**(`s09_user_system/jwt_util.py`,JSON Web Token——把 claims 编码进 token、由签名密钥防篡改的可携带通行证;HS256 是签名算法之一,对称密钥)—— 登录成功签发 `access_token`;`/me` 用 `Depends(_current_user)` 解码 claims。签名密钥来自环境变量 `JWT_SECRET`,默认 `"change-me-in-production"` 仅用于本地开发。
 - **Token 黑名单**(`s09_user_system/token_blacklist.py`)—— 进程内集合,键为 `sha256(token).hexdigest()`。`_current_user` 在解码 JWT 之前先检查黑名单——JWT 是无状态的,所以"注销一个尚未到期的 token"必须靠显式 deny-list。
 
-下面这幅图把上面三件痛各放到一个角色里:
+下面这幅图把上面三件痛点各放到一个角色里:
 
 - **`Client` (浏览器表单 / curl)** —— 在装用户系统之前,这是"管理员手工发 key 才进得去"的角色;装上之后,这事被网关解了——填邮箱密码、拿到 JWT 通行证,后续任何请求都带 `Authorization: Bearer <jwt>`。
 - **`Relay` (本章要写的注册 + JWT + 双轨其一)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:`/auth/signup` 收邮箱密码、`bcrypt.hashpw` 存哈希、签 HS256 JWT 返通行令牌;`/auth/login` 验密码 + 重发令牌;`/me` 走 `Depends(_current_user)` 解码验签 + 查黑名单;`/auth/logout` 把 `sha256(token)` 加进内存 deny-list。chat 路径仍走 s05 Bearer API key——s09 不替换 s05,是给 dashboard / admin 这条面发"真身份"钥匙。
