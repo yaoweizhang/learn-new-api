@@ -14,7 +14,7 @@ s07 的配额控制的是**花费**——一个余额很足的用户仍可能把
 
 ## 本章要做什么
 
-要解决这个,在闸门之后、预扣之前插一份按用户的令牌桶:每个用户一份桶,容量 60、`refill_per_sec` 默认 1.0,每条请求消耗一枚令牌——令牌耗尽就 `429 Too Many Requests`,根本不到配额扣减和上游调用这一步。本章就把这条限速带写出来:
+现在场景是:s07 的配额控制的是**花费**——一个余额很足的用户仍可能把上游打爆,把同一代理上其它所有租户的延迟都拖下水。一个吵闹的调用方 1 秒打 100 次 `/v1/chat/completions`,所有其它租户的体验都会跟着劣化。配额说"这个用户能花多少";我们还得说"这个用户能以**这个速率**花"。要解决这个——**我们在闸门之后、预扣之前插一份按用户的令牌桶**(**令牌桶**(token bucket,一个装令牌的虚拟桶,按速率补、每请求扣一枚,耗尽就拒):每个用户一份桶,容量 60、`refill_per_sec` 默认 1.0,每条请求消耗一枚令牌——令牌耗尽就 `429 Too Many Requests`,根本不到配额扣减和上游调用这一步。本章就把这条限速带写出来:
 
 1. **写一个 `bucket` 模块 —— 为什么用 token bucket 而不是 fixed window**: `bucket.py` 暴露 `reset_buckets()` / `configure(uid, capacity, refill_per_sec)` / `take(uid, cost=1.0) -> bool`。**为什么是 token bucket**: 突发量天然在桶里 + 按时间窗线性补,允许"先冲一波然后稳定速率",语义直观;**为什么不选 fixed window**: fixed window 在窗口切换瞬间会出现"两倍突发"(上一秒尾 + 这一秒头),平滑度差;**为什么不选 leaky bucket**: leaky bucket 强制恒定速率、丢多余请求,网关场景里我们更想吸收突发再限速,所以 token bucket 才对路。
 2. **take 整段原子 —— 为什么必须在同一把锁里**: `_refill(uid)`(按流逝时间补 token 至 cap)+ 检查 `tokens < cost`(不够就 `False`)+ `_buckets[uid] = (tokens - cost, now)`(扣)——三步合在 `threading.Lock` 下。**为什么不拆开**:同一用户并发请求不能"读到的都是刚补到位的 token、然后都被扣过"——拆开必双花;**为什么还是 `threading.Lock` 而非 `asyncio.Lock`**:纳秒级算式,加锁开销忽略,`asyncio.Lock` 在 await 点会让出反而误事。
