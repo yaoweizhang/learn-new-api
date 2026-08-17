@@ -54,14 +54,12 @@ new-api/
 
 现在的场景是：`## 问题` 提了三件痛——16 个 chapter 各自是一个独立 FastAPI app、各跑各的端口（痛点 #1）；靠 `app.mount("/", sNN_app)` 串成 s16 → s15 → … → s02 的挂载链（痛点 #2）；每个 chapter 的 routes / services / models 全塞在 `sNN_topic/` 一个扁平目录里，不像真实项目（痛点 #3）——这三件事**没有一件能靠"再多挂一层 mount"解决**——挂载链本身就是病因。
 
-**要解决这个——我们把 s01-s16 的代码**复制**到 `s_full/` 下的清晰子目录里，对外提供**单一** FastAPI app**。`s_full` 拥有自己的 routers，不挂载 chapter chain——`include_router` 替代 `mount`：三次 `app.include_router(...)` 把三个 `APIRouter` 的路由直接注册进同一张路由表，路径就是它声明的那个；`app.mount("/api/v1", sub_app)` 是把另一个 ASGI app 整体挂到子路径下，挂载点会叠加到子 app 的每条路径上——挂载链有 16 层，某一层忘了改前缀，客户端就是一个要追 16 层的 404。
-
-**首次引入**：**include_router**（`include_router` —— FastAPI 把一个 `APIRouter` 的全部路由注册进主 app 路由表的方法，路由声明的路径就是最终对外暴露的路径，不会叠加挂载前缀——本章首次提到这个术语，所以这里多说一句）。它在本章里承担的是"装配视图"比"挂载链"更能把对外入口讲清楚的全部职责。
+**要解决这个——我们把 s01-s16 的代码复制到 `s_full/` 下的清晰子目录里，对外提供单一 FastAPI app**。`s_full` 拥有自己的 routers，不挂载 chapter chain——**include_router** 替代 mount：`include_router` 是 FastAPI 把一个 APIRouter 的全部路由注册进主 app 路由表的方法，路径就是 APIRouter 声明的那个，不会叠加挂载前缀；而 `app.mount("/api/v1", sub_app)` 是把另一个 ASGI app 整体挂到子路径下，挂载链有 16 层，某一层忘了改前缀，客户端就是一个要追 16 层的 404。
 
 本章不画角色图（`s_full` 是整合章，没有新角色，只有装配动作），所以下面直接把每个集成层挑战对到 `s_full` 的解法上：
 
 - **挑战 #1：16 个 app、16 个端口** → **单一 8099 端口的 FastAPI app**。`s_full/code.py` 里只有一个 `app = FastAPI(...)`，16 章的功能全部收拢到它下面。部署方只需要暴露一个进程、一个端口、一份配置，而不是 16 份。
-- **挑战 #2：mount 链让路径被重前缀化** → **`include_router` 替代 `mount`**。`app.include_router(auth.router)` / `admin.router` / `chat.router` 把三个 `APIRouter` 的路由**直接注册进同一张路由表**，路径就是它声明的那个；而 `app.mount("/api/v1", sub_app)` 是把另一个 ASGI app 整体挂到子路径下，挂载点会叠加到子 app 的每条路径上——挂载链有 16 层，某一层忘了改前缀，客户端就是一个要追 16 层的 404。
+- **挑战 #2：mount 链让路径被重前缀化** → **`include_router` 替代 `mount`**。`app.include_router(auth.router)` / `admin.router` / `chat.router` 把三个 `APIRouter` 的路由直接注册进同一张路由表，路径就是它声明的那个。
 - **挑战 #3：路由散落、目录不像真实项目** → **五层子目录 + 一眼可读的 entrypoint**。目录按 `routes / services / models / adapters / middleware` 重组，对齐 `new-api` 的 `Router → Controller → Service → Model → Middleware`；打开 `s_full/code.py` 看到的是全部对外路由的清单（三行 `include_router` + 一行 `add_middleware`），而不是 `app.mount("/", s15_app)` 这种"入口在下一层"的接力。
 - **横切能力怎么办** → **middleware stack 随装配一起搬**。`TraceAndMetricsMiddleware`（s16）挂在 app 层而不是某条路由上，所以 trace_id 和 Prometheus 计数对三个 router 一视同仁——这正是"装配视图"比"挂载链"更能表达的东西：横切关注点属于 app，不属于某一章。
 

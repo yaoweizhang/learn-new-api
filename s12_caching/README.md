@@ -49,7 +49,7 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
   一个 `CacheMiddleware`(包在 s11 的 `LogMiddleware` 外层)和一条
   调试路由 `/admin/cache/stats`。
 
-**首次引入**:**响应缓存 / TTL 缓存**(**响应缓存 / TTL 缓存** —— 在网关层按请求 payload 算 key,把相同请求的响应原样缓存 TTL 秒、命中时短路所有下游——本章首次提到这个术语,这里给出定义 + 角色)。它在本章里承担的是"同 prompt 命中秒级吐回、未命中照常转发并写回"的两段动作。
+**首次引入**:**响应缓存 / TTL 缓存** —— 在网关层按请求 payload 算 key、把相同请求的响应原样缓存 TTL 秒、命中时短路所有下游。本章首次提到这个术语,这里给出定义 + 角色。它在本章里承担的是"同 prompt 命中秒级吐回、未命中照常转发并写回"的两段动作。
 
 缓存键:`sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))`。
 `sort_keys` + `separators` 让序列化结果**与字段顺序无关**——`{"a":1,

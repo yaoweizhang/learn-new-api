@@ -21,13 +21,13 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 成品:`curl -i .../v1/chat/completions`(没有 `Authorization` 头)回 `401 missing bearer token`;注册一个 key `sk-demo` 再带 `authorization: Bearer sk-demo` 发请求,转发生效。后续 s07 在闸门之后接按用户的配额,s08 在闸门之后接按用户的限速,s11 把每次调用的 `user_id` 写进日志;chat 路径的鉴权链路到这里定型。
 
-**双轨鉴权其一**:s05 的 Bearer API key 守 chat 路径;dashboard / admin 路径另由 s09 的 JWT 鉴权把关(见 s09 README)。两条并存、不替代:chat 路径始终走 API key,dashboard / admin 始终走 JWT。
+**双轨鉴权其一**:s05 的 Bearer API key 守 chat 路径;dashboard / admin 路径另由 s09 的 `JWT(JWT, JSON Web Token, 一种签名令牌格式)`鉴权把关(见 s09 README)。两条并存、不替代:chat 路径始终走 API key,dashboard / admin 始终走 JWT。
 
 ## 方案
 
 现在的场景是:`## 问题` 提了一件痛——任何能摸到端口的人都能花你的上游 key、按用户限速 / 计费 / scope 全挂不上去,因为连"谁在调"这件事都不知道——这件事**没法靠"客户端自觉"或"运维拉名单"能解决**,必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401。
 
-**要解决这个——我们在网关里引入一个 `Principal`(`Principal`(当前请求代表的用户身份与权限:`user_id` + `scopes` 元组;`scopes` 是权限标签,挂在 Principal 上)) + 一个 `Depends`(`Depends`(FastAPI 依赖注入:路由前自动跑的函数)) + `require_api_key` 依赖**,`require_api_key` 在 chat-completion 处理器之前运行。闸门的动作分四步:
+**要解决这个——我们在网关里引入一个 `Principal` —— 当前请求代表的用户身份与权限(`user_id` + `scopes` 元组;`scopes` 是权限标签,挂在 Principal 上) + 一个 `Depends` —— FastAPI 依赖注入入口(路由前自动跑的函数) + `require_api_key` 依赖**,`require_api_key` 在 chat-completion 处理器之前运行。闸门的动作分四步:
 
 1. 从请求里读 `Authorization: Bearer <key>`。
 2. 检查 `storage.is_blocked(key)`(黑名单查询钩子,返回是否被封禁——未来接 Redis;本章永远返 `False`)。

@@ -55,10 +55,6 @@
 - **`Container` (本章要打的镜像 `gateway`, `python:3.11-slim` 单容器)** —— 把痛点 #1 #2 #3 #4 的解决动作集中放在这里:`Dockerfile` 锁 Python 版本 + pip 依赖、`HEALTHCHECK` 30s 探一次 `/healthz`、失败重启。一处镜像构建,所有环境(开发机/CI/生产)拿到的运行时都一致。
 - **`Upstream` (LLM 厂商)** —— 服务提供方。容器只通过 `:8015` 对外暴露 `/healthz` 深检 + chat 端点;`/healthz` 当前是桩 `{ok: True, checks: {db, upstream}}`(测试环境不能真戳 DB / 访问 OpenAI,生产里需要替换),`checks[*]` 任一项 False 整个 `ok` 才 False,生产里可以据此触发告警。
 
-- `Dockerfile`:基于 `python:3.11-slim`,按 `requirements.txt` 锁版本,把全部源码 COPY 进去,暴露 8015 端口,设置 `HEALTHCHECK`。
-- `docker-compose.yml`:单服务 —— `gateway`(我们的应用),把整个 s01-s15 链路打包成一个 service,无外部依赖。
-- `code.py`:在 s14 之上挂一个 `/healthz` 路由,**深检** DB 连接和上游可达性,直接由 Docker 的 `HEALTHCHECK CMD` 调用。
-
 ## 工作原理
 
 **原理**: 运维打 `docker compose -f s15_docker_deployment/docker-compose.yml up -d --build` 时,整个流程是: compose 读 `docker-compose.yml` 拿到 `build: .` + `env_file: ../.env` → 调用 `docker build` 把 `Dockerfile` 跑出一层 `python:3.11-slim` 基础镜像 → 装 `requirements.txt` → COPY 源码 → `CMD ["python","s15_docker_deployment/code.py"]` 起 uvicorn:8015 → `HEALTHCHECK` (Docker 内置健康检查) 每 30s 调一次 `python -c "...httpx.get('http://localhost:8015/healthz')..."` → 容器自身在 s15 这层 app **先** 注册 `@app.get("/healthz")` 深检路由(把 `app.mount("/", s14_app)` 放最后,Starlette 按注册顺序匹配) → 探活返回 200 三次连续则容器标 `healthy`、否则 `unhealthy` (Docker 据此决定是否重启)。整章所有部件都为"一次构建、到处运行、自动探活"这条主线服务。
