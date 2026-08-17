@@ -21,7 +21,7 @@ new-api 自己有 React 写的完整 Web 后台(`web/` 目录),那是个正经�
 
 ## 本章要做什么
 
-要解决这个,在网关内挂一个**最薄的服务端渲染后台**:浏览器 GET `/dashboard/login` 拿登录表单、POST 凭证拿 Cookie,GET `/dashboard/` 渲染"用户/渠道/日志数"三个数字。学完运营用浏览器就能看到系统状态,不用 curl + jq。本章把这套最小看板写出来:
+现在场景是:到 s13,网关已经能跑——用户签到、配额扣减、渠道选路 + 重试 + 回退、缓存、日志都接好了。但**所有管理动作全靠 curl**——想看渠道数、想看刚才哪条请求失败了、想加一条新渠道,都得拼 `curl + jq`。要解决这个——**我们在网关内挂一个最薄的服务端渲染后台**:**管理后台 / Dashboard**(浏览器打开就能看到的"系统状态看板"——不用拼 curl,点开就看到用户/渠道/日志数三个数字;这里用 Jinja2 服务端渲染而不是 React SPA,只读场景最自然):浏览器 GET `/dashboard/login` 拿登录表单、POST 凭证拿 Cookie,GET `/dashboard/` 渲染"用户/渠道/日志数"三个数字。学完运营用浏览器就能看到系统状态,不用 curl + jq。本章把这套最小看板写出来:
 
 1. **挂一个 Jinja2 仪表盘 —— 为什么服务端渲染不写 React SPA**: new-api 自带完整 React SPA (`web/` 目录,Vite + TypeScript + Zustand + Tailwind),那个体量比后端还大。**为什么不抄**: 教程目的是演示"网关能渲染 HTML"这件事的最小形态——Vue/React 构建工具链、状态管理、路由、组件库、TypeScript 类型定义,光搭起来就够写三章;Jinja2 + 3 个数字足够。**为什么用 Jinja2**: FastAPI 官方 `Jinja2Templates` 内置,F-string 模板拼字符串容易 XSS,服务端渲染对运维读看板这种只读场景最自然。
 
