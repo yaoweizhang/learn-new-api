@@ -18,7 +18,7 @@
 
 ## 本章要做什么
 
-要解决这个,在转发前先把 prompt 的 token 数清楚:OpenAI 模型走 `tiktoken`(`cl100k_base` 编码)按 BPE 数,其它厂商没有官方分词器就用 `字符数 / 4` 的经验估算兜底;上游回包时如果带了完整 `usage` 就用它,没带就用本地估算 + 回复长度合成。本章就把这条数 token 的链路写出来:
+现在场景是:`s05` 把请求转出去、原样把上游给回来的 `usage` 透传——这只有在模型"已经做完活"之后才正确。我们想要的是:在调用离开我们边缘之前就报个价;统一 usage 形态;估算要够准,可以合理计费。要解决这个——**我们在转发前先把 prompt 的 token 数清楚**:OpenAI 模型走 `tiktoken`(`cl100k_base` 编码)按 BPE 数,其它厂商没有官方分词器就用 `字符数 / 4` 的经验估算兜底;上游回包时如果带了完整 `usage` 就用它,没带就用本地估算 + 回复长度合成。本章就把这条数 token 的链路写出来:
 
 1. **写一个 `tokenizer` 模块 —— 为什么要在转发前数 prompt token**:`count_prompt(messages, model)` 按模型名前缀分派:OpenAI 走 `count_openai`(每条消息加 4 token overhead + `cl100k_base` 编码 `content`,再给回复预热 2),非 OpenAI 走 `count_estimate`(`sum(len(content)) // 4`,至少 1)。**为什么必须在转发前就数清楚**:后续 s07 要按"预估 token 数 × 单价"预扣,没这个数字根本没法预扣;**为什么不等到上游回报再算**:那时候已经花了上游配额,本地的账和上游的账对不齐,账单/限额逻辑无法在请求飞行前做出决策。
 2. **在 `chat_completions` handler 里数 token —— 为什么 handler 自己调不算中间件**:每条进来的请求 `count_prompt` 一次,把 `prompt_tokens` 留下来给响应阶段用;**为什么不用全局中间件**:token 数和 `model` 字段绑定,要从 `messages` 里读,而 Pydantic 校验完的请求体才是干净形态——全局中间件在 Pydantic 之前跑,要么复读 `body` 一遍,要么拿不到 `model` 字段。
