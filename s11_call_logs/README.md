@@ -18,7 +18,7 @@
 
 ## 本章要做什么
 
-要解决这个,在请求路径上挂一份"异步落日志":中间件在 chat 端点返回 200 时把一行日志塞进内存缓冲(`_buffer`),后台 `flush_loop` 每 100ms 整段搬到落盘列表(`_flushed`),管理员通过 `/admin/logs` 和 `/admin/stats` 看。学完你看到每条调用"在飞 + 已落盘"两条痕迹:
+现在场景是:前 10 章里,每条 `/v1/chat/completions` 请求走完一遍就消失了:上游返回 200 → FastAPI 把 JSON 塞进响应 → 客户端拿到结果 → 服务端把这次调用忘得一干二净。一旦对外服务,三个问题立刻出现:看不到用量、出问题无法排查、没法做对账。要解决这个——**我们在请求路径上挂一份"异步落日志"**(**调用日志 / LogStore**(每条 chat 调用记一行路径/时间/状态码/model,异步落盘,管理员通过 `/admin/logs` 和 `/admin/stats` 看)):中间件在 chat 端点返回 200 时把一行日志塞进内存缓冲(`_buffer`),后台 `flush_loop` 每 100ms 整段搬到落盘列表(`_flushed`),管理员通过 `/admin/logs` 和 `/admin/stats` 看。学完你看到每条调用"在飞 + 已落盘"两条痕迹:
 
 1. **挂一个 `LogMiddleware` —— 为什么用中间件而不是在 handler 里调函数**: `@app.middleware("http")` 装在 s11 这层 app 上,包裹下面 s10 → s09 → ... 整条挂载链。`dispatch` 在 `call_next(request)` 拿到 `response` 后判断:`response.status_code == 200` 且路径以 `/v1/chat/completions` 结尾,就把 `{"path", "ts", "status", "model"}` 一行塞进 `log_store.enqueue`。**为什么用中间件而非在 chat handler 里直接 enqueue**: 中间件对所有 chat 调用一视同仁(不依赖具体 handler 实现),后续 s13 改了挂载结构也照样能看到;**为什么只在 200 时记**: 4xx/5xx 不算"成功调用",s07 的配额结算失败、s08 的 429 限速、s10 的渠道故障,这些是另一类观测信号,留到 s16 才统一处理。
 2. **中间件读 body 拿 model —— 为什么要在中间件解 JSON 而不是 `request.query_params`**: `model` 在请求体里、不在查询串里(Brief 原本写的是 `query_params.get("model")`,永远是 `"?"`——这是已知 bug)。中间件先 `await request.body()` 读出原始 bytes,`json.loads` 解出 `model` 写到 `request.state.model`,再用一个新的 `receive()` 把同一份 bytes 喂回去给下游 FastAPI。**为什么要重放 body**: Starlette/FastAPI 下游 handler 需要重新读 body 才能拿到 `messages`、做转发;不重放就 422。**这是 Starlette 里读取并回放 body 的标准手法**——body 被读两次,小开销换干净的"中间件读 model"语义。
