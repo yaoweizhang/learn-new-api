@@ -162,11 +162,7 @@ curl -X POST http://localhost:8004/v1/chat/completions \
 
 | 这里 | new-api |
 |---|---|
-| `Provider` ABC | `relay/channel/adapter.go` —— 每个 channel 都实现的 `Adaptor` 接口 |
-| `OpenAIProvider` | `relay/channel/openai/adaptor.go` —— OpenAI 专属的请求/响应转换 |
-| `ClaudeProvider` | `relay/channel/claude/adaptor.go` —— Anthropic Messages 的转换 |
-| `GeminiProvider` | `relay/channel/gemini/adaptor.go` —— Google `generateContent` 的转换 |
-| `pick_provider(model)` | `controller/relay.go` —— 通过检查模型名把入站请求派发到对应 channel |
+| `Provider` ABC + `OpenAIProvider` / `ClaudeProvider` / `GeminiProvider` 三家子类 + `pick_provider(model)` 选路 + `register_key()` 凭据入库 + `to_upstream` / `from_upstream` 形态转换(`s04_multi_provider/adapters.py`) | `relay/channel/adapter.go` 定义 `Adaptor` 接口,同目录下 `openai/adaptor.go` / `claude/adaptor.go` / `gemini/adaptor.go` 是各家厂商的请求/响应转换实现 |
 
 new-api 走得更远:它有一个 `GetAdaptor(meta)` 工厂,把 `(channel,
 model)` 元组映射到适配器实例;另外每 channel 都有 `Key` 模式(我们这

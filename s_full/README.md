@@ -58,10 +58,10 @@ new-api/
 
 本章不画角色图（`s_full` 是整合章，没有新角色，只有装配动作），所以下面直接把每个集成层挑战对到 `s_full` 的解法上：
 
-- **挑战 #1：16 个 app、16 个端口** → **单一 8099 端口的 FastAPI app**。`s_full/code.py` 里只有一个 `app = FastAPI(...)`，16 章的功能全部收拢到它下面。部署方只需要暴露一个进程、一个端口、一份配置，而不是 16 份。
-- **挑战 #2：mount 链让路径被重前缀化** → **`include_router` 替代 `mount`**。`app.include_router(auth.router)` / `admin.router` / `chat.router` 把三个 `APIRouter` 的路由直接注册进同一张路由表，路径就是它声明的那个。
-- **挑战 #3：路由散落、目录不像真实项目** → **五层子目录 + 一眼可读的 entrypoint**。目录按 `routes / services / models / adapters / middleware` 重组，对齐 `new-api` 的 `Router → Controller → Service → Model → Middleware`；打开 `s_full/code.py` 看到的是全部对外路由的清单（三行 `include_router` + 一行 `add_middleware`），而不是 `app.mount("/", s15_app)` 这种"入口在下一层"的接力。
-- **横切能力怎么办** → **middleware stack 随装配一起搬**。`TraceAndMetricsMiddleware`（s16）挂在 app 层而不是某条路由上，所以 trace_id 和 Prometheus 计数对三个 router 一视同仁——这正是"装配视图"比"挂载链"更能表达的东西：横切关注点属于 app，不属于某一章。
+- **挑战 #1:16 个 app、16 个端口** → **单一 8099 端口的 FastAPI app**。`s_full/code.py` 里只有一个 `app = FastAPI(...)`,16 章的功能全部收拢到它下面。部署方只需要暴露一个进程、一个端口、一份配置,而不是 16 份。
+- **挑战 #2:mount 链让路径被重前缀化** → **`include_router` 替代 `mount`**。`app.include_router(auth.router)` / `admin.router` / `chat.router` 把三个 `APIRouter` 的路由直接注册进同一张路由表,路径就是它声明的那个。
+- **挑战 #3:路由散落、目录不像真实项目** → **五层子目录 + 一眼可读的 entrypoint**。目录按 `routes / services / models / adapters / middleware` 重组,对齐 `new-api` 的 `Router → Controller → Service → Model → Middleware`；打开 `s_full/code.py` 看到的是全部对外路由的清单（三行 `include_router` + 一行 `add_middleware`）,而不是 `app.mount("/", s15_app)` 这种"入口在下一层"的接力。
+- **横切能力怎么办** → **middleware stack 随装配一起搬**。`TraceAndMetricsMiddleware`（s16）挂在 app 层而不是某条路由上,所以 trace_id 和 Prometheus 计数对三个 router 一视同仁——这正是"装配视图"比"挂载链"更能表达的东西：横切关注点属于 app,不属于某一章。
 
 下面这张目录映射表是这套装配的落地形态：
 

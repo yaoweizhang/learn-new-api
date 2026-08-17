@@ -160,11 +160,11 @@ new-api 真实实现厚得多:它会加载用户行、解析每个 channel 的 k
 
 ## 已知限制
 
-- **进程内存储,重启即丢** (`_keys` 是 `dict[str, Principal]`,内存对象)——教程用没问题,真实存储是 Redis + SQL(`model/Key.go` + `model/User.go`);进程一重启所有 key 都没了。
+- **进程内存储,重启即丢** (`_keys` 是 `dict[str, Principal]`,内存对象)——教程用没问题,真实存储是 Redis + SQL(`model/key.go` + `model/user.go`);进程一重启所有 key 都没了。
 - **key 明文存** (数据库里直接是 `sk-xxx` 字符串,没哈希)——`register_key("demo","sk-demo")` 把明文存下来。生产存哈希再比对(Go 端 `crypto.CompareHashAndPassword`,Python 端 `hmac.compare_digest`)。
 - **`is_blocked` 是桩** ——永远返回 `False`。生产里它对 `banned: <key>` 集合做 Redis `EXISTS`,就是封禁接口写入的位置。
 - **没有过期 / 轮换** ——key 没有 `expired_time`、没有轮换流程;泄漏后只能 `register_key` 覆盖或等运维手动撤。
-- **单一全局 key 空间** (所有用户共用一张 key 表,无租户隔离)——真实系统按租户或按 channel 命名空间切分;new-api 按 `user_id` 区分 key,并通过 `model/Key.go` 解析。
+- **单一全局 key 空间** (所有用户共用一张 key 表,无租户隔离)——真实系统按租户或按 channel 命名空间切分;new-api 按 `user_id` 区分 key,并通过 `model/key.go` 解析。
 
 ## 设计选择
 

@@ -67,7 +67,7 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
   本地路由把挂载的同名路由挡住。这跟 `s04_multi_provider` 一样的 Starlette
   坑。
 
-下面这幅图把这件痛各放到五个角色里:
+下面这幅图把这件痛点各放到五个角色里:
 
 - **`Client` (调用方)** —— 在装上 s13 之前,这是被"上游一次抖动就 502 + 客户端全栈重试"困住两难的角色;装上之后,这事被中继解——Client 只管发请求,上游瞬时失败在中继内部被"换下一条"消化掉,对客户端看永远是 200 或最后一手的 502。
 - **`Relay` (本章要写的本地 chat 路由)** —— 把痛的解决动作集中放在这里:`@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前,把 s12→s11→s10→s09→s08 那条挂载链的同名路由挡住;handler 内 `async with httpx.AsyncClient(timeout=30.0) as client:` 开连接池 → `for ch in candidates:` 遍历 → `try: await client.post(url, content=body, headers=upstream_headers)` 调一条,成功直接 `return JSONResponse(translated)`,失败一条就 `ch_mod.mark_unhealthy(ch["id"]) + continue`。Client 不知道有几条渠道,Pool 不知道请求路径,Upstream 看不见其它渠道存在。

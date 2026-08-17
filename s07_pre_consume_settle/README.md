@@ -36,7 +36,7 @@
 
 扣减在 `threading.Lock` 下原子进行,所以同一用户的并发请求不可能"双花"。注意:配额算式是纳秒级,加锁开销可以忽略;用 `asyncio.Lock` 反而要在每个 await 点让出,划不来。
 
-下面这幅图把这件痛各放到四个角色里:
+下面这幅图把这件痛点各放到四个角色里:
 
 - **`Client` (调用方)** —— 在装 s07 之前,这是"打完了才扣钱、扣不下时一脸懵"的角色;装上之后,这事被中继解了——Client 只管发请求,余额不够直接 `402` 打回来,失败调用自动原样退回。
 - **`Relay` (本章要写的预扣 + 调后结算)** —— 把痛的解决动作集中放在这里:handler 调 `quota.deduct(uid, estimate)` 预扣 → 调上游 → 成功路径用 `quota.settle(uid, pre, actual)` 退/补差额(少用退、超用补),失败路径用 `quota.refund(uid, estimate)` 整笔退回。整段在 `threading.Lock` 下原子。
@@ -99,7 +99,7 @@ settle(principal.user_id, estimate, actual)
 
 `max(usage.prompt_tokens, prompt_tokens)` 是为了应对上游 tokenizer 和本地 tokenizer 略有差异的情况——取较大值保证不会因为估算偏小而出现"调用已经花掉 X 配额、但我们只补了 X-1"的账目缺口。
 
-Asymmetry note: `pt` falls back to 0 if upstream omits it, but `ct` falls back to a char/4 estimate (`max(1, len(content) // 4)`). Reason: tokenizers differ; `ct` is the *output* we already have, so we can estimate locally; `pt` is the *input* which we cannot recover locally if upstream omits it.
+**不对称说明**: 为什么 `pt` 缺失时回退到 0,而 `ct` 缺失时却回退到一个 `char/4` 的估算(`max(1, len(content) // 4)`)?因为各家 tokenizer 算出来的 token 数不一致;`ct` 是上游已经返回的*输出*,我们手上有原文,可以本地估算;`pt` 是上游*输入*的 token,如果上游没回,本地没有原文可重算,只能拿 0 兜底。
 
 **注意**:s07 这里的 `max(...)` 在 s_full 的 `services/billing.py` 替换为"pt/ct 任一缺失则保留 pre_deducted"。原因是 pre-consume 已经 floor 在 estimate 上,再 max 会让用户永远按 estimate 付费,掩盖超额路径;s_full 选择显式承担"pt/ct 缺失 → 不退款"的语义。
 
