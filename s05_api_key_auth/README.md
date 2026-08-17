@@ -12,7 +12,7 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 ## 本章要做什么
 
-要解决这个,在 chat 路由前面加一道 Bearer 闸门:每个 `/v1/chat/completions` 请求都先过 `Depends(require_api_key)`,不知道 / 不认识 / 被封禁的 key 一律 `401` 打掉,通过之后才进转发循环。本章就写这一道闸门:
+现在场景是:s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根本没有"谁在调"这件事:谁能摸到中继,谁就能花掉你的上游配额,也没有地方挂上按用户的限速、计费、scope。中继是完全敞开的。要解决这个——**我们在 chat 路由前面加一道 Bearer 闸门**:每个 `/v1/chat/completions` 请求都先过 `Depends(require_api_key)`,不知道 / 不认识 / 被封禁的 key 一律 `401` 打掉,通过之后才进转发循环。本章就写这一道闸门:
 
 1. **写 `require_api_key` 依赖 —— 为什么必须用 Depends 而不是中间件**:`Depends`(FastAPI 依赖注入:路由处理器之前自动跑的函数)是 FastAPI 的官方可测试注入点,**为什么不比 on_event 拦截**:on_event 只能编进 ASGI 中间件栈、测不动;**为什么每个 handler 自己声明**:路由写 `dependencies=[Depends(require_api_key)]` 不必改全局栈,新加路由默认是开放的(不会偷偷被闸上)——这是显式优于隐式的取舍。
 2. **读 `Authorization: Bearer <key>` —— 为什么是 Bearer 头而不是 query 串**:Bearer 头一行密码,放请求头里、**为什么不放 URL**:`Authorization: Bearer sk-xxx` 是 OAuth 2.0 标准放密钥的地方,放 URL 会被 nginx access log、上游 SLA 日志、浏览器历史全留下来——密钥不应穿过日志系统;**为什么 split 方式是 `startswith("Bearer ")` + `removeprefix(...)`**:大小写不敏感但前缀格式严格,空格分隔切干净。
