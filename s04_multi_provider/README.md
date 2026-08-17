@@ -26,7 +26,7 @@ s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可
 
 ## 方案
 
-现在的场景是:`## 问题` 提了两件痛——OpenAI 形态 body 直打到 Claude / Gemini 会被回 400 (痛点 #1)、单家挂了整套服务就 502 (痛点 #2)——这两件事**任何一件**客户端按厂商分流都搞不定,必须由网关按 model 前缀自动分派并翻译。
+客户端发来的 OpenAI 形态 body 打到 Claude 上游会被回 `400 invalid request`、打到 Gemini 也是一样的命运——Claude 要 `x-api-key` + `anthropic-version` 头和顶层 `max_tokens`,Gemini 要 `contents: [{role, parts: [{text}]}]` 数组,三家要的形态根本不在一个坐标上。再说,OpenAI 写死在上游时,任何一家挂整套服务就 502——客户端按厂商自己分流搞不定这两件,必须由网关按 `model` 前缀自动分派,并把各家方言翻来翻去。
 
 **要解决这个——我们在调用方和上游之间插入一个抽象分派层**——这是本章第一次正式给出名字,**多厂商适配器层 / 多 provider 适配层**(adapter layer —— 在调用方和上游之间插一道抽象,负责"接 OpenAI 形态 + 按 model 前缀挑厂商 + 把请求翻成厂商方言 + 把响应翻回 OpenAI 形态",客户端零修改)。这一层作为一个 Python 抽象基类落地——**`Provider`**(`ABC`,abstract base class,要求子类实现规定方法),**每个上游一个具体实现,每个 provider 只做两件事**:
 
@@ -125,21 +125,21 @@ API key 来自各家专属的环境变量(`UPSTREAM_OPENAI_KEY`、
 
 ## 运行
 
-```sh
+```bash
 cd s04_multi_provider
 PORT=8004 python code.py
 ```
 
 确认三家适配器路径都能响应?打这条 curl——能拿到 `{"status":"ok"}` 说明 FastAPI 进程在响应、`Provider` ABC 和三家 provider 实现都加载到内存里了;再分别用 `model: gpt-...` / `claude-...` / `gemini-...` 各发一个请求,被 `pick_provider` 派到对应适配器、再被 `to_upstream` 翻译后转发,即说明三家适配器都在响应:
 
-```sh
+```bash
 curl http://localhost:8004/health
 # {"status":"ok"}
 ```
 
 三家厂商,一份请求形态(把对应的 `UPSTREAM_*_KEY` 设上才有真实回复;不设的话上游会回 401,我们正好希望网关把它原样透传):
 
-```sh
+```bash
 # OpenAI
 curl -X POST http://localhost:8004/v1/chat/completions \
   -H 'content-type: application/json' \

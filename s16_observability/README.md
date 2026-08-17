@@ -10,7 +10,7 @@
 
 到 s15 为止,我们只能回答两类问题:"服务有没有起来"(看 `/healthz`)、"请求成功没有"(看 HTTP 状态码)。如果用户报告"今天 chat 很慢",我们需要:
 
-- 每分钟请求数、错误率、P50/P99 延迟——现在没有指标。
+- 每分钟请求数、错误率、p50/p99 延迟——现在没有指标。
 - 按模型(`gpt-4` / `claude-3-5-sonnet` / ...)分桶的能力——现在只能去翻日志。
 - 把一次请求的入口日志、出口日志、上游调用日志串起来——现在没有 `trace_id`。
 
@@ -29,13 +29,13 @@
 
 ## 方案
 
-现在的场景是:哪怕到了 s15,我们能告诉运维的也只有"elapsed=2.3s, status=200"这种单数字——用户报障"那个 chat 卡了好久"时,运维拿到的是一行 `elapsed=2.3s` JSON,**没法知道这 2.3s 是花在鉴权(查 key) 还是 限速(token bucket) 还是 配额扣减(lock) 还是 上游调用(httpx)**,只能抓包逐跳猜。这件事用户记得大概有多慢搞不定、运维抓全链路包也搞不定,必须让一次请求的耗时在中间件层就被分阶段打点,日志里能看到每段花了多少。
+哪怕到了 s15,我们能告诉运维的也只有"elapsed=2.3s, status=200"这种单数字——用户报障"那个 chat 卡了好久"时,运维拿到的是一行 `elapsed=2.3s` JSON,**没法知道这 2.3s 是花在鉴权(查 key) 还是 限速(token bucket) 还是 配额扣减(lock) 还是 上游调用(httpx)**,只能抓包逐跳猜。用户记大概有多慢搞不定,运维抓全链路包也搞不定,必须让一次请求的耗时在中间件层就被分阶段打点,日志里能看到每段花了多少。
 
 **要解决这个——我们在网关里引入三个最小但够用的机制**:
 
 1. **Prometheus 指标**:**Prometheus**(开源监控系统,以 `text/plain; version=1.0.0; charset=utf-8` 协议周期性"拉"暴露在 `/metrics` 端点的指标样本,内置 Counter / Histogram 等指标类型)——`prometheus_client` 在进程内维护计数器与直方图,`/metrics` 端点暴露。
 2. **结构化日志**:**structlog**(结构化日志库,把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki / Vector / Fluent Bit 直接吃 JSON 而不必写正则)——`structlog` 把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki 解析。
-3. **`trace_id` 透传**:**trace_id**(**Trace ID** —— 贯穿一次请求的唯一 ID,经 HTTP header 跨服务透传,运维可凭此在 `docker logs | jq` 里一次 select 出整条链路的所有日志条目)—— 一个 `BaseHTTPMiddleware` 读 `x-trace-id` 请求头(没有就生成),回写到响应头,并写进每条日志。
+3. **trace_id / Trace ID 透传**(**Trace ID** —— 贯穿一次请求的唯一 ID,经 HTTP header 跨服务透传,运维可凭此在 `docker logs | jq` 里一次 select 出整条链路的所有日志条目)—— 一个 `BaseHTTPMiddleware` 读 `x-trace-id` 请求头(没有就生成),回写到响应头,并写进每条日志。
 
 下面这幅图把上面三件痛点各放到四个机制里(四个**机制**——指标、结构化日志、trace_id 透传、Prom 拉取——读者看到的是这套机制的承担者,而不是"四个角色")——下面也按机制列出各自的实际承担者:
 

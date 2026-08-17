@@ -25,7 +25,7 @@
 
 ## 方案
 
-现在的场景是:`## 问题` 提了两件痛——每个客户端都得学一遍自创方言 (痛点 #1)、LLM 生态没人认这套私有格式 (痛点 #2)——这两件事**任何一件**客户端自己改一下都搞不定,必须由网关把对外形态整个换成 OpenAI 已经统一的那一套。
+s01 那条 `/relay` 路径能用,但每个客户端都得学我们的方言——LangChain 想接就得改 base_url,官方 SDK 想接就得改 transport,所有现成的工具默认都不朝这里发。生态早就统一讲 OpenAI 的 `chat.completions` 契约,我们再花力气教世界我们这套私有格式,根本起不来。客户端改不动,客户端也不该改——必须由网关把对外形态整个换成 OpenAI 已经统一的那一套。
 
 **要解决这个——我们在网关的入站面上做两处调整,不动转发循环本身**:
 
@@ -111,21 +111,21 @@ UPSTREAM_KEY   = os.getenv("UPSTREAM_OPENAI_KEY", "")
 
 ## 运行
 
-```sh
+```bash
 cd s02_openai_protocol
 PORT=8002 python code.py
 ```
 
 确认 OpenAI schema 端点能不能响应?打这条 curl——能拿到 `{"status":"ok"}` 说明 FastAPI 进程在响应、`ChatCompletionRequest`/`ChatCompletionResponse` 两个 schema 都加载到内存里了:
 
-```sh
+```bash
 curl http://localhost:8002/health
 # {"status":"ok"}
 ```
 
 转发一次(先 `export UPSTREAM_OPENAI_KEY` 才有真实回复;不设的话上游会返回 401,我们正好希望看到原样透传这个状态码):
 
-```sh
+```bash
 curl -X POST http://localhost:8002/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'

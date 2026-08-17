@@ -49,7 +49,7 @@ new-api/
 
 ## 方案
 
-现在的场景是：`## 问题` 提了三件痛——16 个 chapter 各自是一个独立 FastAPI app、各跑各的端口（痛点 #1）；靠 `app.mount("/", sNN_app)` 串成 s16 → s15 → … → s02 的挂载链（痛点 #2）；每个 chapter 的 routes / services / models 全塞在 `sNN_topic/` 一个扁平目录里，不像真实项目（痛点 #3）——这三件事**没有一件能靠"再多挂一层 mount"解决**——挂载链本身就是病因。
+走完 s01–s16 手上是 16 个独立 FastAPI app、16 个端口——靠 `app.mount("/", sNN_app)` 串成 `s16 → s15 → ... → s02` 一条挂载链,每个 chapter 的 routes / services / models 又全塞在 `sNN_topic/` 一个扁平目录里。这套形态教学够用,却不像真实项目——读者去看 `new-api` 仓库,看到的是 `router/ controller/ service/ model/ middleware/ common/` 这种分层。再多挂一层 `mount` 解决不了任何一件——挂载链本身就是病因,生产里某层忘了改前缀客户端就是追 16 层的 404,必须由 s_full 重新装配。
 
 **要解决这个——我们把 s01-s16 的代码复制到 `s_full/` 下的清晰子目录里，对外提供单一 FastAPI app**。`s_full` 拥有自己的 routers，不挂载 chapter chain——**include_router** 替代 mount：`include_router` 是 FastAPI 把一个 APIRouter 的全部路由注册进主 app 路由表的方法，路径就是 APIRouter 声明的那个，不会叠加挂载前缀；而 `app.mount("/api/v1", sub_app)` 是把另一个 ASGI app 整体挂到子路径下，挂载链有 16 层，某一层忘了改前缀，客户端就是一个要追 16 层的 404。
 
@@ -194,7 +194,7 @@ PORT=8099 python -m s_full.code
 
 启动后确认整合版真的起来了没?打这个 curl——能返回 `{"status":"ok"}` 说明 8099 端口上那个唯一的 FastAPI 进程在响应,而且启动阶段三次 `include_router`(auth / admin / chat,16 章的功能全在这三个 router 里)和 `add_middleware` 都跑完了——只要其中任何一个子模块 import 失败,进程根本起不来,这条 curl 会直接连不上:
 
-```sh
+```bash
 curl http://localhost:8099/health
 # {"status":"ok"}
 ```

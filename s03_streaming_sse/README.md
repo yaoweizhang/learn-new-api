@@ -29,7 +29,7 @@ event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n
 
 ## 方案
 
-现在的场景是:`## 问题` 提了一件痛——客户端在 s02 那条攒齐路径下会等 7 秒空白屏再渲染 (痛点)——这件事客户端轮询搞不定、客户端 JS 优化也搞不定,必须由网关把响应方式从攒齐回吐切成边读边推。
+客户端在 s02 那条攒齐路径下要等 7 秒——上游吐 200 个 token 按 30 tok/s 算,前端只能盯一段空白屏,等 `r.json()` 全部到位才开始渲染。客户端轮询搞不定这个,客户端 JS 优化也搞不定这个,逐 token 推送是让聊天产品"看起来活"的唯一方式,必须由网关把响应从攒齐回吐切成边读边推。
 
 **要解决这个——我们在 `chat_completions` handler 里按 `req.stream` 字段分两条路**:
 
@@ -105,21 +105,21 @@ async def chat_completions(req: ChatCompletionRequest):
 
 ## 运行
 
-```sh
+```bash
 cd s03_streaming_sse
 PORT=8003 python code.py
 ```
 
 确认流式 endpoint 能响应?打这条 curl——能拿到 `{"status":"ok"}` 说明 FastAPI 进程在响应、流式分支加载到内存了;再发一个 `stream:true` 请求,看到 `text/event-stream` 头和 chunk-by-chunk 字节说明 `StreamingResponse` + `aiter_bytes()` 都挂上了:
 
-```sh
+```bash
 curl http://localhost:8003/health
 # {"status":"ok"}
 ```
 
 非流式(与 s02 相同):
 
-```sh
+```bash
 curl -X POST http://localhost:8003/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}'
@@ -127,7 +127,7 @@ curl -X POST http://localhost:8003/v1/chat/completions \
 
 流式——`-N` 关闭 curl 的输出缓冲,这样能实时看到 chunk 到来:
 
-```sh
+```bash
 curl -N -X POST http://localhost:8003/v1/chat/completions \
   -H 'content-type: application/json' \
   -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}],"stream":true}'

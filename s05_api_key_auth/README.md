@@ -25,7 +25,7 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 ## 方案
 
-现在的场景是:`## 问题` 提了一件痛——任何能摸到端口的人都能花你的上游 key、按用户限速 / 计费 / scope 全挂不上去,因为连"谁在调"这件事都不知道——这件事客户端自觉搞不定、运维拉名单也搞不定,必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401。
+任何能摸到端口的人都能花掉你的上游 key——s01–s04 全部对 chat completion 形状的请求敞开转发,根本没有"谁在调"这件事,自然也没有地方挂按用户的限速、计费、scope。客户端自觉报身份不可靠,运维拉 IP 名单也兜不住,必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401,放进来之后才把身份交给后续的限速 / 计费 / scope 链。
 
 **要解决这个——我们在网关里引入一个 `Principal`** —— 当前请求代表的用户身份(`user_id` + `scopes` 元组,`scopes` 是权限标签),由 `Depends(require_api_key)` 这道闸门查表后挂到 `request.state` 上。闸门的动作分四步:
 
@@ -109,14 +109,14 @@ def is_blocked(key: str) -> bool:
 
 进程内存储启动时是空的,所以首条请求就会返回 `401`。注册一个 key 再发请求:
 
-```sh
+```bash
 cd s05_api_key_auth
 PORT=8005 python code.py &
 ```
 
 在另一个 shell:
 
-```sh
+```bash
 # 401 —— 没有 Authorization 头
 curl -i -X POST http://localhost:8005/v1/chat/completions \
   -H 'content-type: application/json' \
@@ -127,7 +127,7 @@ curl -i -X POST http://localhost:8005/v1/chat/completions \
 
 注册 key 最偷懒的办法是把 helper 塞到一个一次性 REPL 调用里:
 
-```sh
+```bash
 python -c "from s05_api_key_auth.storage import register_key; register_key('demo','sk-demo')"
 PORT=8005 python s05_api_key_auth/code.py &
 curl -X POST http://localhost:8005/v1/chat/completions \
