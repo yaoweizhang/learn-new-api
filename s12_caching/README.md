@@ -26,7 +26,7 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
 
 ## 本章要做什么
 
-要解决这个,给 chat 端点包一层精确匹配缓存:同 model、同 messages、同 temperature 的请求,首次落缓存,之后命中直接吐 bytes,根本不打上游。本章把这层缓存写出来:
+现在场景是:前 11 章里,每次客户端问"gpt-4o-mini 给我讲个笑话",请求都会原封不动打到上游——哪怕 1000 个用户问的是同一个问题,上游也会被叫 1000 次。两个痛点立刻出现:上游账单爆炸、用户体感延迟。要解决这个——**我们给 chat 端点包一层精确匹配缓存**(**响应缓存 / TTL 缓存**(在内存里把"请求 JSON → 上游响应 bytes"这一对原样存下来,下次同样的请求直接吐缓存,根本不打上游;每条缓存带一个过期时间 **TTL**(time-to-live,过期就清掉)):同 model、同 messages、同 temperature 的请求,首次落缓存,之后命中直接吐 bytes,根本不打上游。本章把这层缓存写出来:
 
 1. **写一个内存缓存后端 `cache.py` —— 为什么是进程内 dict 而非 Redis**: `_store: dict[str, tuple[float, bytes]] = {}` 加 `threading.Lock`,对外暴露 `reset_cache / get / set / stats`。**为什么不直接接 Redis**:本章只演示"缓存中间件这个模式存在、键怎么算、TTL 怎么管",多进程共享、持久化、跨实例全部不在这一章的范围——接口照搬 `redis-py` 的签名(`get/set/stats`),v2 切 Redis 时只动实现不动接口,中间件一行不用改。
 2. **键用 `sha256(canonical JSON)` —— 为什么规范化 + sha256**: `_key(payload)` = `hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()`。**为什么 `sort_keys + separators`**:序列化结果与字段顺序无关——`{"a":1, "b":2}` 和 `{"b":2, "a":1}` 算同一个 key,改一个字符(哪怕加个空格)就完全不一样。**为什么用 sha256 而不是 `functools.lru_cache`**:`lru_cache` 只支持 hashable 位置参数;我们要按任意 dict 内容做键,还要自己控 TTL。
