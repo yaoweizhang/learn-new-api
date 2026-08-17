@@ -14,7 +14,7 @@
 
 ## 本章要做什么
 
-要解决这个,把入站面改成 OpenAI 已经统一的 `/v1/chat/completions` 路径和 JSON schema(线协议:网关与客户端约定的 JSON / HTTP 形态,**为什么改的是"外头叫什么"而不是"里头怎么转"**:网关的转发逻辑没动,动的是对外暴露的契约,生态早已统一)。本章就做这一件事:
+现在场景是:s01 在自定义路径(`/relay`)上回答自定义 JSON 形态,每个客户端都得学习我们的方言。要解决这个——**我们把网关的入站面改成 OpenAI 已经统一的 `/v1/chat/completions` 路径和 JSON schema(线协议:网关与客户端约定的 JSON / HTTP 形态)**,对外讲 OpenAI 那一套话。**为什么改的是"外头叫什么"而不是"里头怎么转"**:网关的转发逻辑没动,动的是对外暴露的契约,生态早已统一。本章就做这一件事:
 
 1. **路由改名 `/relay` → `/v1/chat/completions` —— 为什么换路径**:OpenAI 生态统一讲这条路径,所有 SDK 默认就朝这里发。**为什么不留个 `/relay` 兼容旧调用方**:留两条路径等于让中继长期维护两套契约,SDK 默认配置过来还是撞到 OpenAI 形态;统一走一条,所有客户端零修改。
 2. **请求 JSON 收窄到 OpenAI 的 schema —— 为什么收窄**:只强制 `model` 和 `messages` 必填,可选的 `temperature` / `max_tokens` / `stream` 接受但不主动发明;`model_dump(exclude_none=True)`(序列化时剥掉 None 字段,避免空字段落到线上)剥掉 None,**为什么不直接 `temperature: null` 转发**:OpenAI 把"省略"理解为"用服务端默认",把 `null` 理解为"强制传 null 覆盖默认";剥掉才能保住调用方本意。
