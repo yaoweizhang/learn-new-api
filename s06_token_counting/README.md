@@ -31,15 +31,16 @@
 
 ## 方案
 
-一个 `tokenizer` 模块,按模型名前缀选估算器:
+现在的场景是:`## 问题` 提了三件痛——调用前不知道这一笔要花多少(痛点 #1)、上游 `usage` 缺失就拿不到账单(痛点 #2)、估算不够准就不能合理计费(痛点 #3)——这三件事**任何一件**都没法靠"客户端自己估"或"运维后对账"能解决,必须由网关在转发前先数 token、转发后再合并 upstream usage。
+
+**要解决这个——我们在网关里引入一个 `tokenizer` 模块,按模型名前缀选估算器**——OpenAI 模型走 `tiktoken`(`cl100k_base` 是 OpenAI gpt-4*/gpt-3.5-turbo 用的 BPE 编码),其它模型走 `len(content) // 4` 的经验估算(故意粗糙——对账单估算够用,精确计费等上游 `/count_tokens`):
 
 | 模型名前缀 | 策略 | 出处 |
 |---|---|---|
-| `gpt-`/`o` | `tiktoken`(`cl100k_base`) | `s06_token_counting/tokenizer.py:count_openai` (`cl100k_base` 是 OpenAI gpt-4*/gpt-3.5-turbo 用的 BPE 编码) |
+| `gpt-`/`o` | `tiktoken`(`cl100k_base`) | `s06_token_counting/tokenizer.py:count_openai` |
 | 其它 | `len(content) // 4` | `s06_token_counting/tokenizer.py:count_estimate` |
 
-`s06_token_counting/code.py:chat_completions` 在转发前先数 prompt
-token,等到上游回复时:
+`s06_token_counting/code.py:chat_completions` 在转发前先数 prompt token,等到上游回复时按上游给没给完整 `usage` 分两条路:
 
 - 如果上游给了完整的 `usage`(`total_tokens > 0`),就保留它给的
   `prompt_tokens`,但用 `max(上游值, 我们的预计数)` 做兜底。这一
@@ -47,7 +48,7 @@ token,等到上游回复时:
 - 否则就用 `prompt_tokens` 估算值 + `len(reply) // 4`(对完成
   token)合成一份 `usage`。
 
-`## 问题` 提了三件痛:调用前不知道这一笔要花多少(痛点 #1)、上游 `usage` 缺失就拿不到账单(痛点 #2)、估算不够准就不能合理计费(痛点 #3)。这三件事**任何一件**都没法靠"客户端自己估"或"运维后对账"能解决——必须由网关在转发前先数 token、转发后再合并 upstream usage。下面这幅图把这三件事各放到一个角色里:
+下面这幅图把上面三件痛各放到一个角色里:
 
 - **`Client` (调用方)** —— 在装 s06 之前,这是"只管发请求、账单等回包再说"的角色;装上之后,这事被中继解了——Client 只管发 `prompt`,token 数和 `usage` 都由中继填好回吐。
 - **`Relay` (本章要写的数 token + 合并 usage)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:handler 调 `tokenizer.count_prompt(messages, model)` 拿到 `prompt_tokens`(OpenAI 走 `tiktoken`,其它走 `char/4`);转发上游后,如果回了完整 `usage` 就用它,缺失就用本地估算值 + 回复长度合成一份。Client 看不见上游报了多少 token,Upstream 看不见本地估了多少。

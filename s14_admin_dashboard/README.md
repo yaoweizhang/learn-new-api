@@ -35,14 +35,18 @@ new-api 自己有 React 写的完整 Web 后台(`web/` 目录),那是个正经�
 
 ## 方案
 
-`## 问题` 提了一件事:想看系统状态只能拼 `curl + jq`(痛点 #1 现状)。这件事**没法靠"s10 给 channels 加个 REST"或"s11 给 logs 加个 REST"能解决**——REST 端点还得用脚本去拼,只是把"运营不想学 curl"翻译成了"运营学 jq"——必须有一个浏览器开就能看到数字的页面,加上一个"我是管理员"的会话,只读露三条数据。下面这幅图把这件痛各放到四个角色里:
+现在的场景是:`## 问题` 提了一件事——想看系统状态只能拼 `curl + jq`(痛点 #1 现状)——这件事**没法靠"s10 给 channels 加个 REST"或"s11 给 logs 加个 REST"能解决**——REST 端点还得用脚本去拼,只是把"运营不想学 curl"翻译成了"运营学 jq"。必须有一个浏览器开就能看到数字的页面,加上一个"我是管理员"的会话,只读露三条数据。
+
+**要解决这个——我们在网关里引入四个最小部件**,完成一个浏览器一打开就能看到三个数字的最小仪表盘——这个仪表盘,本章第一次提到时我们把它命名为 **管理后台 / Dashboard**(admin dashboard,一个浏览器可访问的、只读露三条数据的最薄服务端渲染后台——本章首次提到这个术语,所以这里多说一句)。
+
+下面这幅图把这件痛各放到四个角色里:
 
 - **`Browser` (运营用的浏览器)** —— 在装上 dashboard 之前,这是被迫拼 `curl + jq` 的角色;装上之后,这事被 dashboard 隔走——浏览器只管 GET `/dashboard/`,`admin` Cookie 跟着走,看到三个数字就完事。
 - **`Relay` (本章要写的 FastAPI + Jinja2)** —— 把痛点 #1 的解决动作集中放在这里:`@app.get("/dashboard/login")` 渲染 form、`@app.post("/dashboard/login")` 校验凭证 + 下发 `admin` Cookie、`@app.get("/dashboard/")` 验 Cookie + 渲染 `dashboard.html`。所有 dashboard 路由注册在 `app.mount("/", s13_app)` **之前**——Starlette 按注册顺序匹配,本地路由挡 mount,`/v1/chat/completions` 仍可达。
 - **`Cookies` (浏览器会话侧, `admin=1` httponly 明文)** —— 鉴权载体。HTTPOnly 防止 JS 读(缓解 XSS),但**没有签名**(没有用 `itsdangerous` 之类签名 Cookie 的密钥验证机制),浏览器 DevTools 改值就能伪造管理员。YAGNI:教学范围内只要能区分"已登录 / 未登录"两种状态就够;生产里必须上签名或者直接复用 s09 的 JWT。
 - **`Storage` (从 s10/s11 import 来的内存单例)** —— 数据来源。渠道数 `len(ch_mod.list_channels())`(s10 的 `_channels: dict`)、日志数 `len(log_store.list_logs())`(s11 的 `_flushed: list`)。**用户数硬编码 0**——s09 没 `list_all()` 接口,本章不为这一个数字去给 s09 加 SQL count;Browser 不直接读存储,Read 路径必须经 Relay 的 handler。
 
-引入四个最小部件:
+四个最小部件的形态:
 
 - **`s14_admin_dashboard/code.py`** —— 一个新的 FastAPI 实例,挂
   上 `/dashboard/login`(GET 渲染表单、POST 校验凭证并下发 Cookie)

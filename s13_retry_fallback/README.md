@@ -53,25 +53,27 @@ s08 拿到请求 → s10 选一条渠道 → 调上游 → 把响应吐回客户
 
 ## 方案
 
-引入一个渠道级 for 循环：
+现在的场景是:`## 问题` 提了一件痛——s12 把缓存这条路解决了"快",但上游瞬时 502 / 503 / 504 时,客户端依然直接看到错误,然后全栈重试(鉴权 + 计费 + 配额 + 日志 + 缓存全部重跑一遍)。这件事**没法靠"客户端按渠道切流"或"s12 缓存兜底"能解决**——缓存只对相同 prompt 命中,瞬时错误属于"换一次请求就消失"那一类,根本不命中缓存,必须由网关在 chat 端点层跑一条 for-loop 渠道序列、失败立即 mark_unhealthy + 切下一条。
+
+**要解决这个——我们在网关里引入一个渠道级 for 循环**——按顺序遍历候选渠道,失败一条就立刻切下一条:
 
 - **`s13_retry_fallback/code.py`** —— FastAPI 装配。**重新定义**
-  `/v1/chat/completions`（不再走 s12→s11→s10→s09→s08 那条链）；
-  每次上游调用直接用 `client.post`，外层循环遍历
-  `ch_mod.list_channels()`，失败一条就 `mark_unhealthy` 切下一条。
-  最后挂载 s12（不是 s08），让 `/admin/cache/stats` 仍可达。
+  `/v1/chat/completions`(不再走 s12→s11→s10→s09→s08 那条链);
+  每次上游调用直接用 `client.post`,外层循环遍历
+  `ch_mod.list_channels()`,失败一条就 `mark_unhealthy` 切下一条。
+  最后挂载 s12(不是 s08),让 `/admin/cache/stats` 仍可达。
 - **s13 自有路由** —— `@app.post("/v1/chat/completions")` 写在
-  `app.mount("/", s12_app)` **之前**，Starlette 按注册顺序匹配路由，
+  `app.mount("/", s12_app)` **之前**,Starlette 按注册顺序匹配路由,
   本地路由把挂载的同名路由挡住。这跟 `s04_multi_provider` 一样的 Starlette
   坑。
 
-`## 问题` 提了 1 件痛：s12 把缓存这条路解决了"快"，但上游瞬时 502 / 503 / 504 时，客户端依然直接看到错误，然后全栈重试（鉴权 + 计费 + 配额 + 日志 + 缓存全部重跑一遍）。这件事**没法靠"客户端按渠道切流"或"s12 缓存兜底"能解决**——缓存只对相同 prompt 命中，瞬时错误属于"换一次请求就消失"那一类，根本不命中缓存；必须由网关在 chat 端点层跑一条 for-loop 渠道序列、失败立即 mark_unhealthy + 切下一条。下面这幅图把这件痛各放到五个角色里：
+下面这幅图把这件痛各放到五个角色里:
 
-- **`Client` (调用方)** —— 在装上 s13 之前，这是被"上游一次抖动就 502 + 客户端全栈重试"困住两难的角色；装上之后，这事被中继解——Client 只管发请求，上游瞬时失败在中继内部被"换下一条"消化掉，对客户端看永远是 200 或最后一手的 502。
-- **`Relay` (本章要写的本地 chat 路由)** —— 把痛的解决动作集中放在这里：`@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前，把 s12→s11→s10→s09→s08 那条挂载链的同名路由挡住；handler 内 `async with httpx.AsyncClient(timeout=30.0) as client:` 开连接池 → `for ch in candidates:` 遍历 → `try: await client.post(url, content=body, headers=upstream_headers)` 调一条，成功直接 `return JSONResponse(translated)`，失败一条就 `ch_mod.mark_unhealthy(ch["id"]) + continue`。Client 不知道有几条渠道，Pool 不知道请求路径，Upstream 看不见其它渠道存在。
-- **`Channels pool` (s10 的内存 dict)** —— 本章直接复用 s10 的 `_channels: dict[int, Channel] + threading.Lock`。每次进入 handler 调 `ch_mod.list_channels()` 拿快照；`mark_unhealthy(cid)` 立即把该渠道 `healthy` 字段置 False——下一条请求 `if not ch["healthy"]: continue` 直接跳过。
-- **`c1` / `c2` / `c3` (三条候选渠道)** —— 实际可选的多家上游。按 list_channels 顺序遍历（本章 channel 数量小 < 10 条, 按注册顺序够用），优先级 / weight 在 s10 选路时已排过；本章直接信任 caller 传入的顺序。c1 失败 → mark_unhealthy(c1) + 切到 c2；c2 失败 → 切到 c3。
-- **`502` (全失败出口)** —— 所有渠道都失败时一次性 `raise HTTPException(last_status or 502, ...)`：如果最后一次是非 2xx，原样把 `last_status` + `last_body` 透传给客户端；如果都是 transport error，则返 502 + 最后一次的错误文本。失败时同步 `refund(p.user_id, estimate)` 整笔退回——用户不为失败调用付费。
+- **`Client` (调用方)** —— 在装上 s13 之前,这是被"上游一次抖动就 502 + 客户端全栈重试"困住两难的角色;装上之后,这事被中继解——Client 只管发请求,上游瞬时失败在中继内部被"换下一条"消化掉,对客户端看永远是 200 或最后一手的 502。
+- **`Relay` (本章要写的本地 chat 路由)** —— 把痛的解决动作集中放在这里:`@app.post("/v1/chat/completions")` 注册在 `app.mount("/", s12_app)` 之前,把 s12→s11→s10→s09→s08 那条挂载链的同名路由挡住;handler 内 `async with httpx.AsyncClient(timeout=30.0) as client:` 开连接池 → `for ch in candidates:` 遍历 → `try: await client.post(url, content=body, headers=upstream_headers)` 调一条,成功直接 `return JSONResponse(translated)`,失败一条就 `ch_mod.mark_unhealthy(ch["id"]) + continue`。Client 不知道有几条渠道,Pool 不知道请求路径,Upstream 看不见其它渠道存在。
+- **`Channels pool` (s10 的内存 dict)** —— 本章直接复用 s10 的 `_channels: dict[int, Channel] + threading.Lock`。每次进入 handler 调 `ch_mod.list_channels()` 拿快照;`mark_unhealthy(cid)` 立即把该渠道 `healthy` 字段置 False——下一条请求 `if not ch["healthy"]: continue` 直接跳过。
+- **`c1` / `c2` / `c3` (三条候选渠道)** —— 实际可选的多家上游。按 list_channels 顺序遍历(本章 channel 数量小 < 10 条, 按注册顺序够用),优先级 / weight 在 s10 选路时已排过;本章直接信任 caller 传入的顺序。c1 失败 → mark_unhealthy(c1) + 切到 c2;c2 失败 → 切到 c3。
+- **`502` (全失败出口)** —— 所有渠道都失败时一次性 `raise HTTPException(last_status or 502, ...)`:如果最后一次是非 2xx,原样把 `last_status` + `last_body` 透传给客户端;如果都是 transport error,则返 502 + 最后一次的错误文本。失败时同步 `refund(p.user_id, estimate)` 整笔退回——用户不为失败调用付费。
 
 路由形状——下面这张块状路由表把本章要写的接口压成一览：左是 `method + path`，中间是入参（`/v1/chat/completions` 接 body），右是返回码与返回体；本章要写的核心就是"遍历渠道、失败即回落"一条转发路径 + 仍然挂着从 s12 来的一条统计接口。
 

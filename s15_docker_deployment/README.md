@@ -39,13 +39,21 @@
 
 ## 方案
 
-`## 问题` 提了四件痛:Python 版本不一致 (痛点 #1)、依赖装出来不一致 (痛点 #2)、进程死了没人拉 (痛点 #3)、上游改了协议没人知道 (痛点 #4)。这四件事**没法靠"代码 scp 到服务器"或"运维写 systemd unit"能统一解决**——必须有一个可复现的 runtime + 进程级拉起 + 业务级深检。下面这幅图把这四件事各放到三个角色里:
+现在的场景是:`## 问题` 提了四件痛——Python 版本不一致 (痛点 #1)、依赖装出来不一致 (痛点 #2)、进程死了没人拉 (痛点 #3)、上游改了协议没人知道 (痛点 #4)——这四件事**没法靠"代码 scp 到服务器"或"运维写 systemd unit"能统一解决**,必须有一个可复现的 runtime + 进程级拉起 + 业务级深检。
+
+**要解决这个——我们在网关外引入三个最小部署文件**,把所有运行时锁在一处镜像里:
+
+- `Dockerfile`:基于 `python:3.11-slim`,按 `requirements.txt` 锁版本,把全部源码 COPY 进去,暴露 8015 端口,设置 `HEALTHCHECK`(Docker 内置健康检查机制,容器自起后定时探活,失败累计触发重启)。
+- `docker-compose.yml`:单服务 —— `gateway`(我们的应用),把整个 s01-s15 链路打包成一个 service,无外部依赖。
+- `code.py`:在 s14 之上挂一个 `/healthz` 路由,**深检** DB 连接和上游可达性,直接由 Docker 的 `HEALTHCHECK CMD` 调用。
+
+**首次引入**:**Docker 容器**(Docker 容器——把应用 + 运行时 + 依赖 + 配置打包成一个可移植、可复现的镜像,在任何 Docker host 上 `docker compose up` 就能跑起来的部署单元——本章首次提到这个术语,这里给出定义 + 角色)。它在本章里承担的是"一处构建、到处运行、失败自愈"的全套职责。
+
+下面这幅图把上面四件痛各放到三个角色里:
 
 - **`Host` (Docker host,开发机/服务器)** —— 在装上 docker 之前,这是被迫拼 `python s14/code.py` + 写 systemd unit + 手敲 supervisor.conf 的角色;装上之后,这事被 docker-compose 隔走——只发一条 `docker compose up` 命令就完事。
 - **`Container` (本章要打的镜像 `gateway`, `python:3.11-slim` 单容器)** —— 把痛点 #1 #2 #3 #4 的解决动作集中放在这里:`Dockerfile` 锁 Python 版本 + pip 依赖、`HEALTHCHECK` 30s 探一次 `/healthz`、失败重启。一处镜像构建,所有环境(开发机/CI/生产)拿到的运行时都一致。
 - **`Upstream` (LLM 厂商)** —— 服务提供方。容器只通过 `:8015` 对外暴露 `/healthz` 深检 + chat 端点;`/healthz` 当前是桩 `{ok: True, checks: {db, upstream}}`(测试环境不能真戳 DB / 访问 OpenAI,生产里需要替换),`checks[*]` 任一项 False 整个 `ok` 才 False,生产里可以据此触发告警。
-
-引入三个最小部署文件:
 
 - `Dockerfile`:基于 `python:3.11-slim`,按 `requirements.txt` 锁版本,把全部源码 COPY 进去,暴露 8015 端口,设置 `HEALTHCHECK`。
 - `docker-compose.yml`:单服务 —— `gateway`(我们的应用),把整个 s01-s15 链路打包成一个 service,无外部依赖。

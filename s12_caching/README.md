@@ -37,7 +37,9 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
 
 ## 方案
 
-引入一个中间件 + 一个内存字典后端:
+现在的场景是:`## 问题` 提了两件痛——上游账单被重复请求翻倍 (痛点 #1)、用户体感 800ms 冷启动延迟 (痛点 #2)——这两件事**任何一件**都没法靠"客户端自带缓存"或"客户端 JS 优化"能解决,必须由网关在 chat 路由外层包一道精确匹配闸门:同 prompt 命中直接吐 bytes,短路所有下游;未命中照常转发,响应写回缓存。
+
+**要解决这个——我们在网关里引入一个中间件 + 一个内存字典后端**:
 
 - **`s12_caching/cache.py`** —— 进程内字典 `dict[key, (expires_at,
   value)]`,外面包一层 `threading.Lock`。对外暴露 `get/set/stats/
@@ -47,11 +49,13 @@ messages、同 temperature 才算相同。语义相似("讲个笑话" vs "给我
   一个 `CacheMiddleware`(包在 s11 的 `LogMiddleware` 外层)和一条
   调试路由 `/admin/cache/stats`。
 
+**首次引入**:**响应缓存 / TTL 缓存**(**响应缓存 / TTL 缓存** —— 在网关层按请求 payload 算 key,把相同请求的响应原样缓存 TTL 秒、命中时短路所有下游——本章首次提到这个术语,这里给出定义 + 角色)。它在本章里承担的是"同 prompt 命中秒级吐回、未命中照常转发并写回"的两段动作。
+
 缓存键:`sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")))`。
 `sort_keys` + `separators` 让序列化结果**与字段顺序无关**——`{"a":1,
 "b":2}` 和 `{"b":2,"a":1}` 算同一个 key。
 
-`## 问题` 提了两件痛:上游账单被重复请求翻倍 (痛点 #1)、用户体感 800ms 冷启动延迟 (痛点 #2)。这两件事**任何一件**都没法靠"客户端自带缓存"或"客户端 JS 优化"能解决——必须由网关在 chat 路由外层包一道精确匹配闸门:同 prompt 命中直接吐 bytes,短路所有下游;未命中照常转发,响应写回缓存。下面这幅图把这两件事各放到一个角色里:
+下面这幅图把上面两件痛各放到一个角色里:
 
 - **`Client` (调用方)** —— 在装上缓存之前,这是被账单和延迟困住两难的角色;装上之后,这事被中继解——Client 只管发请求,同 prompt 第二次起由中继秒级吐回。
 - **`Relay` (本章要写的 CacheMiddleware)** —— 把痛点 #1 #2 的解决动作集中放在这里:中间件按 `request.method == POST and request.url.path == /v1/chat/completions` 触发 → 算 `key = sha256(canonical JSON)` → `cache.get(key)` 命中直接 `Response(content=hit)` 短路返回;未命中走 `await call_next(request)`,响应 200 后把 body 重组写回 `cache.set(payload, body)`。Client 看不见有没有走缓存,Upstream 看不见命中,缓存层藏在中间件里。

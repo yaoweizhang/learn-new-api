@@ -25,18 +25,18 @@ s01–s04 都会愉快地转发一切长得像 chat completion 的请求。根�
 
 ## 方案
 
-引入一个 `Principal`（当前请求代表的用户身份与权限：`user_id` + `scopes` 元组；`scopes` 是权限标签，挂在 Principal 上）和一个
-`Depends`（FastAPI 依赖注入：路由前自动跑的函数）`require_api_key` 依赖,它会在 chat-completion 处理器之前运行。这个依赖做这几件事:
+现在的场景是:`## 问题` 提了一件痛——任何能摸到端口的人都能花你的上游 key、按用户限速 / 计费 / scope 全挂不上去,因为连"谁在调"这件事都不知道——这件事**没法靠"客户端自觉"或"运维拉名单"能解决**,必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401。
+
+**要解决这个——我们在网关里引入一个 `Principal`(`Principal`(当前请求代表的用户身份与权限:`user_id` + `scopes` 元组;`scopes` 是权限标签,挂在 Principal 上)) + 一个 `Depends`(`Depends`(FastAPI 依赖注入:路由前自动跑的函数)) + `require_api_key` 依赖**,`require_api_key` 在 chat-completion 处理器之前运行。闸门的动作分四步:
 
 1. 从请求里读 `Authorization: Bearer <key>`。
 2. 检查 `storage.is_blocked(key)`(黑名单查询钩子,返回是否被封禁——未来接 Redis;本章永远返 `False`)。
 3. 在 `storage.lookup_key` 里查这个 key,查不到抛 `401`。
 4. 成功的话,把 `Principal` 挂到 `request.state`,供下游中间件使用。
 
-存储层(`storage.py`)本章是进程内的;真实实现会换 Redis + 数据库。
-`storage.py` 和 `code.py` 的这种拆分,正好对齐 new-api 在 `model/`(持久化)和 `middleware/`(HTTP 装配)之间的切分。
+存储层(`storage.py`)本章是进程内的;真实实现会换 Redis + 数据库。`storage.py` 和 `code.py` 的这种拆分,正好对齐 new-api 在 `model/`(持久化)和 `middleware/`(HTTP 装配)之间的切分。
 
-`## 问题` 提了一件痛:任何能摸到端口的人都能花你的上游 key、按用户限速 / 计费 / scope 全挂不上去——因为连"谁在调"这件事都不知道。这件事**没法靠"客户端自觉"或"运维拉名单"能解决**——必须由网关在 chat 路由前装一道闸门,不认识 key 一律 401。下面这幅图把闸门放到三个角色里:
+下面这幅图把闸门放到三个角色里:
 
 - **`Client` (调用方)** —— 在装闸门之前,这是干"谁都能打"这件事的角色;装上之后,这事被闸门解了——Client 只剩"我必须带 `Authorization: Bearer sk-...` 才能过"。
 - **`Relay` (本章要写的闸门 + 转发)** —— 把痛点的解决动作集中放在这里:`Depends(require_api_key)` 在 chat 处理器之前跑,读 `Authorization` 头、查 key 表、不认识返 401,通过则挂 `Principal` 到 `request.state` 再进入原有转发循环(s04 那条)。Client 看不见 key 字符串后面是谁,Upstream 看不见 Client 持了哪把 key。

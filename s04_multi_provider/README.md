@@ -28,14 +28,16 @@ s02/s03 假设上游就是 OpenAI,所以请求体原样转发;但客户端还可
 
 ## 方案
 
-引入一个 `Provider` 抽象基类 (`ABC`,abstract base class,要求子类实现规定方法),每个上游一个具体实现。每个 provider 只做两件事:
+现在的场景是:`## 问题` 提了两件痛——OpenAI 形态 body 直打到 Claude / Gemini 会被回 400 (痛点 #1)、单家挂了整套服务就 502 (痛点 #2)——这两件事**任何一件**都没法靠"客户端按厂商分流"能解决,必须由网关按 model 前缀自动分派并翻译。
+
+**要解决这个——我们在网关里引入一个 `Provider` 抽象基类**(`ABC`,abstract base class,要求子类实现规定方法),**每个上游一个具体实现,每个 provider 只做两件事**:
 
 1. **把 OpenAI 请求翻译成自家线协议** (`to_upstream`)。
 2. **把自家响应翻回 OpenAI 形态** (`from_upstream`)。
 
-路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器(`Adaptor`,**适配器 / 适配层**(adapter,new-api 术语:厂商适配器接口,负责"接 OpenAI 形态 + 翻成厂商方言 + 把厂商响应翻回 OpenAI 形态"——一个厂商一个实现)),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
+路由处理器通过 `pick_provider(model)` 按模型名前缀挑出对应适配器——这个适配器,本章第一次出现时我们把它命名为 **适配器 / 适配层**(adapter,new-api 术语:厂商适配器接口,负责"接 OpenAI 形态 + 翻成厂商方言 + 把厂商响应翻回 OpenAI 形态"——一个厂商一个实现),然后沿着这个适配器转发请求。客户端看到的 `/v1/chat/completions` 入口和 JSON 形态完全一样,无论最后答的是哪家上游。
 
-`## 问题` 提了两件痛:OpenAI 形态 body 直打到 Claude / Gemini 会被回 400 (痛点 #1)、单家挂了整套服务就 502 (痛点 #2)。这两件事**任何一件**都没法靠"客户端按厂商分流"能解决——必须由网关按 model 前缀自动分派并翻译。下面这幅图把这三件事各放到一个角色里:
+下面这幅图把上面两件痛各放到一个角色里:
 
 - **`Client` (任意 OpenAI 客户端)** —— 装上分派层之前,这是被迫按厂商分流改代码的角色;装上之后,这事被网关解了——客户端发什么 model,网关就派给哪家,客户端零修改。
 - **`Relay` (本章要写的分派层)** —— 把痛点 #1 #2 的解决动作集中放在这里:按 `model` 前缀挑 provider,用 `to_upstream` 把 OpenAI body 翻成各家方言,用 `from_upstream` 把各家响应翻回 OpenAI 形态。Client 始终说 OpenAI 形态,Upstream 始终说自家形态。

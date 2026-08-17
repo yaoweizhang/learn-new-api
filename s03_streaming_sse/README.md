@@ -29,16 +29,18 @@ event-stream`、`data: {...}\n\n` 一帧接着一帧,最后是 `data: [DONE]\n\n
 
 ## 方案
 
-在 `chat_completions` handler 里,看到 `req.stream` 字段就分两条路:
+现在的场景是:`## 问题` 提了一件痛——客户端在 s02 那条攒齐路径下会等 7 秒空白屏再渲染 (痛点)——这件事**没法靠"客户端轮询"或"客户端 JS 优化"能解决**,必须由网关把响应方式从攒齐回吐切成边读边推。
+
+**要解决这个——我们在 `chat_completions` handler 里按 `req.stream` 字段分两条路**:
 
 - **stream=false**(s02 已实现):走 `await client.post(...)`,攒齐再回 `JSONResponse`。
 - **stream=true**(本章新加):打开 `httpx.AsyncClient.stream(...)`,返回一个 FastAPI
   `StreamingResponse`(FastAPI 的流式响应类型,按 chunk 推送),用 `async for
-  chunk in upstream.aiter_bytes()` 产出字节。两个响应头要紧:
-  `cache-control: no-cache` 和 `x-accel-buffering: no`(后者告诉 nginx
-  不要做缓冲,反向代理常常会一直等到阈值才放行 SSE body)。
+  chunk in upstream.aiter_bytes()` 产出字节。
 
-`## 问题` 提了一件痛:客户端 7 秒空白屏等攒齐再渲染 (痛点)。这件事**没法靠"客户端轮询"或"客户端 JS 优化"能解决**——必须由网关把响应方式切成边读边推。下面这幅图把这件痛放到三个角色里:
+**为什么两个响应头都要写**:`cache-control: no-cache` 禁止中间节点把开放式流当缓存分发;`x-accel-buffering: no`(`x-accel-buffering` 是 nginx 的反向代理缓冲开关)关掉 nginx 的 `proxy_buffering`,nginx 就不会一直攒到阈值再放行 SSE body。
+
+下面这幅图把这件痛放到三个角色里:
 
 - **`Client` (流式调用方)** —— 在 s02 那条攒齐路径上,这是被 7 秒空白屏困住的角色;切流式之后,这事被网关解了——客户端读一个 chunk 渲染一个 chunk。
 - **`Relay` (本章要写的流式分支)** —— 把痛点的解决动作集中放在这里:看到 `stream=true` 就开 `httpx.AsyncClient.stream(...)` 上下文,用 `aiter_bytes()` 拿到字节立刻 `yield` 给 FastAPI 的 `StreamingResponse`。Client 拿到首字就几百毫秒。

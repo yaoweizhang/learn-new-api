@@ -32,15 +32,21 @@
 
 ## 方案
 
-`## 问题` 提了三件事:每分钟请求数 / 错误率 / P99 时延没法看 (痛点 #1)、按 model 分桶没法做 (痛点 #2)、一次请求的入口 + 出口 + 上游日志没法串 (痛点 #3)。这三件事**没法靠"用户报障时肉眼看日志"或"运营商爬日志写脚本"能解决**——必须有一个 metrics 端点供 Prometheus 定期拉 + structlog JSON 一行一条便于 Loki 聚合 + trace_id 跨调用串日志。下面这幅图把这三件事各放到四个角色里:
+现在的场景是:`## 问题` 提了三件事——每分钟请求数 / 错误率 / P99 时延没法看 (痛点 #1)、按 model 分桶没法做 (痛点 #2)、一次请求的入口 + 出口 + 上游日志没法串 (痛点 #3)——这三件事**没法靠"用户报障时肉眼看日志"或"运营商爬日志写脚本"能解决**,必须有一个 metrics 端点供 Prometheus 定期拉 + structlog JSON 一行一条便于 Loki 聚合 + trace_id 跨调用串日志。
+
+**要解决这个——我们在网关里引入三个最小但够用的机制**:
+
+1. **Prometheus 指标**:**Prometheus**(开源监控系统,以 `text/plain; version=1.0.0; charset=utf-8` 协议周期性"拉"暴露在 `/metrics` 端点的指标样本,内置 Counter / Histogram 等指标类型——本章首次提到这个术语,这里给出定义)——`prometheus_client` 在进程内维护计数器与直方图,`/metrics` 端点暴露。
+2. **结构化日志**:**structlog**(结构化日志库,把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki / Vector / Fluent Bit 直接吃 JSON 而不必写正则——本章首次提到这个术语,这里给出定义)——`structlog` 把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki 解析。
+3. **`trace_id` 透传**:**trace_id**(**Trace ID** —— 贯穿一次请求的唯一 ID,经 HTTP header 跨服务透传,运维可凭此在 `docker logs | jq` 里一次 select 出整条链路的所有日志条目——本章首次提到这个术语,这里给出定义)—— 一个 `BaseHTTPMiddleware` 读 `x-trace-id` 请求头(没有就生成),回写到响应头,并写进每条日志。
+
+下面这幅图把上面三件痛各放到四个角色里:
 
 - **`Client` (调用方)** —— 在装上 trace + metrics 中间件之前,这是发完请求就忘、报障只能报"大概几点打的"的角色;装上之后,这事被中间件隔走——客户端可以自带 `x-trace-id`(后续请求),服务端无则自动生成;指标在内部累计,无需客户端参与。
 - **`Relay` (本章要写的 `TraceAndMetricsMiddleware`)** —— 把痛点 #1 #2 #3 的解决动作集中放在这里:`@app.middleware("http")` 装在自己 app 上、包裹挂载链;`dispatch` 流程:`trace_id = request.headers.get(...) or uuid.uuid4().hex` 写 `request.state.trace_id` → `start = perf_counter()` → `await call_next(request)` → `elapsed = ...` → 若 chat 路径 `REQUESTS.labels(model, status).inc()` + `LATENCY.labels(model).observe(elapsed)` → `log.info("request", trace_id=...)` → 响应头写 `x-trace-id`。中间件一处定义全局生效。
 - **`MetricsStore` (进程内 Counter + Histogram 双指标)** —— 本章引入的两个 Prometheus 指标:`REQUESTS = Counter("learn_new_api_requests_total", ..., ["model", "status"])` 累加请求数 / 状态分布;`LATENCY = Histogram("learn_new_api_request_latency_seconds", ..., ["model"])` 累积时延分布。两个指标都是进程内(`prometheus_client.DefaultRegisterer`),由 `/metrics` 路由 `generate_latest()` 拉。Client 不直接触碰指标,Prom 拉模式对上 Service 透明。
 - **`Logs` (structlog JSON 一行一条)** —— 日志管线。`configure_logging()` 把 `logging` 输出经 `structlog.processors.JSONRenderer()` 重写成 JSON 一行一条 (`docker logs | jq` 可直接 `select(.trace_id=="...")` 过滤);每条日志都带 `trace_id`。Client 不直接读 stdout,但运营 / Loki 能从 JSON 串起来。
 - **`Prom` (Prometheus server)** —— 痛点 #1 #2 的外部拉取方。每 15s 拉一次 `/metrics`,得到 `model="gpt-4o-mini"` / `status="200"` 这种带 label 的样本。拉模式 vs 推模式选择拉模式是因为工业标准,Prom 侧配置简单。
-
-引入三个最小但够用的机制:
 
 1. **Prometheus 指标**:`prometheus_client` 在进程内维护计数器与直方图,`/metrics` 端点以 `text/plain; version=1.0.0; charset=utf-8` 暴露。
 2. **结构化日志**:`structlog` 把 `logging` 输出重写成 JSON 一行一条,方便 `jq` / Loki 解析。
